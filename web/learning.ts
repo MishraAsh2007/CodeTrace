@@ -1,3 +1,4 @@
+import { exceptionGuide } from './exceptions.ts';
 import type { Check, HeapObject, Project, Question, Run, TraceEvent, TraceValue, Variable } from './types';
 
 export function snapshots(run: Run | null): TraceEvent[] {
@@ -203,6 +204,8 @@ function exceptionQuestions(run: Run, states: TraceEvent[]): Question[] {
     }
   } else if (exception.type.endsWith('ConcurrentModificationException')) {
     out.push(...modificationQuestions(run, states, index));
+  } else {
+    out.push(...otherExceptionQuestions(run, event, index));
   }
   return out;
 }
@@ -278,6 +281,31 @@ function modificationQuestions(run: Run, states: TraceEvent[], index: number): Q
       [`Replace the loop with ${code(`${shrink.name}.removeIf(${variable} -> ${condition});`)}`, `Wrap ${code(`${shrink.name}.remove(${variable})`)} in try/catch and keep looping`, `Add ${code('break;')} right after the first removal`], 0));
   }
   return out;
+}
+
+/**
+ * Any other uncaught exception (list indexes, Scanner input, casts, unmodifiable lists, stack overflow, …): an explain
+ * question whose answer is the exception's meaning and whose distractors describe other exceptions.
+ */
+function otherExceptionQuestions(run: Run, event: TraceEvent, index: number): Question[] {
+  const exception = event.exception!;
+  const name = shortName(exception.type);
+  const message = exceptionMessage(run, event);
+  const guide = exceptionGuide(exception.type, message);
+  if (guide.meaning.startsWith('The program threw')) return [];
+  const others = ['NullPointerException', 'ArithmeticException', 'NumberFormatException', 'ClassCastException', 'NoSuchElementException', 'UnsupportedOperationException', 'IndexOutOfBoundsException']
+    .filter(n => n !== name).map(n => exceptionGuide(n, '/ by zero').meaning);
+  const location = event.location!;
+  const text = recordedLine(run, location.file, location.line)?.trim() ?? '';
+  const id = name.replace(/Exception$|Error$/, '').toLowerCase();
+  // Input problems: say what the program read, since the Input tab is where the fix often is.
+  const input = /InputMismatch|NoSuchElement/.test(name) && run.request.stdin.trim()
+    ? ` The input had ${run.request.stdin.trim().split(/\s+/).length} token${run.request.stdin.trim().split(/\s+/).length === 1 ? '' : 's'}: ${code(run.request.stdin.trim().slice(0, 60))}.` : '';
+  return [make({ id: `exception-${id}`, kind: 'explain', concept: /Input|NoSuchElement/.test(name) ? 'parsing-input' : /IndexOutOfBounds/.test(name) ? 'array-bounds' : /StackOverflow/.test(name) ? 'recursion' : 'state-change',
+    title: 'Explain the exception', context: `${location.file}:${location.line} threw ${code(name)}${message ? `: “${message}”` : ''}. The line reads ${code(text)}.${input}`,
+    prompt: `What does ${code(name)} mean here?`, explanation: `${guide.meaning} Common causes: ${guide.causes.join(' ')}`,
+    hints: ['Read the exception message: it usually names the value or index involved.', guide.causes[0] ?? 'Step back from the exception to see the values that led to it.'], step: index, focus: { file: location.file, line: location.line }, code: text },
+    [guide.meaning, others[0], others[1]], 0)];
 }
 
 /** javac errors: explained from the diagnostic text and the recorded line. */

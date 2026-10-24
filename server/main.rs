@@ -12,6 +12,7 @@ use std::{collections::{HashMap, HashSet}, path::PathBuf, sync::{Arc, atomic::{A
 use tokio::{io::{AsyncBufReadExt, AsyncReadExt, BufReader}, process::Command, sync::{Mutex, Semaphore}};
 use tower_http::services::{ServeDir, ServeFile};
 
+mod assist;
 mod lsp;
 
 const MAX_TRACE_BYTES: usize = 24 * 1024 * 1024;
@@ -51,6 +52,7 @@ struct AppState {
     root: PathBuf,
     java: PathBuf,
     lsp: Arc<lsp::Lsp>,
+    assist: Arc<assist::Assist>,
 }
 
 type ApiError = (StatusCode, Json<Value>);
@@ -157,6 +159,28 @@ async fn cancel_run(State(state): State<AppState>, Path(id): Path<String>) -> Re
     run.lock().await.cancel.store(true, Ordering::Relaxed);
     Ok(Json(json!({"ok": true})))
 }
+
+// ---------- AI assistant (optional) ----------
+
+async fn assist_config(State(state): State<AppState>) -> Json<Value> { Json(state.assist.status()) }
+async fn assist_save(State(state): State<AppState>, Json(body): Json<assist::ConfigUpdate>) -> Result<Json<Value>, ApiError> {
+    state.assist.save(body).map(Json).map_err(|msg| error(StatusCode::BAD_REQUEST, &msg))
+}
+async fn assist_clear(State(state): State<AppState>) -> Json<Value> { Json(state.assist.clear()) }
+async fn assist_models(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
+    state.assist.models().await.map(|ids| Json(json!({"models": ids}))).map_err(|msg| error(StatusCode::BAD_GATEWAY, &msg))
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatRequest { messages: Vec<assist::ChatMessage>, #[serde(default = "default_tokens")] max_tokens: u32 }
+fn default_tokens() -> u32 { 900 }
+async fn assist_chat(State(state): State<AppState>, Json(body): Json<ChatRequest>) -> Result<Json<Value>, ApiError> {
+    state.assist.start_chat(body.messages, body.max_tokens).await.map(|id| Json(json!({"id": id}))).map_err(|msg| error(StatusCode::CONFLICT, &msg))
+}
+async fn assist_poll(State(state): State<AppState>, Path(id): Path<String>) -> Result<Json<Value>, ApiError> {
+    state.assist.chat(&id).await.map(Json).ok_or_else(|| error(StatusCode::NOT_FOUND, "That answer is no longer available."))
+}
+async fn assist_cancel(State(state): State<AppState>, Path(id): Path<String>) -> Json<Value> { state.assist.cancel(&id).await; Json(json!({"ok": true})) }
 
 // ---------- Language server ----------
 
@@ -293,11 +317,16 @@ async fn execute(state: &AppState, request: &RunRequest, run: &SharedRun) -> Res
 async fn main() {
     let root = std::env::var_os("TRACELAB_ROOT").map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
     let java_home = std::env::var_os("JAVA_HOME").expect("Set JAVA_HOME to a JDK 21+ or start with npm start.");
-    let state = AppState { runs: Arc::new(Mutex::new(HashMap::new())), slots: Arc::new(Semaphore::new(1)), root: root.clone(), java: PathBuf::from(java_home).join("bin").join(if cfg!(windows) { "java.exe" } else { "java" }), lsp: lsp::Lsp::new(&root) };
+    let state = AppState { runs: Arc::new(Mutex::new(HashMap::new())), slots: Arc::new(Semaphore::new(1)), root: root.clone(), java: PathBuf::from(&java_home).join("bin").join(if cfg!(windows) { "java.exe" } else { "java" }), lsp: lsp::Lsp::new(&root),
+        assist: assist::Assist::new(&root, PathBuf::from(&java_home).join("bin").join(if cfg!(windows) { "java.exe" } else { "java" })) };
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/runs", post(create_run))
         .route("/api/runs/{id}", get(get_run).merge(delete(cancel_run)))
+        .route("/api/assist/config", get(assist_config).merge(post(assist_save)).merge(delete(assist_clear)))
+        .route("/api/assist/models", post(assist_models))
+        .route("/api/assist/chat", post(assist_chat))
+        .route("/api/assist/chat/{id}", get(assist_poll).merge(delete(assist_cancel)))
         .route("/api/lsp/status", get(lsp_status))
         .route("/api/lsp/start", post(lsp_start))
         .route("/api/lsp/stop", post(lsp_stop))

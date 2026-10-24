@@ -12,7 +12,7 @@ Avoid a full VS Code fork during the hackathon. Monaco provides its editor compo
 
 ## Status — October 24, 2026
 
-The prototype meets the definition of done below and runs locally (`npm run build`, `npm start`). `npm test` runs 48 checks against real JVM runs. The code is on the `Java` branch of [MishraAsh2007/Hackachusetts_CodeTutor](https://github.com/MishraAsh2007/Hackachusetts_CodeTutor/tree/Java). Details are in [README.md](README.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md).
+The prototype meets the definition of done below and runs locally (`npm run build`, `npm start`). `npm test` runs 54 checks against real JVM runs. The code is on the `Java` branch of [MishraAsh2007/Hackachusetts_CodeTutor](https://github.com/MishraAsh2007/Hackachusetts_CodeTutor/tree/Java). Details are in [README.md](README.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 | Opportunity | Status |
 | --- | --- |
@@ -53,6 +53,18 @@ Agreed on October 24, 2026. Each phase ships with integration tests and a browse
 | Generate tests for my own programs | Sample arguments for static methods with common parameter types, run in one JVM; a review table where the student confirms or corrects each value (characterization tests) |
 | “It doesn’t show where we are in the array” | Index markers for `a[i]`, `list.get(i)`, `s.charAt(…)`, `grid[r][c]` and for-each loops, evaluated from recorded values; out-of-range indexes drawn past the end |
 | Fast mode (from phase 2) | `run` (no recording) and `compile` modes in the runner; Run tests batches method tests into one JVM |
+
+### Phase 1.6 — A real IDE, more help, optional AI ✅ done
+
+| Request | Shipped |
+| --- | --- |
+| “Enable all the functionality of an IDE” | Eclipse JDT LS behind the runner (found in the VS Code Java extension or installed with `npm run setup:jdtls`) and a small LSP client: typed completion with auto-import, hovers, signature help, definition, references, rename across files, refactorings, quick fixes, organize imports, formatting, inlay hints, errors as you type. Spelling in comments, strings and names |
+| “Catch even more errors” deterministically | JDT warnings for bugs that compile (`if (…);`, `x = x`, null-only variables, fall-through, unrelated `equals`) with plain-language explanations; an explain question for every uncaught exception type |
+| “Need help” with more visualizations | Built only from the recording: what happened, a per-step value table with loop passes, cells read (out-of-range marked), recursive calls with results, expected vs. printed output |
+| “Practice” after a question | Randomized problems for 16 concepts; the answer is what the JVM did, distractors are common misconceptions; can be opened as a project and traced |
+| AI when the deterministic tools can’t help, “Ask assistant” | Optional and off by default: any OpenAI-compatible endpoint (Ollama locally, Gemini free tier, Groq, OpenRouter, LM Studio). Context is the code, the recording, the current step and the open question (answer withheld). A Kiro key can’t serve this: Kiro API keys only authenticate its CLI and need a paid plan |
+
+Still open from this request: AI-written practice problems (their answers would still come from running them), and tested AI fix suggestions.
 
 ### Phase 2 — General Tutor questions and tested fixes
 

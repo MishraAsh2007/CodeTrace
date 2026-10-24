@@ -23,6 +23,8 @@ Open **http://127.0.0.1:4317**. For frontend hot reload, run `npm run dev` and o
 
 This workspace has a local Rust toolchain under `.tools/`; the launch scripts use it automatically. JDK discovery checks `TRACELAB_JAVA_HOME`, `JAVA_HOME`, JDKs bundled with the VS Code Java extension, then `javac` on PATH. Student code is always compiled with `--release 21`.
 
+**Java language server (optional, recommended).** Full editor features come from Eclipse JDT LS. TraceLab uses `TRACELAB_JDTLS_HOME`, a copy in `.tools/jdtls`, or the one inside the VS Code Java extension (`redhat.java`). Without either, run `npm run setup:jdtls` (downloads JDT LS 1.63.0, about 50 MB, and checks its SHA-256). The status bar shows **Java: ready** when it is running; without it the editor falls back to snippets and keyword completion. Set `TRACELAB_LANGUAGE_SERVER=off` to disable it. It starts in 5–20 s and uses up to 1 GB of memory.
+
 ## Examples
 
 The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse examples**) has 18 programs. Every buggy example has tests that fail until it is fixed, and the Tutor offers an explain question and a repair question grounded in the recorded run. `npm test` checks that each buggy example fails a test, that applying the Tutor's correct repair makes every test pass, and that each concept tour passes.
@@ -59,6 +61,34 @@ When javac rejects the program, the Tutor explains each error in plain language 
 
 Covered: missing `;` `)` `}` or closing quote, misspelled variables, methods and classes (edit distance), missing imports for common JDK classes, `length` vs `length()` vs `size()`, `String`↔number conversions (`Integer.parseInt`, `nextInt`, `String.valueOf`), lossy conversions, missing `return`, uninitialized locals, non-static access from `main`, unreported checked exceptions (`throws`), duplicate declarations, unreachable code, `if (…);` before `else`, `'a'` vs `"a"`, assigning to `final`, constructor typos, `==` used as a statement, returning a value from `void`, and file/class name mismatches (rename or move). Other errors get an explanation without an automatic fix. Fixes are suggestions for the student to accept; when an error has several causes, the explanation says so.
 
+## Editor
+
+With the language server running, the editor has completions that know types and members (choosing one adds its import), parameter hints, hovers, go to definition (F12), find references (Shift+F12), rename across files (F2), refactorings such as extract variable or method (Ctrl+Shift+R), quick fixes (Ctrl+.), organize imports (Shift+Alt+O), formatting (Shift+Alt+F), parameter-name hints for literal arguments, and errors and warnings as you type. Warnings are tuned for beginner bugs that still compile (an `if (…);`, `x = x`, `a == a`, using a variable that can only be null, a missing `break`, `equals` between unrelated types, an unused value), and the Problems tab and hovers explain each one in plain words.
+
+Spelling is checked in comments, strings and the parts of names (`totalAmout` → “Amout”), skipping programming words and JDK names. Ctrl+. suggests a correction or adds the word to your dictionary (kept in this browser). **⋯ → Editor settings** turns spelling and parameter hints on or off.
+
+The language server reads a copy of the open project in `.local/lsp/project` and serves one project at a time (the most recently active tab).
+
+## Need help and practice
+
+- **Need help?** appears under a Tutor question and after a run that threw, hung or printed the wrong output. It tells the story of the run from the recording: what stopped it and what the exception means, then shows a table of the variables on the failing line at every step (with the loop pass and changed values highlighted; click a row to jump there), which cells of an array, list or String were read (out-of-range reads marked), the recursive calls with their arguments and results, and expected vs. printed output for a failing test.
+- **Practice this** makes a small problem on the same concept (array bounds, String indexes, loop counts, integer division, division by zero, `==` vs `equals`, pass-by-value, aliasing, recursion, null, parsing, removing while looping, types, scope, object state, return values). Values are randomized, and the correct answer is never computed by TraceLab: it runs the program on the JVM, and the answer is what Java printed or threw. Wrong answers are common misconceptions. **Open as a project** lets you trace it.
+- Every uncaught exception gets an explain question, including list indexes, `InputMismatchException`, `NoSuchElementException`, `ClassCastException`, `UnsupportedOperationException` and `StackOverflowError`.
+
+## AI assistant (optional)
+
+**Ask** in the Tutor opens a chat about the current program. It sees the code (with line numbers), the recorded run (output, exception, the current step's values, the value table from Need help), the open Tutor question without its answer, test results and editor problems. It is told to rely on recorded values, to say when the recording doesn't show something, and to give hints before solutions. Answers stream in and are labelled as AI answers that can be wrong. Need help, compile errors without an automatic fix, and practice problems link to it.
+
+TraceLab doesn't include a model. Choose one in the setup dialog; anything with an OpenAI-compatible `/chat/completions` endpoint works:
+
+| Option | Cost and privacy |
+| --- | --- |
+| [Ollama](https://ollama.com) on this computer (`http://127.0.0.1:11434/v1`) | Free, private, no key. `ollama pull qwen2.5-coder:7b` (about 4.7 GB); a 3B model is faster on a laptop CPU. |
+| Google Gemini (`https://generativelanguage.googleapis.com/v1beta/openai`) | Free tier with a key from Google AI Studio; code is sent to Google, and free-tier prompts may be used to improve its products. |
+| Groq, OpenRouter, LM Studio, others | Free tiers or local servers; use **List models** to pick one. |
+
+A Kiro subscription can't be used here: its API keys only authenticate the Kiro CLI, need a paid plan, and its terms don't cover routing requests from other apps. The runner relays requests through a small Java helper (so the Rust server needs no TLS stack) and keeps the configuration, including the key, in `.local/ai.json` on this computer. The key is never sent back to the browser. Plain `http://` is accepted only for servers on this computer.
+
 ## The learning loop
 
 1. Open **The extra iteration** and press **Run** (Ctrl+Enter). The JVM throws `ArrayIndexOutOfBoundsException` in `ArraySum.java`.
@@ -69,7 +99,7 @@ Covered: missing `;` `)` `}` or closing quote, misspelled variables, methods and
 
 ## Features
 
-- **IDE:** Monaco editor (with its find, command palette, hovers and quick fixes), a project library, multiple files and packages with a package-tree Explorer, rename/move/delete, compiler diagnostics with explanations and checked fixes in the editor and Problems panel, lightweight completions (snippets such as `sout`/`fori`, keywords, common JDK types, project identifiers; not semantic IntelliSense), keyboard shortcuts, light/dark/system themes, resizable editor/debugger and bottom-panel splits, collapsible sidebar and Tutor, autosave, import/export, share links (the project travels in the URL fragment, which is not sent to the server), and trace export.
+- **IDE:** Monaco editor (with its find, command palette, hovers and quick fixes), semantic Java features through Eclipse JDT LS (see [Editor](#editor)), spelling, a project library, multiple files and packages with a package-tree Explorer, rename/move/delete, compiler diagnostics with explanations and checked fixes in the editor and Problems panel, snippets such as `sout`/`fori`, keyboard shortcuts, light/dark/system themes, resizable editor/debugger and bottom-panel splits, collapsible sidebar and Tutor, autosave, import/export, share links (the project travels in the URL fragment, which is not sent to the server), and trace export.
 - **Debugger:** real JDK 21 compilation and JDI capture; frames with stable activation IDs, parameters, return values, statics and exceptions; stack and heap columns with reference arrows; renderers for arrays, strings, boxed values, `ArrayList`, `LinkedList`, `ArrayDeque`, `PriorityQueue`, `HashMap`/`LinkedHashMap`/`TreeMap`, `HashSet`/`LinkedHashSet`/`TreeSet` and `StringBuilder`; changed/new highlighting; index markers that show where the code is in an array, list, string or 2D array (`values[i]`, `list.get(j)`, `word.charAt(word.length() - 1 - i)`, `grid[r][c]`, and the current element of a for-each loop), with an out-of-range index drawn as a dashed cell past the end and a hint such as `→ values[2] = 2` next to the index variable; a “Changes” strip narrating each step; step into/back, frame-aware **Over**, **Out** and **Back** (F10, Shift+F11, Shift+F10); scrubber, autoplay, filter and replay bookmarks.
 - **Tutor:** predict/explain/fix questions for array and string bounds, null fields and `Map.get` misses, division by zero, `NumberFormatException`, `ConcurrentModificationException`, non-terminating loops, runaway recursion, string identity, integer division, pass-by-value, aliasing (objects and arrays), return values, state changes and compiler errors (lossy conversion, missing symbols). A question is shown only when the recorded run supports its premise. Repair questions highlight the line and jump to it for editing. Tests run in fresh JVMs; a failing test can be debugged directly; concepts practiced are tallied per browser.
 - **Runner:** step/time/output/trace limits, partial traces on limits, cancellation, one job at a time, incremental polling, job cleanup, and host/origin checks.
@@ -82,7 +112,7 @@ Output is read asynchronously, so a chunk may appear one step early or late; the
 
 Default limits: 500 steps (configurable 10–2,000), 8 s execution, 96 MiB heap, 32,768 output characters, 24 MiB trace, 24 frames, 64 objects, 32 locals per frame, 32 elements per array or collection, 24 fields per object and 12 traversal levels. The runner keeps the latest eight runs; the browser keeps the current and previous run.
 
-TraceLab never calls student methods such as `toString()` to display objects. Library internals are hidden except for the renderers above. Multi-threaded programs are not supported. Not yet included: semantic IntelliSense (Eclipse JDT LS), Maven/Gradle dependencies, live breakpoints, expression stepping, test types beyond program output and method calls, generated tests for instance methods, collaboration, other languages, and a production sandbox. The Tutor is deterministic and needs no API key.
+TraceLab never calls student methods such as `toString()` to display objects. Library internals are hidden except for the renderers above. Multi-threaded programs are not supported. Not yet included: Maven/Gradle dependencies, live breakpoints, expression stepping, test types beyond program output and method calls, generated tests for instance methods, collaboration, other languages, and a production sandbox. The Tutor, Need help, practice, compile help and the editor are deterministic and need no API key; only the optional assistant uses a model.
 
 ## Tests
 
@@ -90,7 +120,7 @@ TraceLab never calls student methods such as `toString()` to display objects. Li
 npm test
 ```
 
-Builds the worker and runner, runs the Rust unit tests, then runs 48 integration checks against real JVM programs over HTTP: tracing semantics, collections, frame identity, limits, cancellation, API rejection, every gallery example and its repair, share links, source analysis, import/zip round trips, the project library, method-call tests (values, arrays, collections, exceptions, void and instance-method errors), every new-project template, plain-run and compile-only modes, index markers, compile help (each suggested fix for 28 javac errors must compile), test generation, and the website/IDE/404 routes. Port 4317 must be free.
+Builds the worker and runner, runs the Rust unit tests, then runs 54 integration checks against real JVM programs over HTTP: tracing semantics, collections, frame identity, limits, cancellation, API rejection, every gallery example and its repair, share links, source analysis, import/zip round trips, the project library, method-call tests (values, arrays, collections, exceptions, void and instance-method errors), every new-project template, plain-run and compile-only modes, index markers, compile help (each suggested fix for 28 javac errors must compile), test generation, spelling and warning explanations, the Java language server (completion, live problems, quick fixes, rename across files; skipped when none is installed), Need help visualizations, explain questions for other exception types, practice problems for every concept, the AI assistant against a mock server, and the website/IDE/404 routes. Port 4317 must be free.
 
 ## Structure
 
@@ -104,10 +134,16 @@ web/javasource.ts, importer.ts, zip.ts    Java source analysis, imports/exports,
 web/tests.ts, testgen.ts, templates.ts    Output and method-call tests, test generation, new-project templates
 web/compilehelp.ts                        javac error explanations and fixes
 web/cursors.ts                            Index markers for arrays, lists, strings and for-each loops
+web/help.ts, exceptions.ts, practice.ts    Need help views, exception guide, JVM-checked practice problems
+web/lsp.ts, lspmonaco.ts                  Language-server client and its Monaco editor features
+web/linthelp.ts, spell.ts, spell.worker.ts  Warning explanations and spelling
+web/assistant.ts                          AI assistant context, prompt and answer rendering
 web/examples.ts                           Example projects and gallery metadata
 web/public/screenshots/                   Product screenshots used by the site
 server/main.rs                            Rust HTTP API, job supervision, limits, static files
+server/lsp.rs, assist.rs                  Eclipse JDT LS bridge; optional AI assistant relay
 worker/TraceWorker.java                   Java compiler + JDI adapter, emits NDJSON
+worker/AssistProxy.java                   HTTPS relay for the assistant
 scripts/                                  Tool discovery, build, launch and integration tests
 docs/PROTOCOL.md                          Execution API and trace contract
 HACKATHON_PLAN.md                         Research, Python Tutor comparison, roadmap and demo script

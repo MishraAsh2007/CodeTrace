@@ -72,6 +72,30 @@ The runner has no special endpoint for these. The browser adds a generated `Trac
 
 **Run tests** and test generation use a batch form of the harness in `run` mode: `main` evaluates many expressions in turn, each as `run(<id>, () -> <expression>)` on its own source line, and prints `TRACELAB_RESULT <id> value …` or `TRACELAB_RESULT <id> throws …` after each one. A javac error on a harness line is attributed to that expression, which is dropped before retrying. If the batch stops early (timeout, output limit or `System.exit`), the first expression without a result is reported as unfinished and the rest run in a new batch. "Debug this test" still records a single expression with the one-call harness.
 
+## Language server bridge
+
+Editor features come from Eclipse JDT LS, which the runner starts on demand and shares between page loads. The browser speaks plain LSP JSON-RPC; the runner only frames it.
+
+- `GET /api/lsp/status` → `{state, reason, session}`; `state` is `off`, `running`, `stopped` or `unavailable` (no server installed).
+- `POST /api/lsp/start` starts the server if needed and returns `{session, next, initialized, rootPath, settingsPath, runtimePath, runtimeName}`. When a new page connects to a running server, the runner closes the previous page's documents, answers its `initialize` with the cached result and drops a second `initialized`; `shutdown` and `exit` from pages are ignored. The runner sets `initialize.processId` to its own PID so JDT LS exits if the runner is killed.
+- `POST /api/lsp/files {files}` mirrors the project into `.local/lsp/project` (same path rules as runs) and deletes other `.java` files there; it returns `{created, removed}`.
+- `POST /api/lsp/send {session, messages}` writes up to 200 JSON-RPC messages. A stale session gets HTTP 409.
+- `GET /api/lsp/receive?session&since&wait` long-polls (up to 25 s) for server messages with sequence ≥ `since`: `{session, state, reason, next, messages}`.
+- `POST /api/lsp/stop` stops the server.
+
+Compiler settings (`.local/lsp/compiler.prefs`) match `--release 21` and raise beginner-relevant warnings.
+
+## AI assistant relay
+
+Off until configured. The configuration lives in `.local/ai.json` (override with `TRACELAB_AI_CONFIG`).
+
+- `GET /api/assist/config` → `{configured, provider, url, model, hasKey, local}`. The key itself is never returned.
+- `POST /api/assist/config {provider, url, model, key?}` saves it; omitting `key` keeps the saved one, an empty string clears it. `url` must be `https://`, or `http://` for `localhost`, `127.0.0.1` or `[::1]`. `DELETE` removes it.
+- `POST /api/assist/models` lists model ids from `{url}/models`.
+- `POST /api/assist/chat {messages, maxTokens?}` starts a streamed `{url}/chat/completions` request (at most 40 messages, 160 KB, two at a time) and returns `{id}`. `GET /api/assist/chat/{id}` → `{status: running|done|error, text, error}`; `DELETE` stops it.
+
+The request goes through `worker/AssistProxy.java` (Java's HTTP client), which receives the method, URL, headers (including `Authorization`) and body on stdin and streams response lines back.
+
 ## Future adapters
 
 Keep the replay/UI dependent on the event schema, not JDI classes. Additional runtimes should report explicit capabilities and preserve their own language semantics. Version the schema when changing meaning. A new adapter must pass semantic fixtures for aliasing, recursion, exceptions, input/output, limits and source mapping before its language is advertised as supported.

@@ -3,7 +3,7 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import 'monaco-editor/esm/vs/editor/edcore.main';
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles } from 'lucide';
+import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles } from 'lucide';
 import { categories, copyExample, demoFor, demos, exampleIndex, examples } from './examples';
 import type { DemoCategory } from './examples';
 import { exceptionMessage, failingCheck, normalizeOutput, output, questionsFor, sameSource, snapshots, validateProject, valueText } from './learning';
@@ -25,6 +25,12 @@ import { applyEdits, compileIssues } from './compilehelp';
 import type { CompileFix, CompileIssue, LineEdit } from './compilehelp';
 import { JavaLanguageClient } from './lsp';
 import { lintHelp } from './linthelp';
+import { buildHelp } from './help';
+import type { HelpVisual } from './help';
+import { hasPractice, practiceFor, practiceOptions, practiceOutcome } from './practice';
+import type { PracticeItem } from './practice';
+import { buildMessages, contextMessage, PROVIDERS, renderMarkdown } from './assistant';
+import type { AssistStatus, ChatMessage } from './assistant';
 import { checkable, spellingTokens } from './spell';
 import SpellWorker from './spell.worker?worker';
 import { registerJavaLanguageFeatures, toMarkers } from './lspmonaco';
@@ -41,7 +47,7 @@ import './tokens.css';
 import './style.css';
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
-const iconSet = { Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles };
+const iconSet = { Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles };
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 /** Escapes text and renders `backtick` spans as inline code. */
@@ -230,9 +236,17 @@ $('#app').innerHTML = `
       </section>
     </main>
     <aside class="coach" aria-label="Tutor">
-      <div class="coach-header"><h2>${icon('lightbulb')}Tutor</h2><button id="collapse-coach" class="icon-btn small" title="Hide Tutor" aria-label="Hide Tutor">${icon('panel-right-close')}</button></div>
+      <div class="coach-header"><h2>${icon('lightbulb')}Tutor</h2><div class="coach-header-actions"><button id="toggle-assist" class="btn btn-ghost btn-compact" title="Ask the AI assistant about this program" aria-expanded="false">${icon('messages-square')}Ask</button><button id="collapse-coach" class="icon-btn small" title="Hide Tutor" aria-label="Hide Tutor">${icon('panel-right-close')}</button></div></div>
       <div class="coach-scroll">
         <ol class="learning-stages" id="learning-stages" aria-label="Debugging steps"></ol>
+        <section id="assistant" class="assistant-card" aria-label="AI assistant" hidden>
+          <div class="card-title">${icon('messages-square')}<h3>Assistant</h3><span class="assist-actions"><button id="assist-new" class="icon-btn small" title="New conversation" aria-label="New conversation">${icon('rotate-ccw')}</button><button id="assist-settings" class="icon-btn small" title="Assistant settings" aria-label="Assistant settings">${icon('settings-2')}</button><button id="assist-close" class="icon-btn small" title="Close the assistant" aria-label="Close the assistant">${icon('x')}</button></span></div>
+          <span id="assist-model" class="assist-model"></span>
+          <div id="assist-log" class="assist-log" aria-live="polite"></div>
+          <div class="assist-quick" id="assist-quick"></div>
+          <form id="assist-form" class="assist-form"><label class="sr-only" for="assist-input">Ask about this program</label><textarea id="assist-input" rows="2" placeholder="Ask about this program, the error or a line…" maxlength="4000"></textarea><div class="assist-buttons"><button type="button" id="assist-stop" class="btn btn-secondary btn-compact" hidden>${icon('square')}Stop</button><button type="submit" id="assist-send" class="btn btn-primary btn-compact">${icon('send')}Send</button></div></form>
+          <p class="assist-note" id="assist-note"></p>
+        </section>
         <div id="coach-content"></div>
         <section class="tests-card"><div class="card-title">${icon('list-checks')}<h3>Tests</h3><span class="tab-count" id="tests-count"></span><button id="edit-checks" class="link-btn">Edit</button></div><p class="muted" id="tests-blurb">Each test runs your current code in a fresh JVM and checks its output or a method’s result.</p><div class="tests-actions"><button id="verify" class="btn btn-secondary">${icon('play')}Run tests</button><button id="add-test" class="btn btn-ghost">${icon('list-plus')}Add test</button><button id="generate-tests" class="btn btn-ghost" title="Try sample arguments on your methods and turn the results into tests you confirm">${icon('wand-sparkles')}Generate</button></div><button id="save-run-test" class="link-btn" hidden>${icon('save')}Save this run’s output as a test</button><div id="check-results" aria-live="polite"></div></section>
         <section class="progress-card" id="progress-card"></section>
@@ -917,12 +931,15 @@ function renderStages() {
 
 function renderProgress() {
   const entries = Object.entries(progress).filter(([concept]) => CONCEPTS[concept]);
-  $('#progress-card').innerHTML = entries.length ? `<div class="card-title">${icon('trophy')}<h3>Concepts practiced</h3><button id="reset-progress" class="link-btn" title="Clear practice history in this browser">Reset</button></div><div class="concept-chips">${entries.map(([concept, p]) => `<span class="concept-chip" title="${p.answered} answered · ${p.firstTry} correct on the first try">${esc(CONCEPTS[concept])}<b>${p.firstTry}/${p.answered}</b></span>`).join('')}</div>` : '';
+  $('#progress-card').innerHTML = entries.length ? `<div class="card-title">${icon('trophy')}<h3>Concepts practiced</h3><button id="reset-progress" class="link-btn" title="Clear practice history in this browser">Reset</button></div><div class="concept-chips">${entries.map(([concept, p]) => hasPractice(concept)
+    ? `<button class="concept-chip" data-practice="${esc(concept)}" title="${p.answered} answered · ${p.firstTry} correct on the first try. Click to practice.">${esc(CONCEPTS[concept])}<b>${p.firstTry}/${p.answered}</b></button>`
+    : `<span class="concept-chip" title="${p.answered} answered · ${p.firstTry} correct on the first try">${esc(CONCEPTS[concept])}<b>${p.firstTry}/${p.answered}</b></span>`).join('')}</div>` : '';
   icons();
 }
 
 function renderCoach() {
   const el = $('#coach-content');
+  if (practice) { el.innerHTML = renderPracticeCard(); renderStages(); icons(); return; }
   const q = questions[questionIndex];
   const demo = demoFor(project.example);
   const mismatch = !dirtyTrace() ? failingCheck(run, project.checks) : null;
@@ -932,7 +949,7 @@ function renderCoach() {
       ? `<div class="brief"><span class="chip ${({ runtime: 'danger', output: 'warning', hang: 'violet', compile: 'info', tour: 'accent' } as const)[demo.category]}">${esc(categoryLabel(demo.category))}</span><h3>${esc(project.name)}</h3><p>${esc(demo.summary)}</p><dl><dt>Symptom</dt><dd>${esc(demo.symptom)}</dd><dt>Look at</dt><dd><code>${esc(demo.snippet)}</code></dd></dl><p class="muted">Run the program. The Tutor will ask about what actually happened, then help you choose a fix.</p><button class="btn btn-primary btn-block" data-run>${icon('play')}Run program</button></div>`
       : `<div class="empty-coach">${icon('lightbulb')}<h3>${run ? (running ? 'Recording…' : 'No questions for this run') : 'Questions appear after you run'}</h3><p>${run ? 'TraceLab asks only about things it can confirm from the recorded run, such as exceptions, values that changed, references and return values. Step through the trace and compare it with your tests.' : 'Run your program and the Tutor will ask about what it actually did: predict a value, explain an error, then choose a fix and test it.'}</p>${!run ? `<button class="btn btn-secondary" data-action="gallery">${icon('layout-grid')}Try an example</button>` : ''}</div>`;
     const help = compileHelpCard();
-    el.innerHTML = `${mismatchCard}${help || brief}`;
+    el.innerHTML = `${mismatchCard}${help || brief}${supportActions()}${renderHelpPanel()}`;
     renderStages(); icons();
     return;
   }
@@ -941,8 +958,232 @@ function renderCoach() {
   const label = { predict: 'Predict', explain: 'Explain', repair: 'Fix' }[q.kind];
   const editCta = correct && q.kind === 'repair' && q.focus ? `<button id="edit-focus" class="btn btn-secondary btn-block">${icon('wrench')}Edit ${esc(q.focus.file)}, line ${q.focus.line}</button>` : '';
   const inspect = q.step >= 0 || q.focus ? `<button id="go-question" class="link-btn">${icon('microscope')}${q.step >= 0 ? 'Show this moment' : 'Show the line'}${q.focus ? ` · line ${q.focus.line}` : ''}</button>` : '';
-  el.innerHTML = `${mismatchCard}<article class="question-card ${q.kind}"><header class="question-top"><span class="question-type">${label}</span><span class="question-count">${questionIndex + 1} of ${questions.length}</span></header><h3>${esc(q.title)}</h3><p class="question-context">${rich(q.context)}</p>${inspect}<h4>${rich(q.prompt)}</h4><div class="answer-options" role="group" aria-label="Answers">${q.options.map((option, index) => `<button class="answer-option ${answer === index ? (correct ? 'correct' : 'incorrect') : ''}" data-answer="${index}" aria-pressed="${answer === index}"><span class="option-key">${String.fromCharCode(65 + index)}</span><span>${rich(option)}</span>${answer === index ? icon(correct ? 'circle-check' : 'circle-x') : ''}</button>`).join('')}</div>${answer !== undefined ? `<div class="answer-feedback ${correct ? 'correct' : ''}" role="status"><strong>${correct ? 'Correct — that matches the recorded run.' : 'Not quite.'}</strong><p>${correct ? rich(q.explanation) : 'Compare your answer with the recorded values. Try again, or reveal a hint.'}</p>${editCta}</div>` : ''}<footer class="question-footer"><button id="hint" class="link-btn" ${hintsShown >= q.hints.length ? 'disabled' : ''}>${icon('lightbulb')}${hintsShown < q.hints.length ? `Hint (${hintsShown + 1} of ${q.hints.length})` : 'No more hints'}</button>${questions.length > 1 ? `<button id="next-question" class="link-btn">${questionIndex === questions.length - 1 ? 'First question' : 'Next question'}${icon('arrow-right')}</button>` : ''}</footer>${q.hints.slice(0, hintsShown).map(h => `<div class="hint">${rich(h)}</div>`).join('')}</article>${compileHelpCard()}`;
+  el.innerHTML = `${mismatchCard}<article class="question-card ${q.kind}"><header class="question-top"><span class="question-type">${label}</span><span class="question-count">${questionIndex + 1} of ${questions.length}</span></header><h3>${esc(q.title)}</h3><p class="question-context">${rich(q.context)}</p>${inspect}<h4>${rich(q.prompt)}</h4><div class="answer-options" role="group" aria-label="Answers">${q.options.map((option, index) => `<button class="answer-option ${answer === index ? (correct ? 'correct' : 'incorrect') : ''}" data-answer="${index}" aria-pressed="${answer === index}"><span class="option-key">${String.fromCharCode(65 + index)}</span><span>${rich(option)}</span>${answer === index ? icon(correct ? 'circle-check' : 'circle-x') : ''}</button>`).join('')}</div>${answer !== undefined ? `<div class="answer-feedback ${correct ? 'correct' : ''}" role="status"><strong>${correct ? 'Correct — that matches the recorded run.' : 'Not quite.'}</strong><p>${correct ? rich(q.explanation) : 'Compare your answer with the recorded values. Try again, or reveal a hint.'}</p>${editCta}</div>` : ''}<footer class="question-footer"><button id="hint" class="link-btn" ${hintsShown >= q.hints.length ? 'disabled' : ''}>${icon('lightbulb')}${hintsShown < q.hints.length ? `Hint (${hintsShown + 1} of ${q.hints.length})` : 'No more hints'}</button>${questions.length > 1 ? `<button id="next-question" class="link-btn">${questionIndex === questions.length - 1 ? 'First question' : 'Next question'}${icon('arrow-right')}</button>` : ''}</footer>${q.hints.slice(0, hintsShown).map(h => `<div class="hint">${rich(h)}</div>`).join('')}${supportActions(q)}</article>${compileHelpCard()}${renderHelpPanel()}`;
   renderStages(); icons();
+}
+
+// ---------- Need help and practice ----------
+
+let helpOpen = false;
+/** The concept to practice for a question, or for what the run did when there is no question. */
+function practiceConcept(q?: Question): string | null {
+  if (q && hasPractice(q.concept)) return q.concept;
+  if (!run) return null;
+  const thrown = currentStates().find(e => e.exception && !e.exception.caught)?.exception?.type ?? '';
+  const byType: [RegExp, string][] = [[/ArrayIndexOutOfBounds/, 'array-bounds'], [/StringIndexOutOfBounds/, 'string-bounds'], [/NullPointer/, 'null-reference'], [/Arithmetic/, 'division-by-zero'], [/NumberFormat|InputMismatch/, 'parsing-input'], [/ConcurrentModification/, 'concurrent-modification'], [/IndexOutOfBounds/, 'array-bounds']];
+  const reason = run.events.at(-1)?.stopReason;
+  return byType.find(([re]) => re.test(thrown))?.[1] ?? (reason === 'step-limit' ? 'loop-termination' : reason === 'compile-error' ? 'compile-errors' : null);
+}
+/** Need help, Practice and Ask, under a question or after a run that went wrong. */
+function supportActions(q?: Question): string {
+  if (!run || running) return '';
+  const end = run.events.at(-1)?.stopReason;
+  const wentWrong = !!q || ['exception', 'step-limit', 'timeout'].includes(end ?? '') || !!failingCheck(run, project.checks);
+  const concept = practiceConcept(q);
+  if (!wentWrong && !concept) return '';
+  return `<div class="support-actions">${wentWrong && end !== 'compile-error' ? `<button class="btn btn-ghost btn-compact" id="need-help" aria-expanded="${helpOpen}">${icon('circle-help')}${helpOpen ? 'Hide help' : 'Need help?'}</button>` : ''}${concept ? `<button class="btn btn-ghost btn-compact" data-practice="${esc(concept)}" title="A similar problem, checked by running it on the JVM">${icon('dumbbell')}Practice this</button>` : ''}</div>`;
+}
+
+function renderHelpPanel(): string {
+  if (!helpOpen || !run || running || dirtyTrace()) return '';
+  const view = buildHelp(run, { question: questions[questionIndex], step, checks: project.checks });
+  const visual = (v: HelpVisual): string => {
+    if (v.kind === 'table') return `<figure class="help-figure"><figcaption><strong>${esc(v.title)}</strong><span>${esc(v.caption)}</span></figcaption><div class="help-scroll"><table class="help-table"><thead><tr>${v.columns.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${v.rows.map(r => `<tr class="${r.mark ?? ''}" data-goto-step="${r.step}" tabindex="0" title="Go to step ${r.step + 1}">${r.cells.map((c, i) => `<td class="${r.changed[i] ? 'changed' : ''}">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>${v.hidden ? `<p class="help-more">${v.hidden} earlier or later rows not shown.</p>` : ''}</figure>`;
+    if (v.kind === 'calls') return `<figure class="help-figure"><figcaption><strong>${esc(v.title)}</strong><span>${esc(v.caption)}</span></figcaption><ol class="help-calls">${v.calls.map(c => `<li style="--depth:${c.depth}" class="${c.failed ? 'failed' : ''}"><button class="link-btn" data-goto-step="${c.step}">${esc(c.label)}</button><span>${esc(c.result)}</span></li>`).join('')}</ol>${v.hidden ? `<p class="help-more">${v.hidden} more calls not shown.</p>` : ''}</figure>`;
+    if (v.kind === 'cells') return `<figure class="help-figure"><figcaption><strong>${esc(v.title)}</strong><span>${esc(v.caption)}</span></figcaption><div class="help-cells">${v.cells.map(c => `<span class="help-cell ${c.reads ? 'read' : ''} ${c.outside ? 'outside' : ''}" title="${c.outside ? 'Outside the valid range' : `Index ${c.index}`}${c.reads ? `, read ${c.reads} time${c.reads === 1 ? '' : 's'}` : ''}"><small>${c.index}</small><b>${esc(c.outside ? '✕' : c.value)}</b>${c.reads ? `<em>×${c.reads}</em>` : ''}</span>`).join('')}</div></figure>`;
+    return `<figure class="help-figure"><figcaption><strong>${esc(v.title)}</strong><span>${esc(v.caption)}</span></figcaption><div class="help-scroll"><table class="help-table diff"><thead><tr><th>#</th><th>Expected</th><th>Printed</th></tr></thead><tbody>${v.lines.map((l, i) => `<tr class="${l.same ? '' : 'error'}"><td>${i + 1}</td><td>${esc(l.expected ?? '(nothing)')}</td><td>${esc(l.actual ?? '(nothing)')}</td></tr>`).join('')}</tbody></table></div></figure>`;
+  };
+  return `<section class="help-panel" aria-label="Help"><div class="card-title">${icon('circle-help')}<h3>${esc(view.title)}</h3><button class="link-btn" id="close-help">Close</button></div>
+    <ol class="help-story">${view.story.map(s => `<li>${esc(s)}</li>`).join('')}</ol>${view.visuals.map(visual).join('')}
+    ${view.tips.length ? `<h4 class="help-subhead">Things to check</h4><ul class="help-tips">${view.tips.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+    <p class="help-note">${icon('shield-check')}Everything here comes from the recorded run, not from a guess.</p>
+    <button class="btn btn-secondary btn-compact" data-ask="${esc('Explain step by step why this happened, using the recorded values. Then tell me what to check, without giving me the full fix.')}">${icon('messages-square')}Still stuck? Ask the assistant</button></section>`;
+}
+
+type PracticeState = { concept: string; seed: number; status: 'loading' | 'ready' | 'error'; item?: PracticeItem; html?: string; options: string[]; correct: number; answer?: number; attempts: number; recorded: boolean; error?: string };
+let practice: PracticeState | null = null;
+async function startPractice(concept: string) {
+  if (running || checking || genTask) { toast('Wait for the current run to finish, then try again.'); return; }
+  if (!runnerOnline) { toast('The Java runner isn’t connected. Start it with npm start, then try again.', 'error'); return; }
+  const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
+  practice = { concept, seed, status: 'loading', options: [], correct: -1, attempts: 0, recorded: false };
+  if (!layout.coach) setLayout({ coach: true });
+  renderCoach();
+  const task = (async () => {
+    await settleFixChecks();
+    // The answer is whatever the JVM does with the program; a problem that doesn't finish is replaced.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const item = practiceFor(concept, seed + attempt * 7919);
+      const events = await quietRun({ files: [{ name: 'Main.java', content: item.code }], mainClass: 'Main', stdin: '', maxSteps: 100, timeoutMs: 3000, mode: 'run' });
+      const outcome = practiceOutcome(events);
+      if (outcome.kind === 'other') continue;
+      const { options, correct } = practiceOptions(item, outcome, seed + attempt);
+      return { item, options, correct, html: await monaco.editor.colorize(item.code, 'java', { tabSize: 4 }) };
+    }
+    throw new Error('Couldn’t make a practice problem that finishes. Try again.');
+  })();
+  genTask = task;
+  try {
+    const ready = await task;
+    if (practice?.seed !== seed) return;
+    practice = { ...practice, ...ready, status: 'ready' };
+  } catch (error) {
+    if (practice?.seed === seed) practice = { ...practice, status: 'error', error: error instanceof Error ? error.message : String(error) };
+  } finally { genTask = null; }
+  renderCoach();
+}
+function answerPractice(index: number) {
+  if (!practice || practice.status !== 'ready' || practice.answer === practice.correct) return;
+  practice.answer = index; practice.attempts++;
+  if (index === practice.correct && !practice.recorded) { practice.recorded = true; progress = recordSolved(progress, practice.concept, practice.attempts === 1); renderProgress(); }
+  renderCoach();
+}
+// ---------- AI assistant (optional) ----------
+
+let assist: AssistStatus = { configured: false };
+type ChatTurn = ChatMessage & { error?: boolean; pending?: boolean };
+const chat: { turns: ChatTurn[]; busy: boolean; jobId: string | null } = { turns: [], busy: false, jobId: null };
+async function loadAssistStatus() { try { assist = await api<AssistStatus>('/assist/config'); } catch { assist = { configured: false }; } renderAssistant(); }
+const assistHost = () => { try { return new URL(assist.url ?? '').host; } catch { return assist.url ?? ''; } };
+function assistContext(): string {
+  const q = questions[questionIndex];
+  const problems = [...problemList().runDiagnostics.map(d => ({ file: d.file ?? '', line: d.line ?? 0, message: d.message ?? '' })), ...problemList().live.map(x => ({ file: x.file, line: x.d.range.start.line + 1, message: x.d.message }))];
+  return contextMessage({ project, activeFile, run, step, dirty: dirtyTrace(), question: q, questionSolved: !!q && solvedQuestions.has(q.id), tests: checkResults.map(r => ({ name: r.name, status: r.status, detail: r.detail })), problems });
+}
+function quickPrompts(): [string, string][] {
+  const end = run?.events.at(-1)?.stopReason;
+  const prompts: [string, string][] = [];
+  if (end === 'compile-error') prompts.push(['Explain this compile error', 'Explain the first compile error in plain words and what I should change. Don’t rewrite the whole program.']);
+  else if (end === 'exception' || end === 'step-limit' || end === 'timeout') prompts.push(['Why did this happen?', 'Explain step by step why this happened, using the recorded values. Then tell me what to check, without giving me the full fix.']);
+  prompts.push(['Give me a hint', 'Give me one small hint for what to look at next. Don’t give the answer.']);
+  prompts.push(['Explain the current line', `Explain what line ${currentSnapshot()?.location?.line ?? editor.getPosition()?.lineNumber ?? 1} of ${currentSnapshot()?.location?.file ?? activeFile} does, with the values it has at this step.`]);
+  if (run && end === 'completed') prompts.push(['Is the output right?', 'Walk me through how the program produced its output, and point out anything that looks unintended.']);
+  return prompts;
+}
+function renderAssistant() {
+  const section = $('#assistant');
+  $('#toggle-assist').setAttribute('aria-expanded', String(!section.hidden));
+  $('#assist-model').textContent = assist.configured ? `${assist.model} · ${assist.local ? 'on this computer' : assistHost()}` : '';
+  $('#assist-log').innerHTML = chat.turns.length ? chat.turns.map(t => t.role === 'user'
+    ? `<div class="assist-turn user"><p>${esc(t.content)}</p></div>`
+    : `<div class="assist-turn assistant ${t.error ? 'error' : ''}"><span class="assist-label">${icon(t.error ? 'triangle-alert' : 'sparkles')}${t.error ? 'Assistant error' : 'AI answer · may be wrong'}</span>${t.error ? `<p>${esc(t.content)}</p>` : renderMarkdown(t.content) || (t.pending ? `<p class="muted">${icon('loader-circle', 'spin')}Thinking…</p>` : '')}</div>`).join('')
+    : `<p class="assist-empty">Ask about this program: why a value changed, what an error means, or what to try next. The assistant sees your code, the recorded run and the current step.</p>`;
+  $('#assist-quick').innerHTML = chat.busy ? '' : quickPrompts().map(([label, prompt]) => `<button type="button" class="chip-btn" data-assist-prompt="${esc(prompt)}">${esc(label)}</button>`).join('');
+  $<HTMLButtonElement>('#assist-send').disabled = chat.busy;
+  $('#assist-stop').hidden = !chat.busy;
+  $('#assist-note').innerHTML = assist.local ? `${icon('shield-check')}Runs on this computer; your code isn’t sent anywhere.` : `${icon('info')}Your code and run details are sent to ${esc(assistHost())}. Values in the recording are real; explanations can be wrong.`;
+  const log = $('#assist-log'); log.scrollTop = log.scrollHeight;
+  icons();
+}
+/** Opens the assistant, or its setup when it isn't configured, and optionally asks a question right away. */
+function openAssistant(prompt?: string) {
+  if (!assist.configured) { assistantSetupDialog(prompt); return; }
+  if (!layout.coach) setLayout({ coach: true });
+  $('#assistant').hidden = false;
+  renderAssistant();
+  $('#assistant').scrollIntoView({ block: 'nearest' });
+  if (prompt) askAssistant(prompt); else $<HTMLTextAreaElement>('#assist-input').focus();
+}
+async function askAssistant(text: string) {
+  if (chat.busy || !text.trim()) return;
+  const history = chat.turns.filter(t => !t.error && !t.pending).map(({ role, content }) => ({ role, content }));
+  chat.turns.push({ role: 'user', content: text.trim() });
+  const answer: ChatTurn = { role: 'assistant', content: '', pending: true };
+  chat.turns.push(answer);
+  chat.busy = true; renderAssistant();
+  try {
+    const { id } = await api<{ id: string }>('/assist/chat', { method: 'POST', body: JSON.stringify({ messages: buildMessages(assistContext(), history, text.trim()) }) });
+    chat.jobId = id;
+    for (;;) {
+      await new Promise(r => setTimeout(r, 200));
+      const page = await api<{ status: string; text: string; error: string }>(`/assist/chat/${id}`);
+      answer.content = page.text;
+      if (page.status !== 'running') {
+        if (page.status === 'error') { answer.error = true; answer.content = page.error || 'The assistant failed.'; }
+        break;
+      }
+      renderAssistant();
+    }
+  } catch (error) { answer.error = true; answer.content = error instanceof Error ? error.message : String(error); }
+  finally { answer.pending = false; chat.busy = false; chat.jobId = null; renderAssistant(); }
+}
+function assistantSetupDialog(then?: string) {
+  const current = PROVIDERS.find(p => p.id === assist.provider) ?? PROVIDERS[0];
+  const radios = PROVIDERS.map(p => `<label class="template-card"><input type="radio" name="assist-provider" value="${p.id}" ${p.id === current.id ? 'checked' : ''} /><span><strong>${esc(p.name)}</strong><small>${esc(p.note)}</small></span></label>`).join('');
+  openDialog('Set up the AI assistant', `<p class="dialog-note">The assistant is optional: everything else in TraceLab works without it. It answers questions about your program using the code and the recorded run. TraceLab can’t provide a model itself, so choose one below. Free options: Ollama runs models on this computer; Google Gemini and others have free tiers that need an API key.</p>
+    <fieldset class="template-grid assist-providers"><legend>Where the model runs</legend>${radios}</fieldset>
+    <label class="dialog-label">Server address<input id="assist-url" value="${esc(assist.url ?? current.url)}" spellcheck="false" autocomplete="off" /><small>OpenAI-compatible base URL, ending before /chat/completions.</small></label>
+    <label class="dialog-label">Model<input id="assist-model-input" list="assist-models" value="${esc(assist.model ?? current.model)}" spellcheck="false" autocomplete="off" /><datalist id="assist-models"></datalist></label>
+    <label class="dialog-label">API key<input id="assist-key" type="password" value="" autocomplete="off" placeholder="${assist.hasKey ? 'Saved. Leave empty to keep it.' : 'Not needed for Ollama'}" /><small>Stored on this computer in .local/ai.json, and never sent back to the browser.</small></label>
+    <div class="assist-setup-actions"><button type="button" class="btn btn-secondary btn-compact" id="assist-list">${icon('list-checks')}List models</button><button type="button" class="btn btn-secondary btn-compact" id="assist-test">${icon('play')}Test</button>${assist.configured ? `<button type="button" class="btn btn-ghost btn-compact" id="assist-off">${icon('x')}Turn off</button>` : ''}<span id="assist-setup-status" class="assist-setup-status" role="status"></span></div>`, () => {
+    // Saving is async; the dialog closes after it succeeds.
+    throw new Error('__save__');
+  }, 'Save', { wide: true });
+  const body = $('#dialog-body');
+  const status = (html: string) => { $('#assist-setup-status').innerHTML = html; icons(); };
+  const values = () => ({ provider: document.querySelector<HTMLInputElement>('input[name="assist-provider"]:checked')?.value ?? 'custom', url: $<HTMLInputElement>('#assist-url').value.trim(), model: $<HTMLInputElement>('#assist-model-input').value.trim(), key: $<HTMLInputElement>('#assist-key').value || undefined });
+  const saveConfig = async () => { assist = await api<AssistStatus>('/assist/config', { method: 'POST', body: JSON.stringify(values()) }); renderAssistant(); };
+  body.addEventListener('change', e => {
+    const input = e.target as HTMLInputElement;
+    if (input.name !== 'assist-provider') return;
+    const preset = PROVIDERS.find(p => p.id === input.value)!;
+    if (preset.url) $<HTMLInputElement>('#assist-url').value = preset.url;
+    $<HTMLInputElement>('#assist-model-input').value = preset.model;
+  });
+  body.addEventListener('click', async e => {
+    const button = (e.target as Element).closest<HTMLElement>('button');
+    if (!button) return;
+    try {
+      if (button.id === 'assist-list') {
+        status(`${icon('loader-circle', 'spin')}Asking the server…`);
+        await saveConfig();
+        const { models } = await api<{ models: string[] }>('/assist/models', { method: 'POST', body: '{}' });
+        $('#assist-models').innerHTML = models.map(m => `<option value="${esc(m)}"></option>`).join('');
+        status(models.length ? `${icon('circle-check')}${models.length} model${models.length === 1 ? '' : 's'} available. Pick one in the Model field.` : `${icon('triangle-alert')}The server lists no models.${values().provider === 'ollama' ? ' Run ollama pull qwen2.5-coder:7b first.' : ''}`);
+      } else if (button.id === 'assist-test') {
+        status(`${icon('loader-circle', 'spin')}Sending a test message…`);
+        await saveConfig();
+        const { id } = await api<{ id: string }>('/assist/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'Reply with the single word OK.' }], maxTokens: 64 }) });
+        let page = { status: 'running', text: '', error: '' };
+        for (let i = 0; i < 300 && page.status === 'running'; i++) { await new Promise(r => setTimeout(r, 200)); page = await api(`/assist/chat/${id}`); }
+        status(page.status === 'done' ? `${icon('circle-check')}It works. The model answered: “${esc(page.text.slice(0, 60))}”` : `${icon('circle-x')}${esc(page.error || 'No answer.')}`);
+      } else if (button.id === 'assist-off') {
+        assist = await api<AssistStatus>('/assist/config', { method: 'DELETE' });
+        renderAssistant(); $('#assistant').hidden = true; $<HTMLDialogElement>('#dialog').close(); toast('The assistant is off. Its settings were removed.');
+      }
+    } catch (error) { status(`${icon('circle-x')}${esc(error instanceof Error ? error.message : String(error))}`); }
+  });
+  // Replace the synchronous submit with an async save.
+  $<HTMLFormElement>('#dialog-form').onsubmit = async event => {
+    event.preventDefault();
+    try {
+      await saveConfig();
+      $<HTMLDialogElement>('#dialog').close();
+      toast(`Assistant ready: ${assist.model}${assist.local ? ' on this computer' : ` via ${assistHost()}`}.`, 'success');
+      openAssistant(then);
+    } catch (error) { $('#dialog-error').textContent = error instanceof Error ? error.message : String(error); }
+  };
+}
+
+function renderPracticeCard(): string {
+  const p = practice!;
+  const label = CONCEPTS[p.concept] ?? 'Practice';
+  const head = `<header class="question-top"><span class="question-type practice">Practice</span><button class="link-btn" id="practice-close">${icon('arrow-left')}Back</button></header>`;
+  if (p.status === 'loading') return `<article class="question-card practice-card">${head}<p class="gen-progress">${icon('loader-circle', 'spin')}<span>Writing a ${esc(label.toLowerCase())} problem and running it on the JVM…</span></p></article>`;
+  if (p.status === 'error') return `<article class="question-card practice-card">${head}<div class="callout warning">${icon('triangle-alert')}<span>${esc(p.error)}</span></div><button class="btn btn-secondary" data-practice="${esc(p.concept)}">${icon('rotate-ccw')}Try again</button></article>`;
+  const item = p.item!;
+  const solved = p.answer === p.correct;
+  const revealed = solved || p.attempts >= 2;
+  const option = (text: string) => text.includes('\n') ? `<code class="multi">${esc(text)}</code>` : /^It /.test(text) ? esc(text) : `<code>${esc(text)}</code>`;
+  return `<article class="question-card practice-card"><span class="sr-only" aria-live="polite">${solved ? 'Correct' : ''}</span>${head}<h3>${esc(item.title)} <small class="muted">· ${esc(label)}</small></h3>
+    <pre class="practice-code">${p.html}</pre><h4>${esc(item.prompt)}</h4>
+    <div class="answer-options" role="group" aria-label="Answers">${p.options.map((o, i) => {
+      const state = p.answer === i ? (i === p.correct ? 'correct' : 'incorrect') : revealed && i === p.correct ? 'correct' : '';
+      return `<button class="answer-option ${state}" data-practice-answer="${i}" aria-pressed="${p.answer === i}"><span class="option-key">${String.fromCharCode(65 + i)}</span><span>${option(o)}</span>${state ? icon(state === 'correct' ? 'circle-check' : 'circle-x') : ''}</button>`;
+    }).join('')}</div>
+    ${p.answer !== undefined ? `<div class="answer-feedback ${solved ? 'correct' : ''}" role="status"><strong>${solved ? 'Correct.' : revealed ? 'Here’s what Java did.' : 'Not quite. Try again.'}</strong><p>${esc(item.why)}</p><p class="muted">${icon('shield-check')}The answer comes from running this program on the JVM.</p></div>` : ''}
+    ${revealed ? `<button class="link-btn" data-ask="${esc(`This practice program's real result (from running it) is ${JSON.stringify(p.options[p.correct])}. Explain why, step by step:\n\n\`\`\`java\n${item.code}\`\`\``)}">${icon('messages-square')}Ask the assistant why</button>` : ''}
+    <footer class="question-footer"><button class="link-btn" data-practice="${esc(p.concept)}">${icon('rotate-ccw')}Another one</button><button class="link-btn" id="practice-open">${icon('external-link')}Open as a project to trace it</button></footer></article>`;
 }
 
 function answerQuestion(index: number) {
@@ -1004,7 +1245,7 @@ function renderFix(fix: CompileFix, compact = false): string {
 }
 function renderIssue(issue: CompileIssue, hideFixes: boolean): string {
   const fixes = issue.fixes.map(f => renderFix(f)).join('');
-  const fixBlock = !issue.fixes.length ? '<p class="fix-none">No automatic fix for this one; the explanation describes what to change.</p>'
+  const fixBlock = !issue.fixes.length ? `<p class="fix-none">No automatic fix for this one; the explanation describes what to change. <button class="link-btn" data-ask="${esc(`Help me understand this compile error at ${issue.file} line ${issue.line}: ${issue.message.split('\n')[0]}. What should I change? Don't rewrite the whole program.`)}">Ask the assistant</button></p>`
     : hideFixes ? `<details class="fix-reveal"><summary>Show ${issue.fixes.length === 1 ? 'the suggested fix' : `${issue.fixes.length} suggested fixes`}</summary>${fixes}</details>` : fixes;
   return `<article class="compile-issue"><header>${icon('circle-x')}<div><h4>${esc(issue.title)}</h4><button class="link-btn" data-diagnostic="${esc(issue.file)}" data-line="${issue.line}">${esc(issue.file)} · line ${issue.line}</button>${issue.count > 1 ? `<small> · reported ${issue.count} times</small>` : ''}</div></header><p>${esc(issue.explanation)}</p><details class="javac-message"><summary>What javac said</summary><pre>${esc(issue.message)}</pre></details>${fixBlock}</article>`;
 }
@@ -1175,7 +1416,7 @@ async function collect(request: RunRequest, onUpdate?: (value: Run) => void): Pr
   throw new Error('The runner did not finish in time, so the run was stopped.');
 }
 
-function resetQuestions() { questions = []; questionIndex = 0; questionAnswers = {}; questionAttempts = {}; solvedQuestions = new Set(); hintsShown = 0; }
+function resetQuestions() { questions = []; questionIndex = 0; questionAnswers = {}; questionAttempts = {}; solvedQuestions = new Set(); hintsShown = 0; helpOpen = false; practice = null; }
 
 /** Checks the main class before a run, switching automatically when exactly one class has main. */
 function ensureMainClass(): boolean {
@@ -1979,6 +2220,13 @@ $('#edit-checks').onclick = () => testsDialog();
 $('#add-test').onclick = () => testsDialog({ name: `Test ${project.checks.length + 1}`, kind: 'output', stdin: '', expectedOutput: '' });
 $('#save-run-test').onclick = () => saveRunAsTest();
 $('#generate-tests').onclick = () => generateTestsDialog();
+$('#toggle-assist').onclick = () => { if ($('#assistant').hidden) openAssistant(); else { $('#assistant').hidden = true; renderAssistant(); } };
+$('#assist-close').onclick = () => { $('#assistant').hidden = true; renderAssistant(); };
+$('#assist-new').onclick = () => { if (!chat.busy) { chat.turns = []; renderAssistant(); } };
+$('#assist-settings').onclick = () => assistantSetupDialog();
+$('#assist-stop').onclick = () => { if (chat.jobId) api(`/assist/chat/${chat.jobId}`, { method: 'DELETE' }).catch(() => {}); };
+$<HTMLFormElement>('#assist-form').onsubmit = e => { e.preventDefault(); const input = $<HTMLTextAreaElement>('#assist-input'); const text = input.value; if (!text.trim() || chat.busy) return; input.value = ''; askAssistant(text); };
+$('#assist-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $<HTMLFormElement>('#assist-form').requestSubmit(); } });
 $('#gallery-close').onclick = () => closeGallery();
 $('#gallery').addEventListener('click', e => { if (e.target === e.currentTarget) closeGallery(); });
 $('#gallery-filters').addEventListener('click', e => { const b = (e.target as Element).closest<HTMLElement>('[data-filter]'); if (b) { galleryFilter = b.dataset.filter as DemoCategory | 'all'; renderGallery(); } });
@@ -2052,6 +2300,21 @@ canvas.addEventListener('focusin', e => { const root = document.getElementById('
 new ResizeObserver(() => scheduleArrows()).observe(canvas);
 document.fonts?.ready.then(() => scheduleArrows());
 
+/** Jumps to a recorded step from the help panel, showing the recorded source if the code changed. */
+function gotoRecordedStep(index: number) {
+  stopPlayback(); traceSource = dirtyTrace(); selectFile(activeFile, traceSource);
+  goTo(index);
+}
+// Help-table rows are focusable rows, not buttons.
+$('#coach-content').addEventListener('click', e => {
+  const row = (e.target as Element).closest<HTMLElement>('tr[data-goto-step]');
+  if (row) gotoRecordedStep(Number(row.dataset.gotoStep));
+});
+$('#coach-content').addEventListener('keydown', e => {
+  const row = (e.target as Element).closest<HTMLElement>('tr[data-goto-step]');
+  if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); gotoRecordedStep(Number(row.dataset.gotoStep)); }
+});
+
 document.addEventListener('click', e => {
   if (!(e.target as Element).closest('.menu-wrap')) { closeMenu(); closeProjectMenu(); }
   const target = (e.target as Element).closest<HTMLElement>('button, a[data-action]');
@@ -2085,6 +2348,18 @@ document.addEventListener('click', e => {
   }
   if (target.dataset.traceCheck !== undefined) traceCheck(Number(target.dataset.traceCheck));
   if (target.dataset.applyFix) applyFix(target.dataset.applyFix);
+  if (target.id === 'need-help') { helpOpen = !helpOpen; renderCoach(); if (helpOpen) document.querySelector('.help-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+  if (target.id === 'close-help') { helpOpen = false; renderCoach(); }
+  if (target.dataset.practice) startPractice(target.dataset.practice);
+  if (target.dataset.assistPrompt) askAssistant(target.dataset.assistPrompt);
+  if (target.dataset.ask) openAssistant(target.dataset.ask);
+  if (target.dataset.practiceAnswer !== undefined) answerPractice(Number(target.dataset.practiceAnswer));
+  if (target.id === 'practice-close') { practice = null; renderCoach(); }
+  if (target.id === 'practice-open' && practice?.item) {
+    const { project: created } = projectFromSources(`Practice: ${practice.item.title}`, [{ path: '', text: practice.item.code }]);
+    if (createAndOpen(created)) toast('Opened the practice program as a project. Press Run to trace it.', 'success');
+  }
+  if (target.dataset.gotoStep !== undefined && target.tagName === 'BUTTON') gotoRecordedStep(Number(target.dataset.gotoStep));
   if (target.dataset.diagnostic) { selectFile(target.dataset.diagnostic, dirtyTrace()); editor.revealLineInCenter(Number(target.dataset.line)); editor.setPosition({ lineNumber: Number(target.dataset.line), column: 1 }); editor.focus(); }
   if (target.id === 'view-recorded') { selectFile(activeFile, true); renderTrace(true); }
   if (target.id === 'return-editor') selectFile(activeFile, false);
@@ -2124,8 +2399,10 @@ document.addEventListener('keydown', e => {
 async function checkHealth() {
   try {
     const health = await api<{ ok: boolean; workerReady: boolean; languageServer?: string }>('/health');
+    const wasOnline = runnerOnline;
     runnerOnline = health.workerReady;
     if (health.languageServer) connectLanguageServer();
+    if (runnerOnline && !wasOnline) loadAssistStatus();
     $('#runner-label').textContent = health.workerReady ? 'Local runner' : 'Runner not built';
   } catch {
     runnerOnline = false;

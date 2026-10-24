@@ -15,15 +15,20 @@ import { applyEdits, compileIssues } from '../web/compilehelp.ts';
 import { cursorsFor } from '../web/cursors.ts';
 import { JavaLanguageClient } from '../web/lsp.ts';
 import { lintHelp } from '../web/linthelp.ts';
+import { buildHelp, enclosingLoop } from '../web/help.ts';
+import { answerText, practiceConcepts, practiceFor, practiceOptions, practiceOutcome } from '../web/practice.ts';
 import { checkable, spellingTokens } from '../web/spell.ts';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { buildMessages, contextMessage, renderMarkdown } from '../web/assistant.ts';
 import { templates } from '../web/templates.ts';
 import { readZip, writeZip } from '../web/zip.ts';
 
 await buildWorker();
 await command('cargo', ['test', '--locked']);
 await command('cargo', ['build', '--locked']);
-const env = environment();
+const env = { ...environment(), TRACELAB_AI_CONFIG: '.local/test-ai.json' };
+rmSync('.local/test-ai.json', { force: true });
 const server = spawn(serverBinary, [], { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 let serverLog = '';
 server.stdout.on('data', chunk => { serverLog += chunk; });
@@ -672,8 +677,13 @@ public class Main {
     assert.ok(messages.some(m => /ArrayList cannot be resolved to a type/.test(m)), messages.join(' | '));
     const completion = await client.request('textDocument/completion', { textDocument: { uri: client.uri('Main.java') }, position: { line: 5, character: 32 } });
     assert.ok((completion.items ?? completion).some(i => i.label.startsWith('length')), 'member completion on a String');
-    const unresolved = diagnostics['Main.java'].filter(d => /ArrayList/.test(d.message));
-    const actions = await client.request('textDocument/codeAction', { textDocument: { uri: client.uri('Main.java') }, range: unresolved[0].range, context: { diagnostics: unresolved } });
+    // Quick fixes need the server's latest diagnostics, which can be republished while the project is still being built.
+    let actions = [];
+    for (let i = 0; i < 20 && !actions.some(a => a.title === "Import 'ArrayList' (java.util)"); i++) {
+      if (i) await sleep(500);
+      const unresolved = diagnostics['Main.java'].filter(d => /ArrayList/.test(d.message));
+      actions = await client.request('textDocument/codeAction', { textDocument: { uri: client.uri('Main.java') }, range: unresolved[0].range, context: { diagnostics: unresolved } });
+    }
     assert.ok(actions.some(a => a.title === "Import 'ArrayList' (java.util)"), actions.map(a => a.title).join(' | '));
     const rename = await client.request('textDocument/rename', { textDocument: { uri: client.uri('Helper.java') }, position: { line: 1, character: 23 }, newName: 'doubled' }, 30000);
     const changed = [...Object.keys(rename.changes ?? {}), ...(rename.documentChanges ?? []).map(c => c.textDocument.uri)].map(uri => client.nameOf(uri)).sort();
@@ -683,6 +693,117 @@ public class Main {
     await again.connect([{ name: 'Main.java', content: main }]);
     assert.equal(again.state, 'ready', again.reason);
     await api('/api/lsp/stop', { method: 'POST', body: '{}' });
+  });
+  await test('need help: loop passes, cells read, recursive calls and output differences from the recording', async () => {
+    const bounds = await execute(request(examples[0]));
+    const help = buildHelp(bounds, { question: questionsFor(bounds)[0], step: 0, checks: examples[0].checks });
+    assert.equal(help.title, 'Why ArrayIndexOutOfBoundsException happened');
+    const table = help.visuals.find(v => v.kind === 'table');
+    assert.deepEqual(table.columns.slice(0, 3), ['Step', 'Line', 'Pass']);
+    assert.equal(table.rows.at(-1).mark, 'error');
+    assert.equal(table.rows.at(-1).cells[2], '4', 'the header ran a 4th time before the failing pass');
+    const cells = help.visuals.find(v => v.kind === 'cells');
+    assert.deepEqual(cells.cells.filter(c => c.outside).map(c => c.index), [3]);
+    assert.ok(help.story.some(s => /header on line 6 ran 4 times/.test(s)), help.story.join(' | '));
+    const runaway = await execute(request(example('sumto')));
+    const recursion = buildHelp(runaway, { step: snapshots(runaway).length - 1 });
+    assert.equal(recursion.title, 'Why the program didn’t finish');
+    const calls = recursion.visuals.find(v => v.kind === 'calls');
+    assert.equal(calls.title, 'The recursive calls');
+    assert.match(calls.calls[0].label, /^Main\.sumTo\(/);
+    assert.ok(calls.calls[1].depth > calls.calls[0].depth);
+    const wrong = await execute(oneFile('public class Main {\n public static void main(String[] args) {\n System.out.println("Total: 6");\n System.out.println("Average: 2");\n }\n}'));
+    const diff = buildHelp(wrong, { step: 0, checks: [{ name: 'avg', stdin: '', expectedOutput: 'Total: 6\nAverage: 2.0' }] });
+    assert.equal(diff.title, 'Why the output doesn’t match');
+    assert.deepEqual(diff.visuals.find(v => v.kind === 'diff').lines.map(l => l.same), [true, false]);
+    assert.equal(enclosingLoop('class A {\n void f() {\n  for (int i = 0; i < 3; i++) {\n   x();\n  }\n  do { y(); } while (z);\n }\n}', 4).header, 3);
+  });
+  await test('every uncaught exception type gets an explanation question', async () => {
+    const cases = [
+      ['import java.util.*;\npublic class Main {\n public static void main(String[] args) {\n List<Integer> xs = List.of(1, 2);\n xs.add(3);\n }\n}', 'exception-unsupportedoperation', '', /unmodifiable|doesn’t allow/],
+      ['import java.util.*;\npublic class Main {\n public static void main(String[] args) {\n List<Integer> xs = new ArrayList<>(List.of(1, 2, 3));\n System.out.println(xs.get(3));\n }\n}', 'exception-indexoutofbounds', '', /outside a list/],
+      ['import java.util.*;\npublic class Main {\n public static void main(String[] args) {\n Scanner in = new Scanner(System.in);\n int n = in.nextInt();\n }\n}', 'exception-inputmismatch', 'abc', /token that isn’t the type/],
+      ['public class Main {\n public static void main(String[] args) {\n Object o = "text";\n Integer n = (Integer) o;\n }\n}', 'exception-classcast', '', /cast asked Java/],
+    ];
+    for (const [source, id, stdin, meaning] of cases) {
+      const data = await execute({ ...oneFile(source), stdin });
+      const q = questionsFor(data).find(x => x.id === id);
+      assert.ok(q, `${id} in ${questionsFor(data).map(x => x.id)}`);
+      assert.match(q.options[q.correct], meaning);
+      assert.equal(new Set(q.options).size, 3);
+      if (stdin) assert.match(q.context, /The input had 1 token/);
+    }
+  });
+  await test('practice problems: every concept runs, and the JVM’s result is one of the options', async () => {
+    for (const concept of practiceConcepts) {
+      for (const seed of [1, 2, 3]) {
+        const item = practiceFor(concept, seed);
+        assert.equal(item.concept, concept);
+        const data = await execute({ ...oneFile(item.code), maxSteps: 100, timeoutMs: 3000, mode: 'run' });
+        const outcome = practiceOutcome(data.events);
+        assert.notEqual(outcome.kind, 'other', `${concept} #${seed} finished: ${JSON.stringify(data.events.slice(-2))}`);
+        const { options, correct } = practiceOptions(item, outcome, seed);
+        assert.equal(options[correct], answerText(outcome));
+        assert.ok(options.length >= 3 && new Set(options).size === options.length, `${concept} #${seed}: ${options.join(' | ')}`);
+      }
+    }
+    assert.equal(practiceFor('array-bounds', 42).code, practiceFor('array-bounds', 42).code, 'a seed always gives the same problem');
+  });
+  await test('AI assistant: context from the recording, key kept on the server, streamed answers and provider errors', async () => {
+    // A stand-in for an OpenAI-compatible server (Ollama, Gemini, …).
+    const seen = [];
+    const mock = createServer((req, res) => {
+      let body = '';
+      req.on('data', c => { body += c; });
+      req.on('end', () => {
+        seen.push({ url: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null });
+        if (req.url === '/v1/models') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"data":[{"id":"mock-small"},{"id":"mock-coder"}]}'); return; }
+        const request = JSON.parse(body);
+        if (request.model === 'bad') { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end('{"error":{"message":"invalid api key"}}'); return; }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        for (const piece of ['Index ', '3 is ', '**past** the end.']) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: piece } }] })}\n\n`);
+        res.end('data: [DONE]\n\n');
+      });
+    });
+    await new Promise(r => mock.listen(0, '127.0.0.1', r));
+    const port = mock.address().port;
+    try {
+      assert.deepEqual(await api('/api/assist/config'), { configured: false });
+      const remoteHttp = await fetch(base + '/api/assist/config', { method: 'POST', headers, body: JSON.stringify({ provider: 'custom', url: 'http://example.com/v1', model: 'm' }) });
+      assert.equal(remoteHttp.status, 400, 'plain http is only for servers on this computer');
+      const saved = await api('/api/assist/config', { method: 'POST', body: JSON.stringify({ provider: 'custom', url: `http://127.0.0.1:${port}/v1/`, model: 'mock-coder', key: 'sk-test-123' }) });
+      assert.equal(saved.configured, true); assert.equal(saved.hasKey, true); assert.equal(saved.local, true);
+      assert.ok(!JSON.stringify(await api('/api/assist/config')).includes('sk-test-123'), 'the key never goes back to the browser');
+      assert.deepEqual((await api('/api/assist/models', { method: 'POST', body: '{}' })).models, ['mock-coder', 'mock-small']);
+      const bounds = await execute(request(examples[0]));
+      const states = snapshots(bounds);
+      const q = questionsFor(bounds)[0];
+      const context = contextMessage({ project: examples[0], activeFile: 'ArraySum.java', run: bounds, step: states.length - 1, dirty: false, question: q, questionSolved: false });
+      assert.match(context, /Uncaught java\.lang\.ArrayIndexOutOfBoundsException at ArraySum\.java:7: Index 3 out of bounds for length 3/);
+      assert.match(context, /i = 3/);
+      assert.match(context, /Do not reveal the answer/);
+      assert.match(context, /  6 \| /, 'source is sent with line numbers');
+      const { id } = await api('/api/assist/chat', { method: 'POST', body: JSON.stringify({ messages: buildMessages(context, [], 'Why did it fail?') }) });
+      let page;
+      for (let i = 0; i < 100; i++) { page = await api(`/api/assist/chat/${id}`); if (page.status !== 'running') break; await sleep(100); }
+      assert.equal(page.status, 'done', page.error);
+      assert.equal(page.text, 'Index 3 is **past** the end.');
+      const chat = seen.find(s => s.url === '/v1/chat/completions');
+      assert.equal(chat.auth, 'Bearer sk-test-123');
+      assert.equal(chat.body.model, 'mock-coder'); assert.equal(chat.body.stream, true);
+      assert.match(chat.body.messages[0].content, /tutor inside TraceLab/);
+      assert.equal(chat.body.messages.at(-1).content, 'Why did it fail?');
+      await api('/api/assist/config', { method: 'POST', body: JSON.stringify({ provider: 'custom', url: `http://127.0.0.1:${port}/v1`, model: 'bad' }) });
+      const failed = await api('/api/assist/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }) });
+      for (let i = 0; i < 100; i++) { page = await api(`/api/assist/chat/${failed.id}`); if (page.status !== 'running') break; await sleep(100); }
+      assert.equal(page.status, 'error');
+      assert.match(page.error, /401: invalid api key\. Check the API key/);
+      assert.equal(seen.at(-1).auth, 'Bearer sk-test-123', 'an empty key field keeps the saved key');
+      assert.equal(renderMarkdown('Use `i < n`.\n\n- <script>x</script>\n\n```java\nint[] a = {1};\n```'), '<p>Use <code>i &lt; n</code>.</p><ul><li>&lt;script&gt;x&lt;/script&gt;</li></ul><pre class="md-code"><code>int[] a = {1};</code></pre>');
+    } finally {
+      mock.close();
+      await api('/api/assist/config', { method: 'DELETE' });
+    }
   });
   await test('project import rejects malformed nested values without throwing', () => {
     assert.equal(validateProject({ ...examples[0], files: [null] }), false);

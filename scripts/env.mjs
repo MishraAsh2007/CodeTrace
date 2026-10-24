@@ -85,7 +85,7 @@ export function run(command, args, env = environment()) {
 export async function buildWorker() {
   const env = environment();
   mkdirSync(join(root, '.local/worker'), { recursive: true });
-  await run(join(env.JAVA_HOME, 'bin', exe('javac')), ['--release', '21', '--add-modules', 'jdk.jdi', '-d', '.local/worker', 'worker/TraceWorker.java'], env);
+  await run(join(env.JAVA_HOME, 'bin', exe('javac')), ['--release', '21', '--add-modules', 'jdk.jdi', '-d', '.local/worker', 'worker/TraceWorker.java', 'worker/AssistProxy.java'], env);
 }
 
 export const serverBinary = join(root, 'target/debug', exe('tracelab-server'));

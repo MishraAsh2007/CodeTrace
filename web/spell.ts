@@ -41,5 +41,6 @@ export function spellingTokens(src: string): SpellToken[] {
 
 /** Tokens worth checking: no acronyms, no short name parts, nothing in the programming list. */
 export function checkable(tokens: SpellToken[], extra: Set<string> = new Set()): SpellToken[] {
-  return tokens.filter(t => t.word.length >= (t.kind === 'name' ? 4 : 3) && !/^[A-Z]+$/.test(t.word) && !PROGRAMMING_WORDS.has(t.word.toLowerCase()) && !extra.has(t.word.toLowerCase()));
+  // Short words are mostly abbreviations and sample data ("abc", "foo"), so only words of four or more letters count.
+  return tokens.filter(t => t.word.length >= 4 && !/^[A-Z]+$/.test(t.word) && !PROGRAMMING_WORDS.has(t.word.toLowerCase()) && !extra.has(t.word.toLowerCase()));
 }

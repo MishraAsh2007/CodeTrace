@@ -31,7 +31,10 @@ export function registerJavaLanguageFeatures(monaco: typeof Monaco, host: LspHos
   const hoverParts = (contents: any): Monaco.IMarkdownString[] => (Array.isArray(contents) ? contents : [contents]).filter(Boolean)
     .map((c: any) => typeof c === 'string' ? c : 'language' in c ? `\`\`\`${c.language}\n${c.value}\n\`\`\`` : c.value)
     // JDT LS adds a link to the internal workspace folder; it means nothing to a student.
-    .map((text: string) => text.replace(/\n*Source: \*\[[^\]]*\]\([^)]*\)\*/g, '').trim()).filter(Boolean).map((value: string) => ({ value }));
+    .map((text: string) => text.replace(/\n*Source: \*(?:\[[^\]]*\]\([^)]*\)|[^*]*)\*/g, '')
+      // Javadoc's relative links point into the JDK's HTML docs, which aren't available here.
+      .replace(/\[([^\]]+)\]\((?!https?:)[^)]*\)/g, '$1').trim())
+    .filter(Boolean).map((value: string) => ({ value }));
   const location = (loc: any): Monaco.languages.Location | null => {
     const file = client.nameOf(loc.uri ?? loc.targetUri);
     const model = file ? host.modelOf(file) : null;
