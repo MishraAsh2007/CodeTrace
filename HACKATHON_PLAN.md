@@ -84,6 +84,8 @@ Checked first with BST insert/in-order, BFS on an adjacency list, recursive grid
 
 All structure views grow sideways and scroll, keep their scroll position across steps, bring the current node into view, fold, and open larger over the debugger with step buttons (Esc closes). Linked lists are drawn as chains.
 
+Follow-up (October 24): **tests and honest explanations.** A blank project used to start with a "Prints a greeting" test, so any real program failed it and the Tutor and Need help explained a bug that didn't exist. Now the blank template has no tests; other template tests are marked as starter tests and a failure is reported as "this test may be out of date" with **Remove it**; every failing test says who might be wrong (starter, generated from old code, AI guess, or yours). A run with no errors gets a verdict ("No problems found", or "No errors, but no tests say what it should do") and no Need help. Test generation covers instance methods (on objects it can build), records and `void` methods (by what they print), spreads samples across methods, and supports statement calls (`Counter c = new Counter(); c.add(2); c.value()`). **Ask the AI** suggests tests for what the code *should* do; every suggestion runs on the JVM, and disagreements are shown, not trusted.
+
 Next for this area: capture only what the current frame can reach when a heap is very large, Dijkstra-style weighted priority queues of `int[]` pairs on graphs, a “what does the queue hold after this iteration” question, and AI-written practice with a tracing step before it is shown.
 
 ### Phase 2 — General Tutor questions and tested fixes

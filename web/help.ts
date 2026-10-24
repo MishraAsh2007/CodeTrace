@@ -1,7 +1,7 @@
 import { cursorsFor } from './cursors.ts';
 import { exceptionGuide } from './exceptions.ts';
 import { maskJava } from './javasource.ts';
-import { exceptionMessage, failingCheck, normalizeOutput, output, snapshots } from './learning.ts';
+import { exceptionMessage, failingCheck, normalizeOutput, originNote, output, snapshots } from './learning.ts';
 import { describeValue, displayMethod, heapIndex, simpleType } from './narrate.ts';
 import type { Check, HeapObject, Question, Run, TraceEvent, TraceValue } from './types';
 
@@ -88,12 +88,14 @@ export function buildHelp(run: Run, options: { question?: Question; step: number
     story.push(`The recording stopped after ${states.length} steps without the program finishing.${hot ? ` Line ${hot.split(':')[1]} of ${hot.split(':')[0]} ran ${times} times.` : ''}`);
     story.push('A loop that never ends usually has a condition that never becomes false: check that something inside the loop moves its variable toward the end. Endless recursion needs a base case that is reached.');
   } else if (mismatch) {
-    title = 'Why the output doesn\u2019t match';
+    title = mismatch.starter ? 'The output differs from a starter test' : 'Why the output doesn\u2019t match';
     const expected = normalizeOutput(mismatch.check.expectedOutput).split('\n'), actual = mismatch.actual.split('\n');
     const first = expected.findIndex((l, i) => l !== actual[i]);
     const line = first < 0 ? Math.min(expected.length, actual.length) : first;
-    story.push(`The program finished, but its output differs from the test “${mismatch.check.name}” at output line ${line + 1}: expected ${JSON.stringify(expected[line] ?? '(nothing)')}, printed ${JSON.stringify(actual[line] ?? '(nothing)')}.`);
-    story.push('Find the statement that printed that line, then step back from it to see where the value first differed from what you expected.');
+    story.push(`The program finished without errors, but its output differs from the test “${mismatch.check.name}” at output line ${line + 1}: the test expects ${JSON.stringify(expected[line] ?? '(nothing)')}, and the program printed ${JSON.stringify(actual[line] ?? '(nothing)')}.`);
+    // A test is a claim about what the program should do; it can be the thing that's wrong.
+    story.push(originNote(mismatch.check));
+    if (!mismatch.starter) story.push('If the test is right, find the statement that printed that line, then step back from it to see where the value first differed from what you expected.');
     const lines = Array.from({ length: Math.max(expected.length, actual.length) }, (_, i) => ({ expected: expected[i] ?? null, actual: actual[i] ?? null, same: expected[i] === actual[i] }));
     visuals.push({ kind: 'diff', title: 'Expected and actual output', caption: `First difference on line ${line + 1}.`, lines: lines.slice(0, 40) });
   } else if (end?.stopReason === 'completed') {

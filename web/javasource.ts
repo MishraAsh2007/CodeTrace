@@ -34,6 +34,11 @@ export type JavaType = {
   end: number;
   hasMain: boolean;
   methods: JavaMethod[];
+  isAbstract: boolean;
+  /** Declared constructors; none means Java adds a public no-argument one (for classes). */
+  constructors: { params: JavaParam[]; isPrivate: boolean }[];
+  /** A record's components, from its header: `record Book(String title, int pages)`. */
+  components?: JavaParam[];
 };
 export type JavaSource = { packageName: string; packageIndex: number; packageEnd: number; imports: string[]; types: JavaType[] };
 
@@ -113,26 +118,38 @@ export function analyzeJava(src: string): JavaSource {
     const prefix = masked.slice(start, m.index);
     const kind = m[1] === '@interface' ? 'annotation' : m[1] as JavaType['kind'];
     const nameIndex = m.index + m[0].length - m[2].length;
-    types.push({ name: m[2], kind, isPublic: /\bpublic\b/.test(prefix), start: start + (src.slice(start, m.index).length - src.slice(start, m.index).trimStart().length), nameIndex, bodyStart, end, ...members(masked, depth, bodyStart, end, m[2]) });
+    const header = masked.slice(nameIndex + m[2].length, bodyStart);
+    const components = kind === 'record' ? header.match(/^\s*(?:<[^>]*>)?\s*\(([^)]*)\)/)?.[1] : undefined;
+    types.push({ name: m[2], kind, isPublic: /\bpublic\b/.test(prefix), isAbstract: /\babstract\b/.test(prefix), start: start + (src.slice(start, m.index).length - src.slice(start, m.index).trimStart().length), nameIndex, bodyStart, end,
+      ...(components !== undefined ? { components: parameters(components) } : {}), ...members(masked, depth, bodyStart, end, m[2]) });
     typeRe.lastIndex = end;
   }
   return { packageName, packageIndex, packageEnd, imports, types };
 }
 
-function members(masked: string, depth: Int32Array, bodyStart: number, end: number, typeName: string): { hasMain: boolean; methods: JavaMethod[] } {
+function members(masked: string, depth: Int32Array, bodyStart: number, end: number, typeName: string): { hasMain: boolean; methods: JavaMethod[]; constructors: JavaType['constructors'] } {
   const body = masked.slice(0, end);
   const methods: JavaMethod[] = [];
+  const constructors: JavaType['constructors'] = [];
   let hasMain = false;
   const call = new RegExp(`(${IDENT})\\s*\\(`, 'g');
   call.lastIndex = bodyStart;
   for (let m; (m = call.exec(body));) {
-    if (depth[m.index] !== 1 || KEYWORDS.has(m[1]) || m[1] === typeName) continue;
+    if (depth[m.index] !== 1 || KEYWORDS.has(m[1])) continue;
     const open = m.index + m[0].length - 1;
     const close = matchingParen(masked, open);
     if (close < 0) break;
     const after = masked.slice(close + 1, close + 200);
     if (!/^\s*(?:throws\s+[\w$.<>,\s]+)?[{;]/.test(after)) continue;
     const prefix = masked.slice(declarationStart(masked, m.index), m.index);
+    if (m[1] === typeName) {
+      // A constructor has only access modifiers and annotations before the class name.
+      if (!prefix.replace(/@[\w$.]+(?:\([^)]*\))?/g, '').replace(/\b(?:public|protected|private)\b/g, '').trim()) {
+        constructors.push({ params: parameters(masked.slice(open + 1, close)), isPrivate: /\bprivate\b/.test(prefix) });
+      }
+      call.lastIndex = close + 1;
+      continue;
+    }
     // A method declaration has a return type (or void) before its name; this excludes field initializers like `int x = f();`.
     if (prefix.includes('=') || !/[\w$>\]]\s+$/.test(prefix) || /\b(?:record|new|class|interface|enum|throw|return)\s+$/.test(prefix)) continue;
     const isStatic = /\bstatic\b/.test(prefix);
@@ -141,7 +158,7 @@ function members(masked: string, depth: Int32Array, bodyStart: number, end: numb
     if (m[1] === 'main' && isStatic && /\bvoid\s+$/.test(prefix) && /^\(\s*(?:final\s+)?String\s*(?:\[\s*\]\s*[\w$]+|\.\.\.\s*[\w$]+|[\w$]+\s*\[\s*\])\s*\)$/.test(masked.slice(open, close + 1))) hasMain = true;
     call.lastIndex = close + 1;
   }
-  return { hasMain, methods };
+  return { hasMain, methods, constructors };
 }
 
 /** Line number (1-based) of an index. */
@@ -288,14 +305,15 @@ export function forEachLoops(src: string, range: { start: number; end: number })
   return loops;
 }
 
+export type TestTarget = { qualified: string; name: string; file: string; methods: JavaMethod[]; kind: JavaType['kind']; isAbstract: boolean; constructors: JavaType['constructors']; components?: JavaParam[] };
 /** Top-level classes that a method test can target. */
-export function testTargets(files: { name: string; content: string }[]): { qualified: string; name: string; file: string; methods: JavaMethod[] }[] {
-  const out: { qualified: string; name: string; file: string; methods: JavaMethod[] }[] = [];
+export function testTargets(files: { name: string; content: string }[]): TestTarget[] {
+  const out: TestTarget[] = [];
   for (const file of files) {
     const info = analyzeJava(file.content);
     for (const type of info.types) {
       if (type.kind === 'annotation') continue;
-      out.push({ qualified: info.packageName ? `${info.packageName}.${type.name}` : type.name, name: type.name, file: file.name, methods: type.methods });
+      out.push({ qualified: info.packageName ? `${info.packageName}.${type.name}` : type.name, name: type.name, file: file.name, methods: type.methods, kind: type.kind, isAbstract: type.isAbstract, constructors: type.constructors, components: type.components });
     }
   }
   return out;

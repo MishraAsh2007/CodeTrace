@@ -1,5 +1,6 @@
 import { exceptionGuide } from './exceptions.ts';
 import { recursionTree } from './structures.ts';
+import { isStarterCheck } from './templates.ts';
 import type { Check, HeapObject, Project, Question, Run, TraceEvent, TraceValue, Variable } from './types';
 
 export function snapshots(run: Run | null): TraceEvent[] {
@@ -55,12 +56,24 @@ export function exceptionMessage(run: Run, event: TraceEvent): string {
   return line ? line.slice(line.indexOf(prefix) + prefix.length).trim() : '';
 }
 
-/** A completed traced run whose input matches a check but whose output does not. */
-export function failingCheck(run: Run | null, checks: Check[]): { check: Check; actual: string } | null {
+/**
+ * A completed traced run whose input matches a check but whose output does not. `starter` marks a test that came
+ * with the project's template: it may describe the template's program rather than this one, so a failure is not
+ * evidence of a bug.
+ */
+export function failingCheck(run: Run | null, checks: Check[]): { check: Check; actual: string; starter: boolean } | null {
   if (!run || run.status !== 'finished' || run.events.at(-1)?.stopReason !== 'completed' || run.request.files.some(f => generated(f.name))) return null;
   const check = checks.find(c => c.kind !== 'call' && normalizeOutput(c.stdin) === normalizeOutput(run.request.stdin));
   if (!check || checkPassed(run, check)) return null;
-  return { check, actual: normalizeOutput(output(run, 'stdout')) };
+  return { check, actual: normalizeOutput(output(run, 'stdout')), starter: isStarterCheck(check) };
+}
+
+/** What a failing test's origin says about who might be wrong, for explanations. */
+export function originNote(check: Check): string {
+  if (isStarterCheck(check)) return 'This test came with the project template, so it describes the template’s program. If your program is meant to do something else, the test is out of date: edit or remove it.';
+  if (check.origin === 'generated') return 'This test was generated from what the code did when the test was made. If you changed the program on purpose, update the expected value; if not, the change broke something.';
+  if (check.origin === 'ai') return 'The AI assistant suggested this expected value. Check that it is really what the program should do before changing the code.';
+  return 'If the program is right and the test expects the wrong thing, edit the test instead.';
 }
 
 const IDENT = '[A-Za-z_$][\\w$]*';
@@ -870,6 +883,7 @@ export function validateProject(value: unknown): value is Project {
     && p.files.every(f => typeof f?.name === 'string' && /^(?:[A-Za-z_$][\w$]*\/)*[A-Za-z_$][\w$]*\.java$/.test(f.name) && typeof f.content === 'string' && f.content.length <= 65536)
     && new Set(p.files.map(f => f.name.toLowerCase())).size === p.files.length
     && Array.isArray(p.checks) && p.checks.length <= 20 && p.checks.every(c => c && typeof c.name === 'string' && c.name.length <= 120 && typeof c.stdin === 'string' && c.stdin.length <= 16384 && typeof c.expectedOutput === 'string' && c.expectedOutput.length <= 32768
+      && (c.origin === undefined || c.origin === 'template' || c.origin === 'generated' || c.origin === 'ai')
       && (c.kind === undefined || c.kind === 'output' || (c.kind === 'call' && typeof c.call === 'string' && c.call.length <= 500 && typeof c.target === 'string' && /^[\w$]+(?:\.[\w$]+)*$/.test(c.target))))
     && (p.startAt === undefined || (!!p.startAt && typeof p.startAt === 'object' && p.files.some(f => f.name === p.startAt!.file) && Number.isInteger(p.startAt.line) && p.startAt.line >= 1 && p.startAt.line <= 100000
       && (p.startAt.condition === undefined || (typeof p.startAt.condition === 'string' && p.startAt.condition.length <= 200 && !/[\r\n]/.test(p.startAt.condition)))

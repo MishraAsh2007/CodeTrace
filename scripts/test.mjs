@@ -9,8 +9,10 @@ import { decodeProject, encodeProject } from '../web/share.ts';
 import { analyzeJava, expectedPath, fileIssues, mainClasses, renameType, setPackage, splitTopLevelTypes } from '../web/javasource.ts';
 import { limitProblem, projectFromSources, projectFromZip, projectToZip } from '../web/importer.ts';
 import { Library } from '../web/library.ts';
-import { batchOutcome, batchRequest, batchResults, evaluateTest, harnessErrorDetail, requestForTest, testProblems, valuesMatch } from '../web/tests.ts';
-import { caseToCheck, planTests, sampleCalls } from '../web/testgen.ts';
+import { batchOutcome, batchRequest, batchResults, callShape, evaluateTest, harnessErrorDetail, qualifyCall, requestForTest, splitStatements, testProblems, valuesMatch } from '../web/tests.ts';
+import { aiTestMessages, caseToCheck, parseAiTests, planTests, sampleCalls } from '../web/testgen.ts';
+import { isStarterCheck } from '../web/templates.ts';
+import { originNote } from '../web/learning.ts';
 import { applyEdits, compileIssues } from '../web/compilehelp.ts';
 import { cursorsFor } from '../web/cursors.ts';
 import { chainViews, graphViews, gridViews, recursionTree, treeViews } from '../web/structures.ts';
@@ -484,7 +486,8 @@ public class Main {
       assert.equal(outcome.passed, passes, `${fields.call}: ${outcome.detail}`);
       if (detail) assert.match(outcome.detail, detail);
     }
-    assert.match(testProblems({ name: 'x', kind: 'call', target: 'app.Nope', call: 'f(); g()', stdin: '', expectedOutput: '' }, library).join(' '), /single expression.*Choose the class.*expected value/);
+    assert.match(testProblems({ name: 'x', kind: 'call', target: 'app.Nope', call: 'if (ok) { f(); }', stdin: '', expectedOutput: '' }, library).join(' '), /no blocks.*Choose the class.*expected value/);
+    assert.equal(testProblems({ name: 'x', kind: 'call', target: 'app.MathUtil', call: 'int[] xs = {1, 2}; MathUtil.average(xs)', stdin: '', expectedOutput: '1.5' }, library).length, 0, 'statements before the checked expression are allowed');
     assert.equal(valuesMatch('0.3', '0.30000000000000004'), true);
     assert.equal(valuesMatch('hi', '"hi"'), true);
     assert.equal(valuesMatch('throws java.lang.ArithmeticException', 'value 3'), false);
@@ -621,7 +624,9 @@ public class Main {
 }
 ` }];
     const plan = planTests(files);
-    assert.deepEqual(plan.skipped.map(s => s.method).sort(), ['counter', 'hello', 'secret']);
+    // Instance methods run on a new Main(); void methods are checked by what they print.
+    assert.deepEqual(plan.skipped.map(s => s.method).sort(), ['secret']);
+    assert.deepEqual(plan.cases.filter(c => c.method === 'counter' || c.method === 'hello').map(c => [c.call, c.expression, !!c.printed]), [['hello();', 'Main.hello();', true], ['new Main().counter()', 'new Main().counter()', false]]);
     assert.deepEqual(plan.cases.filter(c => c.method === 'max').map(c => c.call), ['max(new int[]{})', 'max(new int[]{7})', 'max(new int[]{3, 1, 2})', 'max(new int[]{-2, 5, 5, 0})']);
     assert.deepEqual(sampleCalls({ name: 'find', params: [{ type: 'int[]', name: 'xs' }, { type: 'int', name: 't' }] }).slice(0, 3), ['find(new int[]{}, 0)', 'find(new int[]{7}, 1)', 'find(new int[]{3, 1, 2}, 2)']);
     assert.deepEqual(sampleCalls({ name: 'add', params: [{ type: 'int', name: 'a' }, { type: 'int', name: 'b' }] })[0], 'add(0, 1)');
@@ -634,6 +639,10 @@ public class Main {
     assert.equal(results.get(id('isEven(-3)')).value, 'false');
     assert.equal(results.get(id('spin(0)')).value, '0');
     assert.equal(results.has(id('spin(1)')), false);
+    // Calls after the endless one need their own batch.
+    const later = batchResults(output(await execute(batchRequest(runBase, '', plan.cases.filter(c => c.method === 'counter' || c.method === 'hello')).request), 'stdout'));
+    assert.equal(later.get(id('new Main().counter()')).value, '1');
+    assert.equal(later.get(id('hello();')).value, '"hi"', 'a void method is checked by what it prints');
     // A call that doesn't compile is traced to its own line in the harness.
     const { request: bad, lines } = batchRequest(runBase, '', [{ id: 7, expression: 'Main.isEven(4)' }, { id: 8, expression: 'Main.hello()' }]);
     const error = (await execute({ ...bad, mode: 'compile' })).events.find(e => e.kind === 'diagnostic' && e.severity === 'error');
@@ -645,6 +654,67 @@ public class Main {
     assert.equal(batchOutcome({ ...check, expectedOutput: '8' }, results.get(id('max(new int[]{7})'))).detail, 'Expected 8, got 7');
     const project = { name: 'Gen', files, mainClass: 'Main', stdin: '', maxSteps: 100, checks: [check] };
     assert.equal(evaluateTest(await execute(requestForTest(project, check, { ...runBase, mode: 'run' })), check).passed, true);
+    assert.equal(check.origin, 'generated');
+  });
+  await test('tests for everything: objects, statements, printed output, spread sampling, and AI suggestions checked on the JVM', async () => {
+    const files = [
+      { name: 'Main.java', content: 'public class Main {\n    public static void main(String[] args) {\n        Counter c = new Counter(2);\n        c.add(3);\n        System.out.println(c.value());\n    }\n}\n' },
+      { name: 'Counter.java', content: `public class Counter {
+    private int value;
+    public Counter(int start) { value = start; }
+    public void add(int n) { value += n; }
+    public int value() { return value; }
+    public static void stars(int n) { System.out.println("*".repeat(n)); }
+}
+` },
+      { name: 'Shape.java', content: 'public abstract class Shape {\n    public abstract double area();\n    public String name() { return "shape"; }\n}\n' },
+      { name: 'Point.java', content: 'public record Point(int x, int y) {\n    public int sum() { return x + y; }\n}\n' },
+    ];
+    const plan = planTests(files);
+    const calls = plan.cases.map(c => c.call);
+    assert.ok(calls.includes('new Counter(2).value()'), 'a constructor with sample arguments builds the object');
+    assert.ok(calls.some(c => /^new Counter\(2\)\.add\(\d\);$/.test(c)), 'instance void methods are checked by what they print');
+    assert.ok(calls.includes('stars(1);'));
+    assert.ok(calls.some(c => c.startsWith('new Point(2, 2).sum(')), 'records are built from their components');
+    assert.deepEqual(plan.skipped.filter(s => s.className === 'Shape').map(s => s.method).sort(), ['area', 'name']);
+    // Many methods share the case budget instead of the first ones taking all of it.
+    const many = [{ name: 'M.java', content: `public class M {\n${Array.from({ length: 12 }, (_, i) => `    public static int f${i}(int n) { return n + ${i}; }`).join('\n')}\n}\n` }];
+    const spread = planTests(many);
+    assert.equal(new Set(spread.cases.map(c => c.method)).size, 12);
+    // Statement calls: build an object, change it, check a value; or check what statements print.
+    const project = { version: 1, name: 'Objects', example: '', files, mainClass: 'Main', stdin: '', maxSteps: 100, checks: [] };
+    const runBase = { files, mainClass: 'Main', stdin: '', maxSteps: 100, timeoutMs: 3000, mode: 'run' };
+    const stateful = { name: 'add twice', kind: 'call', target: 'Counter', call: 'Counter c = new Counter(1); c.add(2); c.add(3); c.value()', stdin: '', expectedOutput: '6' };
+    const printed = { name: 'stars', kind: 'call', target: 'Counter', call: 'stars(3);', stdin: '', expectedOutput: '"***"' };
+    assert.deepEqual(testProblems(stateful, project), []);
+    assert.deepEqual(testProblems({ ...stateful, call: 'if (true) { x(); }' }, project).length, 1);
+    for (const check of [stateful, printed]) assert.equal(evaluateTest(await execute(requestForTest(project, check, runBase)), check).passed, true, check.call);
+    const shapes = callShape('Counter c = new Counter(1); c.add(2); c.value()');
+    assert.deepEqual(shapes, { statements: ['Counter c = new Counter(1)', 'c.add(2)'], result: 'c.value()' });
+    assert.equal(callShape('Counter.stars(2);').result, null);
+    assert.deepEqual(splitStatements('a("x;y"); b(\';\'); c'), ['a("x;y")', "b(';')", 'c']);
+    assert.equal(qualifyCall('stars(2); stars(3);', 'Counter', files), 'Counter.stars(2); Counter.stars(3);');
+    // AI suggestions: unknown classes and malformed tests are dropped; the rest run on the JVM next to the code.
+    const reply = JSON.stringify({ tests: [
+      { kind: 'call', target: 'Counter', call: 'Counter c = new Counter(0); c.add(5); c.value()', expected: '5', why: 'adds to the start' },
+      { kind: 'call', target: 'Counter', call: 'new Counter(-1).value()', expected: '0', why: 'a wrong guess' },
+      { kind: 'call', target: 'Nope', call: 'x()', expected: '1' },
+      { kind: 'call', target: 'Counter', call: 'a();; b()', expected: '1' },
+      { kind: 'output', name: 'Main output', stdin: '', expected: '5' },
+    ] });
+    const parsed = parseAiTests(`Here you go:\n${reply}`, files);
+    assert.equal(parsed.tests.length, 3); assert.equal(parsed.dropped, 2);
+    const cases = parsed.tests.filter(t => t.kind === 'call').map((t, id) => ({ id, expression: qualifyCall(t.call, t.target, files) }));
+    const ran = batchResults(output(await execute(batchRequest(runBase, '', cases).request), 'stdout'));
+    assert.equal(valuesMatch(parsed.tests[0].expected, ran.get(0).value), true, 'the code agrees');
+    assert.deepEqual([valuesMatch(parsed.tests[1].expected, ran.get(1).value), ran.get(1).value], [false, '-1'], 'a disagreement is shown, not trusted');
+    assert.equal(typeof parseAiTests('no json here', files), 'string');
+    // A reply cut off mid-way keeps the tests that were complete.
+    const cut = parseAiTests(reply.slice(0, reply.indexOf('a wrong guess')), files);
+    assert.deepEqual(cut.tests.map(t => t.call), ['Counter c = new Counter(0); c.add(5); c.value()']);
+    const messages = aiTestMessages(files, [], plan, { hasMain: true, mainClass: 'Main' });
+    assert.match(messages[0].content, /SHOULD do/);
+    assert.match(messages[1].content, /### Counter\.java/);
   });
   await test('spelling checks words in comments, text and names; lint messages get explanations', async () => {
     const src = 'public class Main {\n    // We recieve the numbrs here\n    static int totalAmout = 0; // see https://exampel.com\n    String s = "Helo %d\\n";\n    char c = \'x\';\n}\n';
@@ -1068,6 +1138,30 @@ public class Main {
     const stack = await execute(oneFile('import java.util.*;\npublic class Main {\n public static void main(String[] args) {\n  Deque<Integer> stack = new ArrayDeque<>();\n  stack.push(1);\n  stack.push(2);\n  stack.push(3);\n  int top = stack.pop();\n  int next = stack.pop();\n  System.out.println(top + next);\n }\n}'));
     const popped = questionsFor(stack).find(q => q.id.startsWith('removal-'));
     assert.deepEqual([popped.concept, popped.options[popped.correct]], ['dfs', '3']);
+  });
+  await test('starter tests and clean runs: no bug is claimed without evidence', async () => {
+    assert.equal(templates.find(t => t.id === 'blank').create('x').checks.length, 0, 'a blank project starts without tests');
+    assert.ok(templates.filter(t => t.id !== 'blank').every(t => t.create('x').checks.every(c => c.origin === 'template' && isStarterCheck(c))));
+    const legacy = { name: 'Prints a greeting', stdin: '', expectedOutput: 'Hello, TraceLab!' };
+    assert.equal(isStarterCheck(legacy), true, 'projects made before origins were recorded');
+    assert.equal(isStarterCheck({ ...legacy, name: 'Mine' }), false);
+    const sum = oneFile('public class Main {\n    static int sum(int[] xs) { int t = 0; for (int x : xs) t += x; return t; }\n    public static void main(String[] args) {\n        System.out.println(sum(new int[]{1, 2, 3, 4, 5}));\n    }\n}\n');
+    const data = await execute(sum);
+    const mismatch = failingCheck(data, [legacy]);
+    assert.deepEqual([mismatch.starter, mismatch.actual], [true, '15']);
+    const help = buildHelp(data, { step: 0, checks: [legacy] });
+    assert.equal(help.title, 'The output differs from a starter test');
+    assert.ok(help.story.some(s => /came with the project template/.test(s)), help.story.join(' | '));
+    assert.ok(!help.story.some(s => /step back from it/.test(s)), 'no bug hunt for a starter test');
+    const own = { name: 'Sum', stdin: '', expectedOutput: '16' };
+    const ownHelp = buildHelp(data, { step: 0, checks: [own] });
+    assert.equal(ownHelp.title, 'Why the output doesn’t match');
+    assert.ok(ownHelp.story.some(s => /If the program is right and the test expects the wrong thing/.test(s)));
+    assert.match(originNote({ ...own, origin: 'generated' }), /generated from what the code did/);
+    assert.match(originNote({ ...own, origin: 'ai' }), /AI assistant suggested/);
+    assert.equal(failingCheck(data, [{ ...own, expectedOutput: '15' }]), null, 'a passing test is not a mismatch');
+    assert.equal(validateProject({ ...examples[0], checks: [{ ...examples[0].checks[0], origin: 'ai' }] }), true);
+    assert.equal(validateProject({ ...examples[0], checks: [{ ...examples[0].checks[0], origin: 'guess' }] }), false);
   });
   await test('Reset returns a project to how it was created', () => {
     const store = new Map();

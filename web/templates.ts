@@ -1,20 +1,25 @@
-import type { Project } from './types';
+import type { Check, Project } from './types';
 
-/** Starting points for new projects. Each is a working program with at least one passing test. */
+/**
+ * Starting points for new projects. Templates with a specific program come with tests for that program, marked
+ * as `template` tests: once the student writes something else, a failing template test says the test may be out
+ * of date instead of calling the program wrong. The blank template has no tests.
+ */
 export type Template = { id: string; name: string; description: string; icon: string; create: (name: string) => Project };
 
 const project = (name: string, files: Project['files'], extra: Partial<Project> = {}): Project =>
   ({ version: 1, name, example: '', mainClass: 'Main', stdin: '', maxSteps: 500, checks: [], files, ...extra });
+const starter = (checks: Check[]): Check[] => checks.map(c => ({ ...c, origin: 'template' }));
 
 export const templates: Template[] = [
   {
-    id: 'blank', name: 'Blank program', icon: 'file-code-2', description: 'One Main class that prints a line.',
+    id: 'blank', name: 'Blank program', icon: 'file-code-2', description: 'One Main class that prints a line. No tests until you add some.',
     create: name => project(name, [{ name: 'Main.java', content: `public class Main {
     public static void main(String[] args) {
         System.out.println("Hello, TraceLab!");
     }
 }
-` }], { checks: [{ name: 'Prints a greeting', stdin: '', expectedOutput: 'Hello, TraceLab!' }] }),
+` }]),
   },
   {
     id: 'input', name: 'Reads input', icon: 'keyboard', description: 'Reads numbers with Scanner. Tests supply the input.',
@@ -28,10 +33,10 @@ public class Main {
         System.out.println(a + b);
     }
 }
-` }], { stdin: '2 3', checks: [
+` }], { stdin: '2 3', checks: starter([
       { name: 'Adds two numbers', stdin: '2 3', expectedOutput: '5' },
       { name: 'Negative numbers', stdin: '-4 1', expectedOutput: '-3' },
-    ] }),
+    ]) }),
   },
   {
     id: 'classes', name: 'Class + Main', icon: 'boxes', description: 'A Counter class used from Main, with a method test.',
@@ -61,10 +66,10 @@ public class Main {
     }
 }
 ` },
-    ], { checks: [
+    ], { checks: starter([
       { name: 'Counts two increments', stdin: '', expectedOutput: '2' },
       { name: 'twice(21)', stdin: '', expectedOutput: '42', kind: 'call', target: 'Counter', call: 'twice(21)' },
-    ] }),
+    ]) }),
   },
   {
     id: 'packages', name: 'Packages', icon: 'package', description: 'An app.Main class and an app.model.Book record in packages.',
@@ -88,9 +93,13 @@ public record Book(String title, int pages) {
     }
 }
 ` },
-    ], { mainClass: 'app.Main', checks: [
+    ], { mainClass: 'app.Main', checks: starter([
       { name: 'Describes the book', stdin: '', expectedOutput: 'Dune has 412 pages' },
       { name: 'A long book', stdin: '', expectedOutput: 'true', kind: 'call', target: 'app.model.Book', call: 'new Book("Dune", 412).isLong()' },
-    ] }),
+    ]) }),
   },
 ];
+
+/** Tests that came with a template, including ones saved before tests recorded their origin. */
+const LEGACY = new Set(['Prints a greeting|Hello, TraceLab!', ...templates.flatMap(t => t.create('').checks.map(c => `${c.name}|${c.expectedOutput}`))]);
+export const isStarterCheck = (check: Check) => check.origin === 'template' || (check.origin === undefined && LEGACY.has(`${check.name}|${check.expectedOutput}`));

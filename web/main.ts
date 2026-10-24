@@ -6,16 +6,16 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles, GitFork, Maximize2, Minimize2, Network, Grid3x3, ListTree, Link, FlagTriangleRight } from 'lucide';
 import { categories, copyExample, demoFor, demos, exampleIndex, examples } from './examples';
 import type { DemoCategory } from './examples';
-import { exceptionMessage, expandEvents, failingCheck, normalizeOutput, output, questionsFor, sameSource, snapshots, validateProject, valueText } from './learning';
+import { exceptionMessage, expandEvents, failingCheck, normalizeOutput, originNote, output, questionsFor, sameSource, snapshots, validateProject, valueText } from './learning';
 import { Library, StorageFullError } from './library';
 import type { DocRef } from './library';
 import { droppedFiles, importFiles, limitProblem, projectFromSources, projectToZip, validFileName } from './importer';
 import { analyzeJava, fileIssues, mainClasses, preferredMain, renameType, setPackage, testTargets } from './javasource';
-import { batchOutcome, batchRequest, batchResults, describeTest, evaluateTest, harnessErrorDetail, isCallTest, isHarnessFile, requestForTest, testExpression, testProblems } from './tests';
+import { batchOutcome, batchRequest, batchResults, describeTest, evaluateTest, harnessErrorDetail, isCallTest, isHarnessFile, qualifyCall, requestForTest, testExpression, testProblems, valuesMatch } from './tests';
 import type { BatchCase, BatchResult, TestOutcome } from './tests';
-import { caseToCheck, packageOf, planTests } from './testgen';
-import type { CaseResult } from './testgen';
-import { templates } from './templates';
+import { aiTestMessages, caseToCheck, packageOf, parseAiTests, planTests } from './testgen';
+import type { AiTest, CaseResult } from './testgen';
+import { isStarterCheck, templates } from './templates';
 import { boxedValue, describeStep, describeValue, displayMethod, heapIndex, isInlineValue, returnedCall, simpleType, stepBackOver, stepOut, stepOver } from './narrate';
 import type { StoryItem } from './narrate';
 import { drawArrows, focusArrows } from './arrows';
@@ -1106,11 +1106,11 @@ function renderCoach() {
   if (practice) { el.innerHTML = renderPracticeCard(); renderStages(); icons(); return; }
   const q = questions[questionIndex];
   const demo = demoFor(project.example);
-  const mismatch = !dirtyTrace() ? failingCheck(run, project.checks) : null;
-  const mismatchCard = mismatch ? `<div class="callout warning">${icon('target')}<div><strong>Output doesn’t match “${esc(mismatch.check.name)}”</strong><p>This run used that test’s input. Expected <code>${esc(JSON.stringify(normalizeOutput(mismatch.check.expectedOutput)))}</code>, got <code>${esc(JSON.stringify(mismatch.actual))}</code>. Step back from the output to find where the values diverge.</p></div></div>` : '';
+  const mismatchCard = runVerdict();
   if (!q) {
     const brief = demo && demo.category !== 'tour' && !run
       ? `<div class="brief"><span class="chip ${({ runtime: 'danger', output: 'warning', hang: 'violet', compile: 'info', tour: 'accent' } as const)[demo.category]}">${esc(categoryLabel(demo.category))}</span><h3>${esc(project.name)}</h3><p>${esc(demo.summary)}</p><dl><dt>Symptom</dt><dd>${esc(demo.symptom)}</dd><dt>Look at</dt><dd><code>${esc(demo.snippet)}</code></dd></dl><p class="muted">Run the program. The Tutor will ask about what actually happened, then help you choose a fix.</p><button class="btn btn-primary btn-block" data-run>${icon('play')}Run program</button></div>`
+      : mismatchCard && run && !running ? ''
       : `<div class="empty-coach">${icon('lightbulb')}<h3>${run ? (running ? 'Recording…' : 'No questions for this run') : 'Questions appear after you run'}</h3><p>${run ? 'TraceLab asks only about things it can confirm from the recorded run, such as exceptions, values that changed, references and return values. Step through the trace and compare it with your tests.' : 'Run your program and the Tutor will ask about what it actually did: predict a value, explain an error, then choose a fix and test it.'}</p>${!run ? `<button class="btn btn-secondary" data-action="gallery">${icon('layout-grid')}Try an example</button>` : ''}</div>`;
     const help = compileHelpCard();
     el.innerHTML = `${mismatchCard}${help || brief}${supportActions()}${renderHelpPanel()}`;
@@ -1124,6 +1124,46 @@ function renderCoach() {
   const inspect = q.step >= 0 || q.focus ? `<button id="go-question" class="link-btn">${icon('microscope')}${q.step >= 0 ? 'Show this moment' : 'Show the line'}${q.focus ? ` · line ${q.focus.line}` : ''}</button>` : '';
   el.innerHTML = `${mismatchCard}<article class="question-card ${q.kind}"><header class="question-top"><span class="question-type">${label}</span><span class="question-count">${questionIndex + 1} of ${questions.length}</span></header><h3>${esc(q.title)}</h3><p class="question-context">${rich(q.context)}</p>${inspect}<h4>${rich(q.prompt)}</h4><div class="answer-options" role="group" aria-label="Answers">${q.options.map((option, index) => `<button class="answer-option ${answer === index ? (correct ? 'correct' : 'incorrect') : ''}" data-answer="${index}" aria-pressed="${answer === index}"><span class="option-key">${String.fromCharCode(65 + index)}</span><span>${rich(option)}</span>${answer === index ? icon(correct ? 'circle-check' : 'circle-x') : ''}</button>`).join('')}</div>${answer !== undefined ? `<div class="answer-feedback ${correct ? 'correct' : ''}" role="status"><strong>${correct ? 'Correct — that matches the recorded run.' : 'Not quite.'}</strong><p>${correct ? rich(q.explanation) : 'Compare your answer with the recorded values. Try again, or reveal a hint.'}</p>${editCta}</div>` : ''}<footer class="question-footer"><button id="hint" class="link-btn" ${hintsShown >= q.hints.length ? 'disabled' : ''}>${icon('lightbulb')}${hintsShown < q.hints.length ? `Hint (${hintsShown + 1} of ${q.hints.length})` : 'No more hints'}</button>${questions.length > 1 ? `<button id="next-question" class="link-btn">${questionIndex === questions.length - 1 ? 'First question' : 'Next question'}${icon('arrow-right')}</button>` : ''}</footer>${q.hints.slice(0, hintsShown).map(h => `<div class="hint">${rich(h)}</div>`).join('')}${supportActions(q)}</article>${compileHelpCard()}${renderHelpPanel()}`;
   renderStages(); icons();
+}
+
+/** Tests the student owns: everything except tests that came with a template. */
+const ownChecks = () => project.checks.filter(c => !isStarterCheck(c));
+/** Test failures from the last Run tests, if those results still match the code. */
+function failedChecks(): { result: (typeof checkResults)[number]; check: TestCase }[] {
+  if (!checksFresh()) return [];
+  return checkResults.filter(r => r.status === 'failed').map(r => ({ result: r, check: project.checks[r.index] })).filter(f => !!f.check);
+}
+/** Whether the last run, its tests or the Tutor show something actually wrong. */
+function somethingWrong(): boolean {
+  if (!run || running || dirtyTrace()) return false;
+  const end = run.events.at(-1)?.stopReason;
+  if (end && end !== 'completed' && end !== 'compiled') return true;
+  const mismatch = failingCheck(run, project.checks);
+  return (!!mismatch && !mismatch.starter) || failedChecks().some(f => !isStarterCheck(f.check)) || questions.some(q => q.kind === 'repair');
+}
+
+/**
+ * The Tutor's verdict on a finished run, so it never implies a bug the run doesn't show: an output test that
+ * fails, a starter test that may simply be out of date, or a clean run, with or without tests to back it up.
+ */
+function runVerdict(): string {
+  if (!run || running || dirtyTrace() || run.events.at(-1)?.stopReason !== 'completed') return '';
+  const mismatch = failingCheck(run, project.checks);
+  const shown = (text: string) => `<code>${esc(JSON.stringify(text))}</code>`;
+  if (mismatch && !mismatch.starter) {
+    return `<div class="callout warning">${icon('target')}<div><strong>Output doesn’t match “${esc(mismatch.check.name)}”</strong><p>This run used that test’s input. The test expects ${shown(normalizeOutput(mismatch.check.expectedOutput))}; the program printed ${shown(mismatch.actual)}. ${esc(originNote(mismatch.check))}</p><div class="callout-actions"><button class="btn btn-ghost btn-compact" data-action="edit-tests">${icon('pencil')}Edit tests</button></div></div></div>`;
+  }
+  const starterFailures = [...(mismatch?.starter ? [mismatch.check] : []), ...failedChecks().map(f => f.check).filter(isStarterCheck)].filter((c, i, all) => all.indexOf(c) === i);
+  const starterNote = starterFailures.length ? `<div class="callout info">${icon('info')}<div><strong>${starterFailures.length === 1 ? `The starter test “${esc(starterFailures[0].name)}” doesn’t match` : `${starterFailures.length} starter tests don’t match`}</strong><p>${esc(originNote(starterFailures[0]))}${mismatch?.starter ? ` It expects ${shown(normalizeOutput(mismatch.check.expectedOutput))}; your program printed ${shown(mismatch.actual)}.` : ''}</p><div class="callout-actions"><button class="btn btn-ghost btn-compact" data-remove-starters>${icon('trash-2')}Remove ${starterFailures.length === 1 ? 'it' : 'them'}</button><button class="btn btn-ghost btn-compact" data-action="edit-tests">${icon('pencil')}Edit tests</button></div></div></div>` : '';
+  const own = ownChecks();
+  const failed = failedChecks().filter(f => !isStarterCheck(f.check));
+  const printed = normalizeOutput(output(run, 'stdout'));
+  const what = printed ? ` and printed ${printed.split('\n').length === 1 ? `${shown(printed.length > 60 ? `${printed.slice(0, 57)}…` : printed)}` : `${printed.split('\n').length} lines`}` : '';
+  const neutral = questions.length ? '<p class="muted">The questions below are about how the program works. They don’t mean something is wrong.</p>' : '';
+  if (failed.length) return `${starterNote}<div class="callout warning">${icon('circle-x')}<div><strong>${failed.length} of ${checkResults.length} tests fail</strong><p>The program itself ran without errors. See the Tests card below for what each failing test expected, and use Debug this test to record it. ${esc(originNote(failed[0].check))}</p></div></div>`;
+  if (!own.length) return `${starterNote}<div class="callout subtle verdict">${icon('circle-check')}<div><strong>No errors in this run</strong><p>The program finished${what}. ${starterFailures.length ? 'No other tests' : 'No tests'} say what it should print or return, so TraceLab can’t tell whether the result is what you intended: that part is up to you, or to a test.</p><div class="callout-actions">${renderSaveOffer() ? `<button class="btn btn-secondary btn-compact" data-save-run-test>${icon('save')}Save this output as a test</button>` : ''}<button class="btn btn-ghost btn-compact" data-action="generate-tests">${icon('wand-sparkles')}Generate tests</button><button class="btn btn-ghost btn-compact" data-action="add-test">${icon('list-plus')}Write a test</button></div>${neutral}</div></div>`;
+  if (allChecksPassed()) return `${starterNote}<div class="callout success verdict">${icon('circle-check')}<div><strong>No problems found</strong><p>The program finished without errors, and all ${checkResults.length} test${checkResults.length === 1 ? '' : 's'} pass. Tests check the cases they describe, not every possible input.</p>${neutral}</div></div>`;
+  return `${starterNote}<div class="callout subtle verdict">${icon('circle-check')}<div><strong>No errors in this run</strong><p>The program finished${what}. Run the tests to check it against what it should do.</p><div class="callout-actions"><button class="btn btn-secondary btn-compact" data-action="run-tests">${icon('play')}Run tests</button></div>${neutral}</div></div>`;
 }
 
 // ---------- Need help and practice ----------
@@ -1145,7 +1185,8 @@ const conceptLabel = (concept: string) => CONCEPTS[concept] ?? (concept.startsWi
 function supportActions(q?: Question): string {
   if (!run || running) return '';
   const end = run.events.at(-1)?.stopReason;
-  const wentWrong = !!q || ['exception', 'step-limit', 'timeout'].includes(end ?? '') || !!failingCheck(run, project.checks);
+  // Need help explains a failure, so it appears only when the run, a test or a repair question shows one.
+  const wentWrong = somethingWrong();
   const concept = practiceConcept(q);
   if (!wentWrong && !concept) return '';
   return `<div class="support-actions">${wentWrong && end !== 'compile-error' ? `<button class="btn btn-ghost btn-compact" id="need-help" aria-expanded="${helpOpen}">${icon('circle-help')}${helpOpen ? 'Hide help' : 'Need help?'}</button>` : ''}${concept ? `<button class="btn btn-ghost btn-compact" data-practice="${esc(concept)}" title="A similar problem, checked by running it on the JVM">${icon('dumbbell')}Practice this</button>` : ''}</div>`;
@@ -1407,7 +1448,18 @@ function answerQuestion(index: number) {
 
 function renderCheckResults() {
   const stale = checkResults.length && !checksFresh();
-  $('#check-results').innerHTML = `${stale ? '<div class="callout subtle">The code or tests changed since these results. Run the tests again.</div>' : ''}${checkResults.map(r => `<div class="check-result ${r.status}">${icon(r.status === 'passed' ? 'circle-check' : r.status === 'failed' ? 'circle-x' : 'loader-circle', r.status === 'running' ? 'spin' : '')}<div><span>${esc(r.name)}</span>${r.detail ? `<small>${esc(r.detail)}</small>` : ''}${r.status === 'failed' && !stale && !running && !checking ? `<button class="link-btn trace-case" data-trace-check="${r.index}">${icon('microscope')}Debug this test</button>` : ''}</div></div>`).join('')}${allChecksPassed() ? `<div class="callout success">${icon('circle-check')}<span>All ${checkResults.length} tests pass.</span></div>` : ''}`;
+  const tag = (index: number) => {
+    const check = project.checks[index];
+    if (!check) return '';
+    const [label, title] = isStarterCheck(check) ? ['starter', 'Came with the project template'] : check.origin === 'generated' ? ['generated', 'Recorded what the code returned when the test was generated'] : check.origin === 'ai' ? ['AI', 'Expected value suggested by the AI assistant'] : ['', ''];
+    return label ? `<span class="test-origin" title="${esc(title)}">${label}</span>` : '';
+  };
+  // A failing test that the student didn't write says who might be wrong: the code, or the test.
+  const note = (r: (typeof checkResults)[number]) => {
+    const check = project.checks[r.index];
+    return r.status === 'failed' && check && (check.origin || isStarterCheck(check)) ? `<small class="test-origin-note">${esc(originNote(check))}</small>` : '';
+  };
+  $('#check-results').innerHTML = `${stale ? '<div class="callout subtle">The code or tests changed since these results. Run the tests again.</div>' : ''}${checkResults.map(r => `<div class="check-result ${r.status}">${icon(r.status === 'passed' ? 'circle-check' : r.status === 'failed' ? 'circle-x' : 'loader-circle', r.status === 'running' ? 'spin' : '')}<div><span>${esc(r.name)}${tag(r.index)}</span>${r.detail ? `<small>${esc(r.detail)}</small>` : ''}${note(r)}${r.status === 'failed' && !stale && !running && !checking ? `<button class="link-btn trace-case" data-trace-check="${r.index}">${icon('microscope')}Debug this test</button>` : ''}</div></div>`).join('')}${allChecksPassed() ? `<div class="callout success">${icon('circle-check')}<span>All ${checkResults.length} tests pass.</span></div>` : ''}`;
   renderStages(); icons();
 }
 
@@ -1678,11 +1730,19 @@ async function startRun(override?: RunRequest) {
 }
 
 /** Offers to save a finished run's output as a test, unless a test already covers that input. */
-function renderSaveRunTest() {
-  const offer = !!run && run.status === 'finished' && run.events.at(-1)?.stopReason === 'completed' && !dirtyTrace()
+function renderSaveOffer(): boolean {
+  return !!run && run.status === 'finished' && run.events.at(-1)?.stopReason === 'completed' && !dirtyTrace()
     && !run.request.files.some(f => f.name.endsWith('TraceLabCall__.java'))
-    && !project.checks.some(c => !isCallTest(c) && normalizeOutput(c.stdin) === normalizeOutput(run!.request.stdin));
-  $('#save-run-test').hidden = !offer;
+    && !project.checks.some(c => !isCallTest(c) && !isStarterCheck(c) && normalizeOutput(c.stdin) === normalizeOutput(run!.request.stdin));
+}
+function renderSaveRunTest() { $('#save-run-test').hidden = !renderSaveOffer(); }
+/** Removes the template's tests that fail (or all of them, after confirmation elsewhere). */
+function removeStarterTests() {
+  const failing = new Set([...failedChecks().map(f => f.check), ...(run ? [failingCheck(run, project.checks)?.check] : [])].filter((c): c is TestCase => !!c && isStarterCheck(c)));
+  if (!failing.size) return;
+  project.checks = project.checks.filter(c => !failing.has(c));
+  checkResults = []; save(); renderFiles(); renderConsole(); renderCheckResults(); renderCoach(); renderSaveRunTest(); setBusy();
+  toast(`Removed ${failing.size === 1 ? 'the starter test' : `${failing.size} starter tests`}. Add your own with Add test or Generate tests.`, 'success');
 }
 
 function applyDiagnostics() {
@@ -2191,7 +2251,7 @@ function testFields(test: DraftTest, index: number, targets: ReturnType<typeof t
       <div class="test-tools"><button type="button" class="icon-btn small" data-test-move="-1" title="Move up" aria-label="Move up" ${index === 0 ? 'disabled' : ''}>${icon('arrow-up')}</button><button type="button" class="icon-btn small" data-test-move="1" title="Move down" aria-label="Move down">${icon('arrow-down')}</button><button type="button" class="icon-btn small" data-test-copy title="Duplicate" aria-label="Duplicate test">${icon('copy')}</button><button type="button" class="icon-btn small" data-test-delete title="Delete" aria-label="Delete test">${icon('trash-2')}</button></div></header>
     ${call ? `<div class="test-grid call">
         <label>Class<select data-field="target">${targets.map(t => `<option value="${esc(t.qualified)}" ${t.qualified === test.target ? 'selected' : ''}>${esc(t.qualified)}</option>`).join('') || '<option value="">No classes found</option>'}</select></label>
-        <label>Call<input data-field="call" value="${esc(test.call ?? '')}" placeholder="sum(new int[]{1, 2})" spellcheck="false" maxlength="500" /><small>Call a static method by name, or create an object: <code>new Counter().next()</code></small></label>
+        <label>Call<input data-field="call" value="${esc(test.call ?? '')}" placeholder="sum(new int[]{1, 2})" spellcheck="false" maxlength="500" /><small>A call (<code>sum(xs)</code>, <code>new Counter().next()</code>), statements ending in the value to check (<code>Counter c = new Counter(); c.add(2); c.value()</code>), or statements ending in <code>;</code> to check what they print (<code>Shapes.square(2);</code>)</small></label>
         <label>Expected value<input data-field="expectedOutput" value="${esc(test.expectedOutput)}" placeholder='3   "text"   [1, 2]   throws ArithmeticException' spellcheck="false" /><small>Quotes around text are optional. Decimals match to about 9 digits.</small></label>
       </div>`
     : `<div class="test-grid">
@@ -2223,9 +2283,12 @@ function testsDialog(initial?: DraftTest, note?: string) {
       if (found.length) problems.push(`“${test.name || 'Untitled test'}”: ${found[0]}`);
     }
     if (problems.length) throw new Error(problems.length === 1 ? problems[0] : `${problems.length} tests need attention. ${problems[0]}`);
-    const checks: TestCase[] = drafts.map(t => t.kind === 'call'
+    const built: TestCase[] = drafts.map(t => t.kind === 'call'
       ? { name: t.name.trim(), kind: 'call', target: t.target, call: t.call!.trim(), stdin: t.stdin ?? '', expectedOutput: t.expectedOutput.trim() }
       : { name: t.name.trim(), stdin: t.stdin, expectedOutput: t.expectedOutput });
+    // A test keeps its origin (template, generated, AI) only while it is unchanged; an edited test is the student's.
+    const same = (a: TestCase, b: TestCase) => a.name === b.name && a.stdin === b.stdin && a.expectedOutput.trim() === b.expectedOutput.trim() && (a.kind ?? 'output') === (b.kind ?? 'output') && (a.call ?? '') === (b.call ?? '') && (a.target ?? '') === (b.target ?? '');
+    const checks: TestCase[] = built.map((c, i) => { const origin = drafts[i].origin; return origin && project.checks.some(o => o.origin === origin && same(o, c)) ? { ...c, origin } : c; });
     if (!validateProject({ ...project, checks })) throw new Error('One of the tests is too long. Inputs are limited to 16 KiB and outputs to 32 KiB.');
     project.checks = checks; save(); renderFiles(); renderConsole(); renderCheckResults(); renderCoach(); renderSaveRunTest(); setBusy();
     toast(`Saved ${checks.length} test${checks.length === 1 ? '' : 's'}.`, 'success');
@@ -2327,7 +2390,14 @@ function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
   return map;
 }
 
-type GenRow = { key: string; check: TestCase; label: string; expected: string; status: CaseResult['status'] | 'output'; detail?: string; checked: boolean };
+/**
+ * A row in Generate tests. `sampled` rows expect what the code returns now; `ai` rows expect what the assistant
+ * says the code should do, next to what the code actually returned.
+ */
+type GenRow = {
+  key: string; check: TestCase; label: string; expected: string; status: CaseResult['status'] | 'output'; detail?: string; checked: boolean;
+  source: 'sampled' | 'ai'; actual?: string; aiExpected?: string; why?: string; printed?: boolean;
+};
 
 async function generateTestsDialog() {
   if (running || checking || genTask) return;
@@ -2339,20 +2409,29 @@ async function generateTestsDialog() {
   const plan = planTests(project.files);
   const known = new Set(project.checks.filter(isCallTest).map(c => `${c.target}|${c.call}`));
   plan.cases = plan.cases.filter(c => !known.has(`${c.target}|${c.call}`));
-  const withOutput = mainClasses(project.files).includes(project.mainClass) && !project.checks.some(c => !isCallTest(c) && normalizeOutput(c.stdin) === normalizeOutput(project.stdin));
+  const hasMain = mainClasses(project.files).includes(project.mainClass);
+  const withOutput = hasMain && !project.checks.some(c => !isCallTest(c) && !isStarterCheck(c) && normalizeOutput(c.stdin) === normalizeOutput(project.stdin));
   const noHarnessSlot = project.files.length >= 20;
   if (noHarnessSlot) plan.cases = [];
   const files = structuredClone(project.files);
   const forDoc = `${doc.kind}:${doc.id}`;
-  let rows: GenRow[] = [];
-  const skippedNote = plan.skipped.length ? `<details class="gen-skipped"><summary>${plan.skipped.length} method${plan.skipped.length === 1 ? '' : 's'} skipped</summary><ul>${plan.skipped.map(s => `<li><code>${esc(s.className)}.${esc(s.method)}</code>: ${esc(s.reason)}</li>`).join('')}</ul></details>` : '';
+  const rows: GenRow[] = [];
+  let aiState: 'idle' | 'asking' | 'done' | 'error' = 'idle', aiMessage = '';
+  const skippedNote = () => plan.skipped.length ? `<details class="gen-skipped"><summary>${plan.skipped.length} method${plan.skipped.length === 1 ? '' : 's'} skipped by the sampler${aiState === 'done' ? '' : assist.configured ? ' (the AI can cover them)' : ''}</summary><ul>${plan.skipped.map(s => `<li><code>${esc(s.className)}.${esc(s.method)}</code>: ${esc(s.reason)}</li>`).join('')}</ul></details>` : '';
   const total = plan.cases.length + (withOutput ? 1 : 0);
-  openDialog('Generate tests', `<div id="gen-body"><p class="gen-progress">${icon('loader-circle', 'spin')}<span id="gen-status">Trying ${plan.cases.length} sample call${plan.cases.length === 1 ? '' : 's'}${withOutput ? ' and your program’s output' : ''} on a plain JVM…</span></p>${skippedNote}</div>`, () => {
+  openDialog('Generate tests', `<div id="gen-body"><p class="gen-progress">${icon('loader-circle', 'spin')}<span id="gen-status">Trying ${plan.cases.length} sample call${plan.cases.length === 1 ? '' : 's'}${withOutput ? ' and your program’s output' : ''} on a plain JVM…</span></p></div>`, () => {
     const chosen = rows.filter(r => r.checked);
     if (!chosen.length) throw new Error('Select at least one test to add.');
     if (chosen.length > room) throw new Error(`Only ${room} more test${room === 1 ? '' : 's'} fit (a project can have 20). Clear some checkboxes.`);
     if (`${doc.kind}:${doc.id}` !== forDoc) throw new Error('The open project changed. Generate the tests again.');
-    const checks = chosen.map(r => ({ ...r.check, expectedOutput: isCallTest(r.check) ? r.expected.trim() : r.expected }));
+    const checks = chosen.map(r => {
+      const expectedOutput = isCallTest(r.check) ? r.expected.trim() : r.expected;
+      const matches = (value?: string) => value !== undefined && (isCallTest(r.check) ? valuesMatch(value, expectedOutput) : normalizeOutput(value) === normalizeOutput(expectedOutput));
+      // The origin follows the expected value the student kept: the AI's, the code's, or their own.
+      const origin = r.source === 'ai' && matches(r.aiExpected) ? 'ai' as const : matches(r.source === 'ai' ? r.actual : r.check.expectedOutput) ? 'generated' as const : undefined;
+      const { origin: _old, ...rest } = r.check;
+      return origin ? { ...rest, expectedOutput, origin } : { ...rest, expectedOutput };
+    });
     const empty = checks.find(c => isCallTest(c) && !c.expectedOutput);
     if (empty) throw new Error(`Enter an expected value for ${empty.call}.`);
     if (!validateProject({ ...project, checks: [...project.checks, ...checks] })) throw new Error('One of the tests is too long. Outputs are limited to 32 KiB.');
@@ -2361,10 +2440,105 @@ async function generateTestsDialog() {
   }, 'Add selected tests', { wide: true });
   const submit = $<HTMLButtonElement>('#dialog-submit');
   submit.disabled = true;
-  if (!total) {
-    $('#gen-body').innerHTML = `<p class="dialog-note">${noHarnessSlot ? 'Method tests need one free file slot, and this project already has 20 files.' : 'There’s nothing new to generate. TraceLab generates tests for public static methods that return a value and take numbers, booleans, characters, Strings, arrays or lists, plus one output test for the current input.'}</p>${skippedNote}`;
-    icons(); return;
+  const open = () => $<HTMLDialogElement>('#dialog').open && !!document.getElementById('gen-body');
+
+  const rowHtml = (r: GenRow, i: number) => {
+    const usable = r.status === 'value' || r.status === 'throws' || r.status === 'output';
+    let note = '';
+    if (r.source === 'ai') {
+      const agrees = r.actual !== undefined && (isCallTest(r.check) ? valuesMatch(r.aiExpected ?? '', r.actual) : normalizeOutput(r.aiExpected ?? '') === normalizeOutput(r.actual));
+      note = r.actual === undefined ? `<small class="gen-note">${esc(r.detail ?? 'Didn’t run')}</small>`
+        : agrees ? `<small class="gen-note ok">${icon('circle-check')}Your code agrees.</small>`
+          : `<small class="gen-note warn">${icon('triangle-alert')}Your code ${isCallTest(r.check) ? 'returns' : 'prints'} <code>${esc(r.actual.length > 80 ? `${r.actual.slice(0, 77)}…` : r.actual)}</code>. Either the code has a bug or the AI is wrong: decide which before adding. <button type="button" class="link-btn" data-gen-use="${i}">Expect what the code ${isCallTest(r.check) ? 'returns' : 'prints'}</button></small>`;
+      if (r.why) note = `<small class="gen-why">${esc(r.why)}</small>${note}`;
+    } else if (r.status === 'throws') note = '<small class="gen-note warn">Threw an exception. Keep it only if that’s the intended behavior.</small>';
+    else if (!usable) note = `<small class="gen-note">${esc(r.detail ?? '')}</small>`;
+    const field = !isCallTest(r.check)
+      ? `<textarea data-gen-expected="${i}" rows="3" spellcheck="false" aria-label="Expected output">${esc(r.expected)}</textarea>`
+      : usable ? `<input data-gen-expected="${i}" value="${esc(r.expected)}" spellcheck="false" aria-label="Expected value for ${esc(r.label)}" />` : '';
+    const what = !isCallTest(r.check) ? `<strong>${esc(r.check.name)}</strong><small>${r.check.stdin ? `Input: <code>${esc(JSON.stringify(r.check.stdin))}</code>` : 'No input'}</small>` : `<code>${esc(r.label)}</code>${r.printed ? '<small>Checks what it prints</small>' : ''}`;
+    return `<tr class="${usable ? '' : 'unusable'}"><td><input type="checkbox" data-gen="${i}" ${r.checked ? 'checked' : ''} ${usable ? '' : 'disabled'} aria-label="Add ${esc(r.label || r.check.name)}" /></td><td>${r.source === 'ai' ? '<span class="test-origin">AI</span>' : ''}${what}</td><td>${field}${note}</td></tr>`;
+  };
+  const aiPanel = () => {
+    if (aiState === 'asking') return `<p class="gen-progress">${icon('loader-circle', 'spin')}<span id="gen-ai-status">${esc(aiMessage || 'Asking the AI what each method should do…')}</span></p>`;
+    if (aiState === 'error') return `<div class="callout warning">${icon('triangle-alert')}<div><strong>The AI’s tests couldn’t be used</strong><p>${esc(aiMessage)}</p><div class="callout-actions"><button type="button" class="btn btn-ghost btn-compact" data-gen-ai>${icon('rotate-ccw')}Try again</button></div></div></div>`;
+    if (aiState === 'done') return aiMessage ? `<p class="dialog-note">${esc(aiMessage)}</p>` : '';
+    return assist.configured
+      ? `<div class="gen-ai"><div><strong>${icon('sparkles')}More tests from the AI</strong><p>The sampler only tries fixed arguments and records what the code returns now. The AI reads the code and suggests what each method <em>should</em> do, including instance and void methods and edge cases. TraceLab runs every suggestion and shows where your code disagrees. Your code is sent to ${esc(assist.local ? 'the model on this computer' : assistHost())}.</p></div><button type="button" class="btn btn-secondary btn-compact" data-gen-ai>${icon('sparkles')}Ask the AI</button></div>`
+      : `<p class="dialog-note">${icon('sparkles')}With the AI assistant set up, TraceLab can also ask it for tests of the methods the sampler skips, with expected values for what the code should do. <button type="button" class="link-btn" data-gen-setup>Set up the assistant</button></p>`;
+  };
+  const render = () => {
+    if (!open()) return;
+    const usable = rows.some(r => r.source === 'sampled');
+    $('#gen-body').innerHTML = `${usable ? `<div class="callout warning">${icon('triangle-alert')}<div><strong>Check every expected value before adding</strong><p>Sampled values are what your code returns <em>right now</em>. If the code has a bug, the test will expect the wrong answer. AI values are what the AI thinks is right, which can also be wrong. Change any value that isn’t what the method should return.</p></div></div>` : ''}
+      ${rows.length ? `<table class="gen-table"><thead><tr><th><span class="sr-only">Add</span></th><th>Call or input</th><th>Expected value</th></tr></thead><tbody>${rows.map(rowHtml).join('')}</tbody></table>` : `<p class="dialog-note">${noHarnessSlot ? 'Method tests need one free file slot, and this project already has 20 files.' : total ? 'None of the sample calls produced a result.' : 'The sampler has nothing new to try: it covers public methods that take numbers, booleans, characters, Strings, arrays or lists, on objects it can build, plus one output test for the current input.'}</p>`}
+      ${aiPanel()}<p class="dialog-note" id="gen-count"></p>${skippedNote()}`;
+    count(); icons();
+  };
+  const count = () => { const n = rows.filter(r => r.checked).length; const el = document.getElementById('gen-count'); if (el) el.textContent = `${n} selected · ${room} more test${room === 1 ? '' : 's'} fit in this project`; submit.disabled = n === 0; };
+  const body = $('#gen-body');
+  body.addEventListener('change', e => { const el = e.target as HTMLInputElement; if (el.dataset.gen !== undefined) { rows[Number(el.dataset.gen)].checked = el.checked; count(); } });
+  body.addEventListener('input', e => { const el = e.target as HTMLInputElement; if (el.dataset.genExpected !== undefined) rows[Number(el.dataset.genExpected)].expected = el.value; });
+  body.addEventListener('click', e => {
+    const button = (e.target as Element).closest<HTMLElement>('button');
+    if (!button) return;
+    if (button.dataset.genUse !== undefined) { const r = rows[Number(button.dataset.genUse)]; r.expected = r.actual ?? r.expected; r.checked = true; render(); }
+    if (button.dataset.genAi !== undefined) askAiForTests();
+    if (button.dataset.genSetup !== undefined) assistantSetupDialog();
+  });
+
+  /** The AI's suggestions, each run on the JVM: method calls in one batch per package, output tests one at a time. */
+  async function askAiForTests() {
+    if (aiState === 'asking' || genTask) return;
+    aiState = 'asking'; aiMessage = ''; render();
+    const task = (async () => {
+      const messages = aiTestMessages(files, project.checks, plan, { hasMain, mainClass: project.mainClass }) as ChatMessage[];
+      let parsed = parseAiTests(await aiComplete(messages, 3000), files);
+      // One retry with the problem stated: models sometimes wrap or cut off the JSON.
+      if (typeof parsed === 'string') parsed = parseAiTests(await aiComplete([...messages, { role: 'user', content: `${parsed} Reply again with only the JSON object {"tests": [...]}, at most 12 tests.` }], 3000), files);
+      if (typeof parsed === 'string') throw new Error(`${parsed} Try again.`);
+      const seen = new Set([...project.checks.map(c => isCallTest(c) ? `${c.target}|${c.call}` : `stdin|${normalizeOutput(c.stdin)}`), ...rows.map(r => isCallTest(r.check) ? `${r.check.target}|${r.check.call}` : `stdin|${normalizeOutput(r.check.stdin)}`)]);
+      const fresh = parsed.tests.filter(t => { const key = t.kind === 'call' ? `${t.target}|${t.call}` : `stdin|${normalizeOutput(t.stdin)}`; if (seen.has(key)) return false; seen.add(key); return true; });
+      const calls = noHarnessSlot ? [] : fresh.filter((t): t is Extract<AiTest, { kind: 'call' }> => t.kind === 'call');
+      const outputs = hasMain ? fresh.filter((t): t is Extract<AiTest, { kind: 'output' }> => t.kind === 'output').slice(0, 6) : [];
+      const status = (text: string) => { aiMessage = text; const el = document.getElementById('gen-ai-status'); if (el) el.textContent = text; };
+      status(`Running ${calls.length + outputs.length} suggested test${calls.length + outputs.length === 1 ? '' : 's'} on the JVM to compare them with your code…`);
+      const base: RunRequest = { ...requestFor(''), files, mode: 'run', timeoutMs: GEN_TIMEOUT };
+      const cases = calls.map((t, id) => ({ id, expression: qualifyCall(t.call, t.target, files), target: t.target, call: t.call }));
+      const results = cases.length ? await runBatches(base, groupBy(cases, c => packageOf(c.target)), { label: c => c.call }) : new Map<number, CaseResult>();
+      const made: GenRow[] = cases.map((c, id) => {
+        const t = calls[id], r = results.get(id);
+        const ran = r && (r.status === 'value' || r.status === 'throws');
+        const check: TestCase = { name: t.call.length <= 120 ? t.call : `${t.call.slice(0, 117)}…`, kind: 'call', target: t.target, call: t.call, stdin: '', expectedOutput: t.expected };
+        const agrees = ran && valuesMatch(t.expected, r!.value);
+        return { key: `ai-${rows.length + id}`, check, label: t.call, expected: t.expected, status: ran ? (r!.status === 'throws' && !/^throws\b/i.test(t.expected) ? 'throws' : 'value') : (r?.status ?? 'unfinished'), detail: r?.detail, checked: !!agrees, source: 'ai', actual: ran ? r!.value : undefined, aiExpected: t.expected, why: t.why, printed: /;\s*$/.test(t.call) };
+      });
+      for (const t of outputs) {
+        const request: RunRequest = { ...requestFor(t.stdin), files, mode: 'run', timeoutMs: GEN_TIMEOUT };
+        const events = await quietRun(request);
+        const finished = { id: '', status: 'finished', request, events } as Run;
+        const done = events.at(-1)?.stopReason === 'completed';
+        const actual = done ? normalizeOutput(output(finished, 'stdout')) : undefined;
+        made.push({ key: `ai-out-${made.length}`, check: { name: t.name, stdin: t.stdin, expectedOutput: t.expected }, label: '', expected: t.expected, status: 'output', checked: actual !== undefined && normalizeOutput(t.expected) === actual, source: 'ai', actual, aiExpected: t.expected, why: t.why, detail: done ? undefined : `The program didn’t finish with this input (${events.at(-1)?.stopReason ?? 'no result'})` });
+      }
+      const disagree = made.filter(m => m.actual !== undefined && !m.checked).length;
+      const broken = made.filter(m => m.actual === undefined).length;
+      return { made, summary: `The AI suggested ${parsed.tests.length} test${parsed.tests.length === 1 ? '' : 's'}${parsed.dropped ? ` (${parsed.dropped} unreadable, dropped)` : ''}${fresh.length < parsed.tests.length ? `, ${parsed.tests.length - fresh.length} already covered` : ''}. ${disagree ? `${disagree} disagree with your code: each is either a bug or a wrong guess, so they start unselected. ` : made.length ? 'Your code agrees with the ones that ran. ' : ''}${broken ? `${broken} didn’t run (shown greyed out).` : ''}`.trim() };
+    })();
+    genTask = task;
+    try {
+      const { made, summary } = await task;
+      let budget = room - rows.filter(r => r.checked).length;
+      for (const r of made) { if (r.checked && budget > 0) budget--; else r.checked = false; }
+      rows.push(...made);
+      aiState = 'done'; aiMessage = summary;
+    } catch (error) {
+      aiState = 'error'; aiMessage = error instanceof ProjectCompileError ? 'The project doesn’t compile, so the suggestions can’t be checked. Fix the errors first.' : error instanceof Error ? error.message : String(error);
+    } finally { genTask = null; }
+    render();
   }
+
+  if (!total) { render(); return; }
   const task = (async () => {
     await settleFixChecks();
     const base: RunRequest = { ...requestFor(''), files, mode: 'run', timeoutMs: GEN_TIMEOUT };
@@ -2379,7 +2553,7 @@ async function generateTestsDialog() {
       const finished = { id: '', status: 'finished', request, events } as Run;
       if (events.at(-1)?.stopReason === 'completed') {
         const stdout = normalizeOutput(output(finished, 'stdout'));
-        if (stdout) outputRow = { key: 'output', check: { name: project.stdin.trim() ? 'Output for the current input' : 'Program output', stdin: project.stdin, expectedOutput: stdout }, label: '', expected: stdout, status: 'output', checked: true };
+        if (stdout) outputRow = { key: 'output', check: { name: project.stdin.trim() ? 'Output for the current input' : 'Program output', stdin: project.stdin, expectedOutput: stdout, origin: 'generated' }, label: '', expected: stdout, status: 'output', checked: true, source: 'sampled' };
       }
     }
     return { results, outputRow };
@@ -2387,36 +2561,27 @@ async function generateTestsDialog() {
   genTask = task;
   try {
     const { results, outputRow } = await task;
-    rows = plan.cases.map(c => {
+    // A void method that printed nothing has nothing to check here: its effect is on state, which the AI can test.
+    const silent = new Set<string>();
+    for (const c of plan.cases) if (c.printed) {
+      const all = plan.cases.filter(d => d.target === c.target && d.method === c.method);
+      if (all.every(d => results.get(d.id)?.status === 'value' && results.get(d.id)?.value === '""')) silent.add(`${c.target}|${c.method}`);
+    }
+    for (const key of silent) { const [target, method] = key.split('|'); plan.skipped.push({ className: target.split('.').at(-1)!, method, reason: `returns nothing and printed nothing, so it changes the object: test it with statements that call it and then check a value, such as ${target.split('.').at(-1)} x = new ${target.split('.').at(-1)}(…); x.${method}(…); x.someGetter()` }); }
+    rows.push(...plan.cases.filter(c => !silent.has(`${c.target}|${c.method}`)).map(c => {
       const r = results.get(c.id) ?? { id: c.id, status: 'unfinished' as const, value: '', detail: 'wasn’t run' };
-      return { key: String(c.id), check: caseToCheck(c, r.value), label: `${c.className}.${c.call}`, expected: r.value, status: r.status, detail: r.detail, checked: r.status === 'value' };
-    });
+      return { key: String(c.id), check: caseToCheck(c, r.value), label: `${c.className}.${c.call}`.replace(`${c.className}.new ${c.className}`, `new ${c.className}`), expected: r.value, status: r.status, detail: r.detail, checked: r.status === 'value', source: 'sampled' as const, printed: c.printed };
+    }));
     if (outputRow) rows.unshift(outputRow);
     // Pre-select returned values (not exceptions) up to the project's test limit.
     let budget = room;
     for (const r of rows) { if (r.checked && budget > 0) budget--; else r.checked = false; }
   } catch (error) {
-    if (!$<HTMLDialogElement>('#dialog').open) return;
-    $('#gen-body').innerHTML = `<div class="callout warning">${icon('triangle-alert')}<div><strong>Couldn’t generate tests</strong><p>${esc(error instanceof Error ? error.message : String(error))}</p></div></div>${skippedNote}`;
+    if (!open()) return;
+    $('#gen-body').innerHTML = `<div class="callout warning">${icon('triangle-alert')}<div><strong>Couldn’t generate tests</strong><p>${esc(error instanceof Error ? error.message : String(error))}</p></div></div>${skippedNote()}`;
     icons(); return;
   } finally { genTask = null; }
-  if (!$<HTMLDialogElement>('#dialog').open || !document.getElementById('gen-body')) return;
-  const row = (r: GenRow, i: number) => {
-    const usable = r.status === 'value' || r.status === 'throws' || r.status === 'output';
-    const note = r.status === 'throws' ? `<small class="gen-note warn">Threw an exception. Keep it only if that’s the intended behavior.</small>` : !usable ? `<small class="gen-note">${esc(r.detail ?? '')}</small>` : '';
-    const field = r.status === 'output'
-      ? `<textarea data-gen-expected="${i}" rows="3" spellcheck="false" aria-label="Expected output">${esc(r.expected)}</textarea>`
-      : usable ? `<input data-gen-expected="${i}" value="${esc(r.expected)}" spellcheck="false" aria-label="Expected value for ${esc(r.label)}" />` : '';
-    return `<tr class="${usable ? '' : 'unusable'}"><td><input type="checkbox" data-gen="${i}" ${r.checked ? 'checked' : ''} ${usable ? '' : 'disabled'} aria-label="Add ${esc(r.label || r.check.name)}" /></td><td>${r.status === 'output' ? `<strong>${esc(r.check.name)}</strong><small>${r.check.stdin ? `Input: <code>${esc(JSON.stringify(r.check.stdin))}</code>` : 'No input'}</small>` : `<code>${esc(r.label)}</code>`}</td><td>${field}${note}</td></tr>`;
-  };
-  $('#gen-body').innerHTML = `<div class="callout warning">${icon('triangle-alert')}<div><strong>Check every expected value before adding</strong><p>Each value is what your code returns <em>right now</em>. If the code has a bug, the test will expect the wrong answer. Change any value that isn’t what the method should return.</p></div></div>
-    ${rows.length ? `<table class="gen-table"><thead><tr><th><span class="sr-only">Add</span></th><th>Call</th><th>Expected value</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table>` : '<p class="dialog-note">None of the sample calls produced a result.</p>'}
-    <p class="dialog-note" id="gen-count"></p>${skippedNote}`;
-  const count = () => { const n = rows.filter(r => r.checked).length; $('#gen-count').textContent = `${n} selected · ${room} more test${room === 1 ? '' : 's'} fit in this project`; submit.disabled = n === 0; };
-  const body = $('#gen-body');
-  body.addEventListener('change', e => { const el = e.target as HTMLInputElement; if (el.dataset.gen !== undefined) { rows[Number(el.dataset.gen)].checked = el.checked; count(); } });
-  body.addEventListener('input', e => { const el = e.target as HTMLInputElement; if (el.dataset.genExpected !== undefined) rows[Number(el.dataset.genExpected)].expected = el.value; });
-  count(); icons();
+  render();
 }
 
 function languageServerDialog() {
@@ -2489,6 +2654,9 @@ async function runAction(action: string) {
   else if (action === 'language-server') languageServerDialog();
   else if (action === 'new-file') newFile();
   else if (action === 'show-tutor') { setLayout({ coach: true }); document.querySelector('.compile-help')?.scrollIntoView({ block: 'nearest' }); }
+  else if (action === 'edit-tests') testsDialog();
+  else if (action === 'add-test') testsDialog({ name: `Test ${project.checks.length + 1}`, kind: 'output', stdin: '', expectedOutput: '' });
+  else if (action === 'run-tests') verify();
   else if (action === 'start-at') startAtDialog();
   else if (action === 'clear-start') { const d = $<HTMLDialogElement>('#dialog'); if (d.open) d.close(); clearStartAt(); }
 }
@@ -2655,6 +2823,8 @@ document.addEventListener('click', e => {
   if (target.id === 'need-help') { helpOpen = !helpOpen; renderCoach(); if (helpOpen) document.querySelector('.help-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
   if (target.id === 'close-help') { helpOpen = false; renderCoach(); }
   if (target.dataset.practice) startPractice(target.dataset.practice, !!target.dataset.practiceAi);
+  if (target.dataset.saveRunTest !== undefined) saveRunAsTest();
+  if (target.dataset.removeStarters !== undefined) removeStarterTests();
   if (target.dataset.assistPrompt) askAssistant(target.dataset.assistPrompt);
   if (target.dataset.ask) openAssistant(target.dataset.ask);
   if (target.dataset.practiceAnswer !== undefined) answerPractice(Number(target.dataset.practiceAnswer));

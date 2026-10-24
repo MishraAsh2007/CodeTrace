@@ -333,6 +333,16 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .callout.warning { background: var(--warning-soft); color: var(--warning-text); }
 .callout.success { background: var(--accent-soft); color: var(--accent-text); align-items: center; margin-top: 10px; }
 .callout.subtle { background: var(--surface-2); color: var(--text-2); margin-top: 10px; }
+.callout.info { background: var(--info-soft); color: var(--info-text); }
+.callout.verdict { margin-top: 0; margin-bottom: 10px; }
+.callout.verdict > svg { color: var(--accent); }
+.callout.success.verdict { align-items: flex-start; }
+.callout + .callout { margin-top: 8px; }
+.callout p + p { margin-top: 6px; }
+.callout-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.test-origin { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; background: var(--surface-3); color: var(--text-3); font-size: 10.5px; font-weight: 600; vertical-align: 1px; }
+.gen-table td:nth-child(2) .test-origin { margin: 0 6px 0 0; background: var(--violet-soft); color: var(--violet-text); }
+.test-origin-note { display: block; margin-top: 3px; color: var(--text-3); font-size: 11.5px; line-height: 1.45; }
 .question-card { display: flex; flex-direction: column; gap: 10px; }
 .question-top { display: flex; align-items: center; justify-content: space-between; }
 .question-type { font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; background: var(--info-soft); color: var(--info-text); }
@@ -650,6 +660,15 @@ dialog.wide { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48
 .gen-table input:focus, .gen-table textarea:focus { outline: none; border-color: var(--info); }
 .gen-table tr.unusable td:nth-child(2) code { color: var(--text-3); }
 .gen-note.warn { color: var(--warning-text) !important; }
+.gen-note.ok { color: var(--accent-text) !important; }
+.gen-note svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 3px; }
+.gen-note .link-btn { font-size: 11.5px; padding: 0; margin-left: 4px; }
+.gen-table td small.gen-why { font-style: italic; }
+.gen-ai { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-top: 14px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--violet) 35%, var(--border)); border-radius: var(--radius); background: var(--violet-soft); font-size: 12.5px; line-height: 1.55; }
+.gen-ai strong { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.gen-ai strong svg, .dialog-note svg { width: 14px; height: 14px; color: var(--violet); vertical-align: -2px; }
+.gen-ai p { color: var(--text-2); }
+.gen-ai .btn { flex: none; }
 .gen-skipped { margin-top: 12px; font-size: 12.5px; color: var(--text-2); }
 .gen-skipped summary { cursor: pointer; color: var(--text-3); }
 .gen-skipped ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }

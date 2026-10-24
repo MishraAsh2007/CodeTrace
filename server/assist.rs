@@ -138,7 +138,7 @@ impl Assist {
             jobs.insert(id.clone(), job.clone());
         }
         let me = self.clone();
-        let body = json!({"model": config.model, "messages": messages, "stream": true, "temperature": 0.2, "max_tokens": max_tokens.clamp(64, 2048)}).to_string();
+        let body = json!({"model": config.model, "messages": messages, "stream": true, "temperature": 0.2, "max_tokens": max_tokens.clamp(64, 4096)}).to_string();
         tokio::spawn(async move {
             let cancel = job.lock().await.cancel.clone();
             let mut raw = String::new();
