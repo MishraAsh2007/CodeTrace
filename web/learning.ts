@@ -9,16 +9,22 @@ export function output(run: Run, stream: string, sequence = Infinity): string {
 }
 
 export function normalizeOutput(text: string): string { return text.replace(/\r\n/g, '\n').trimEnd(); }
+/** Pass/fail for a program-output test. Method-call tests are evaluated by tests.ts. */
 export function checkPassed(run: Run, check: Check): boolean {
-  return run.events.at(-1)?.stopReason === 'completed' && normalizeOutput(output(run, 'stdout')) === normalizeOutput(check.expectedOutput);
+  return check.kind !== 'call' && run.events.at(-1)?.stopReason === 'completed' && normalizeOutput(output(run, 'stdout')) === normalizeOutput(check.expectedOutput);
 }
 export function valueText(value: TraceValue): string {
   if (value.kind === 'reference') return `@${value.ref}`;
   return value.value ?? 'null';
 }
+/** Files TraceLab generates to run method tests; they are not part of the student's project. */
+const generated = (name: string) => name.split('/').at(-1) === 'TraceLabCall__.java';
+/** Whether a run recorded exactly the project's current source. Method-test runs also match, ignoring their harness. */
 export function sameSource(project: Project, run: Run): boolean {
-  return project.mainClass === run.request.mainClass && project.files.length === run.request.files.length
-    && project.files.every(file => run.request.files.some(recorded => recorded.name === file.name && recorded.content === file.content));
+  const recorded = run.request.files.filter(f => !generated(f.name));
+  const harnessRun = recorded.length !== run.request.files.length;
+  return (harnessRun || project.mainClass === run.request.mainClass) && project.files.length === recorded.length
+    && project.files.every(file => recorded.some(r => r.name === file.name && r.content === file.content));
 }
 
 /**
@@ -36,8 +42,8 @@ export function exceptionMessage(run: Run, event: TraceEvent): string {
 
 /** A completed traced run whose input matches a check but whose output does not. */
 export function failingCheck(run: Run | null, checks: Check[]): { check: Check; actual: string } | null {
-  if (!run || run.status !== 'finished' || run.events.at(-1)?.stopReason !== 'completed') return null;
-  const check = checks.find(c => normalizeOutput(c.stdin) === normalizeOutput(run.request.stdin));
+  if (!run || run.status !== 'finished' || run.events.at(-1)?.stopReason !== 'completed' || run.request.files.some(f => generated(f.name))) return null;
+  const check = checks.find(c => c.kind !== 'call' && normalizeOutput(c.stdin) === normalizeOutput(run.request.stdin));
   if (!check || checkPassed(run, check)) return null;
   return { check, actual: normalizeOutput(output(run, 'stdout')) };
 }
@@ -687,5 +693,6 @@ export function validateProject(value: unknown): value is Project {
     && Array.isArray(p.files) && p.files.length >= 1 && p.files.length <= 20
     && p.files.every(f => typeof f?.name === 'string' && /^(?:[A-Za-z_$][\w$]*\/)*[A-Za-z_$][\w$]*\.java$/.test(f.name) && typeof f.content === 'string' && f.content.length <= 65536)
     && new Set(p.files.map(f => f.name.toLowerCase())).size === p.files.length
-    && Array.isArray(p.checks) && p.checks.length <= 12 && p.checks.every(c => c && typeof c.name === 'string' && typeof c.stdin === 'string' && c.stdin.length <= 16384 && typeof c.expectedOutput === 'string' && c.expectedOutput.length <= 32768);
+    && Array.isArray(p.checks) && p.checks.length <= 20 && p.checks.every(c => c && typeof c.name === 'string' && c.name.length <= 120 && typeof c.stdin === 'string' && c.stdin.length <= 16384 && typeof c.expectedOutput === 'string' && c.expectedOutput.length <= 32768
+      && (c.kind === undefined || c.kind === 'output' || (c.kind === 'call' && typeof c.call === 'string' && c.call.length <= 500 && typeof c.target === 'string' && /^[\w$]+(?:\.[\w$]+)*$/.test(c.target))));
 }

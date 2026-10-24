@@ -1,5 +1,5 @@
 /** Workspace layout: collapsible side panels, a resizable editor/memory split and a resizable console. */
-export type SidebarView = 'explorer' | 'examples';
+export type SidebarView = 'explorer' | 'projects' | 'examples';
 export type LayoutState = { sidebar: boolean; view: SidebarView; coach: boolean; console: boolean; split: number; consoleHeight: number };
 
 const KEY = 'tracelab.layout.v1';
@@ -15,7 +15,7 @@ export function loadLayout(): LayoutState {
     if (!saved || typeof saved !== 'object') return fallback;
     return {
       sidebar: typeof saved.sidebar === 'boolean' ? saved.sidebar : fallback.sidebar,
-      view: saved.view === 'examples' ? 'examples' : 'explorer',
+      view: saved.view === 'examples' || saved.view === 'projects' ? saved.view : 'explorer',
       coach: typeof saved.coach === 'boolean' ? saved.coach : true,
       console: typeof saved.console === 'boolean' ? saved.console : true,
       split: Number.isFinite(saved.split) ? clamp(saved.split, 25, 75) : DEFAULT_SPLIT,

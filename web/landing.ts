@@ -18,11 +18,11 @@ const features: [string, string, string][] = [
   ['history', 'Step forward and back', 'Every line is recorded, so you can step backward as easily as forward, jump over calls, step out of methods and scrub through the whole run.'],
   ['layers', 'Stack and heap, drawn', 'Frames, local variables, objects, arrays, lists, maps and sets, with arrows from each reference to the object it points to.'],
   ['lightbulb', 'A tutor that read your run', 'Questions are built from the values your program produced: predict what happens next, explain the error, then choose a fix.'],
-  ['list-checks', 'Prove the fix with tests', 'Each project carries input and output tests. Your edited code runs against every one in a fresh JVM before it counts as fixed.'],
-  ['folder-open', 'Real projects', 'Multiple files and packages, standard input, compiler diagnostics, autosave, import and export, and share links.'],
+  ['list-checks', 'Prove the fix with tests', 'Check what a program prints, or call one method and check what it returns. Every test runs your current code in a fresh JVM.'],
+  ['folder-open', 'Your own projects', 'Start from a template, paste code, or drop in .java files, a folder or a zip. TraceLab sorts files into packages, finds the main class, and saves every project in your browser.'],
 ];
 const steps: [string, string][] = [
-  ['Open a project', 'Start from an example, a blank project, or a shared link. Write Java in a full code editor.'],
+  ['Open a project', 'Start from an example, a template, your own files, or a shared link. Write Java in a full code editor.'],
   ['Run and record', 'TraceLab compiles and runs the program, recording each line, frame and object along the way.'],
   ['Step through memory', 'Replay the run. See which values changed, which method was called, and which line threw.'],
   ['Explain, fix, test', 'Answer questions about what happened, choose a repair, make the edit, and run the tests.'],
@@ -33,7 +33,8 @@ const faqs: [string, string][] = [
   ['How are the tutor’s questions created?', 'From your recorded run and the exact source that produced it. A question is shown only when the recording supports its premise, for example the index that failed or the value a method returned. No AI model guesses at your code.'],
   ['Does TraceLab change how my program behaves?', 'TraceLab never calls your objects’ methods, such as toString, to display them. Recording does slow execution down, so programs that depend on timing or run many threads are not a good fit yet.'],
   ['What happens with infinite loops?', 'Runs stop after a step or time limit, and everything recorded up to that point stays available. The Tutor can point out a loop condition that never changes.'],
-  ['Is my work saved?', 'Projects are saved in your browser automatically. Export a project as a file to back it up or move it to another computer, or create a share link.'],
+  ['Is my work saved?', 'Yes. Every project is saved in your browser as you type, and you can keep as many as you like. Changes to an example are kept with that example until you save it as your own project or reset it. Export a project as a zip to back it up or open it in another editor.'],
+  ['Can I use my own code?', 'Yes. Paste classes into a new project, or drop in .java files, a folder or a zip. TraceLab places each file by its package declaration, splits pasted code with several public classes into separate files, and picks the class with a main method. Programs must use only the Java standard library for now.'],
 ];
 
 $('#site').innerHTML = `
@@ -81,7 +82,7 @@ $('#site').innerHTML = `
       <div class="section-head left"><span class="eyebrow">FAQ</span><h2>Questions, answered</h2></div>
       <div class="faq">${faqs.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join('')}</div>
     </div></section>
-    <section class="cta"><div class="container cta-inner"><div><h2>Start with a bug.</h2><p>Open the IDE on an off-by-one error and see the exact step where the index leaves the array.</p></div><div class="cta-actions"><a class="btn btn-primary btn-lg" href="/app/?demo=bounds">Debug “The extra iteration” ${icon('arrow-right')}</a><a class="btn btn-secondary btn-lg" href="/app/">Open a blank IDE</a></div></div></section>
+    <section class="cta"><div class="container cta-inner"><div><h2>Start with a bug.</h2><p>Open the IDE on an off-by-one error and see the exact step where the index leaves the array.</p></div><div class="cta-actions"><a class="btn btn-primary btn-lg" href="/app/?demo=bounds">Debug “The extra iteration” ${icon('arrow-right')}</a><a class="btn btn-secondary btn-lg" href="/app/?new">Start your own project</a></div></div></section>
   </main>
   <footer class="footer"><div class="container footer-inner"><a class="logo" href="/">${LOGO_SVG}<span>TraceLab</span></a><nav aria-label="Footer"><a href="/app/">IDE</a><a href="#examples">Examples</a><a href="#faq">FAQ</a></nav><p>© 2026 TraceLab. Java is a trademark of Oracle and/or its affiliates.</p></div></footer>
 `;

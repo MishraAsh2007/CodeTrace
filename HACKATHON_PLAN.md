@@ -12,11 +12,11 @@ Avoid a full VS Code fork during the hackathon. Monaco provides its editor compo
 
 ## Status — October 24, 2026
 
-The prototype meets the definition of done below and runs locally (`npm run build`, `npm start`). `npm test` runs 39 checks against real JVM runs. Details are in [README.md](README.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md).
+The prototype meets the definition of done below and runs locally (`npm run build`, `npm start`). `npm test` runs 44 checks against real JVM runs. The code is on the `Java` branch of [MishraAsh2007/Hackachusetts_CodeTutor](https://github.com/MishraAsh2007/Hackachusetts_CodeTutor/tree/Java). Details are in [README.md](README.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 | Opportunity | Status |
 | --- | --- |
-| 1 · Projects, not snippets | Multi-file projects, packages, rename/delete, autosave, import/export, share links in the URL fragment |
+| 1 · Projects, not snippets | A project library (create, rename, duplicate, delete), templates, pasted code split into files, `.java`/folder/zip import placed by package, a package-tree Explorer with path warnings and one-click moves, zip export with tests, and share links |
 | 2 · Useful limits | Step/time/output/trace budgets; partial traces kept and labelled; cancellation |
 | 3 · Readable memory | Stack and heap columns with reference arrows (hover isolates one), inline strings and boxed values, change/new highlights, filters, renderers for common JDK lists, maps, sets, deques and `StringBuilder` |
 | 4 · Line-level honesty | A “Changed” strip narrates differences between recorded stops, including calls and return values; no claims about subexpressions |
@@ -27,7 +27,35 @@ Debugger controls include step into/back, frame-aware over/out/back over (F10, S
 
 The product now has a landing page (`/`) with a feature overview, FAQ and an 18-example gallery, and a VS Code-style IDE (`/app/`) with an activity bar, Explorer and Examples views, light/dark themes, a Tutor panel and a status bar. Fourteen examples contain bugs across runtime errors, wrong output, non-termination and compile errors; each has failing tests, an explain question and a repair question, and the test suite verifies that the Tutor's repair makes every test pass.
 
-Still open, in suggested order: a form-based test editor; semantic Java completion through Eclipse JDT LS; expression-level explanations; a second language adapter against the same trace contract; and isolated execution before any public deployment.
+## Roadmap after the first release
+
+Agreed on October 24, 2026. Each phase ships with integration tests and a browser check, then is pushed to the `Java` branch. Optional AI help (layer C below) is deferred: it would need an API key and would send student code to a third party.
+
+### Phase 1 — Your own projects and tests ✅ done
+
+| Item | Shipped |
+| --- | --- |
+| Many projects | Browser-local library with a **My projects** view and a top-bar project switcher; rename, duplicate, export, delete; the TraceLab 1.0 single workspace migrates automatically |
+| Examples as templates | Example edits are stored per example and never overwrite a project; **Save as my project** copies one, **Reset** restores it |
+| New projects | Templates (blank, reads input, class + Main, packages), paste code (several public classes are split into files), `?new` link |
+| Import | `.java` files, folders, zips and TraceLab `.json`, by chooser or drag and drop; files are placed by `package` and public class name; main class detected |
+| Explorer | Package folders, main-class badge, “run from this class”, path/package warnings with one-click **Move**, rename/move that updates the class and package declarations |
+| Tests | A form editor; **method-call tests** (`sum(new int[]{1, 2})` → `3`, values, arrays, collections, `throws X`) run through a generated harness; **save this run’s output as a test**; a failing method test can be recorded and stepped through |
+| Export | Zip with `src/` and `tracelab.json`, which re-imports with its tests |
+
+### Phase 2 — General Tutor questions and tested fixes
+
+- **A. Questions from any recording.** Extract facts from every run (value changes of any type, which line runs next and which branch was taken, loop iteration counts, calls and returns, output, the values on a throwing line) and build questions from them: “what is `x` after this line?”, “which line runs next?”, “how many times does line 7 run?”, “what does `f(3)` return?”, “which value caused the exception?”, “where does the output first differ from the test?”. Wrong answers come from common mistakes: the old value, off by one, another variable, the branch not taken. Correct answers always come from the recording.
+- **B. Tested fixes.** Try small standard edits near the failing lines (`<` ↔ `<=`, ±1, `==` → `equals`, cast before dividing, initialize a field, add a missing update, `&&` ↔ `||`), run each against the project’s tests on the real JVM, and offer only verified fixes as correct answers, with compiled-but-failing edits as distractors. Without tests, say that “the exception went away” is weaker evidence. Keep the hand-written questions where their wording is clearer.
+- **Fast mode:** run tests without recording for speed.
+
+### Phase 3 — Debug larger programs
+
+Start recording at a breakpoint (with conditions such as `i == 9999` or a hit count) instead of from the first line; watch expressions read from the recording; renderers for enums, records, 2D arrays and `char[]`; about ten more example bugs (2D off-by-one, an unexpected override, a shared static counter, ignoring `toUpperCase()`’s result, `Integer` caching at 127/128, `0.1 + 0.2 == 0.3`, switch fall-through, `value = value` in a constructor, `equals` without `hashCode`).
+
+### Phase 4 — Optional
+
+Multithreaded recording with a thread picker (highest risk); semantic completion through Eclipse JDT LS; a second language adapter against the same trace contract; isolated execution before any public deployment.
 
 ## Python Tutor: evidence and opportunities
 

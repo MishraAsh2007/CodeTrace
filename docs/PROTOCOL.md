@@ -59,6 +59,10 @@ A reference with `omitted: true` was not traversed because of a capture budget. 
 
 Collection views are read from JDK fields, never by calling `size()`, `iterator()` or `toString()`. If a JDK's internal layout differs from what the worker expects, the object falls back to `opaque` instead of failing the trace.
 
+## Method-call tests
+
+The runner has no special endpoint for these. The browser adds a generated `TraceLabCall__.java` to the request's files, in the target class's package, and sets `mainClass` to it. Its `main` evaluates the test's expression, catches any `Throwable`, and prints one line prefixed by U+001E and `TRACELAB_RESULT `: `value <formatted value>` or `throws <exception class>`. Strings and chars are printed as literals, arrays and collections element by element; other objects use `String.valueOf`, so this is the one place student `toString()` methods can run. The harness file is excluded when comparing a run with the project's source. Requests still count against the 20-file limit.
+
 ## Future adapters
 
 Keep the replay/UI dependent on the event schema, not JDI classes. Additional runtimes should report explicit capabilities and preserve their own language semantics. Version the schema when changing meaning. A new adapter must pass semantic fixtures for aliasing, recursion, exceptions, input/output, limits and source mapping before its language is advertised as supported.

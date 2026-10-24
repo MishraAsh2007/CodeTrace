@@ -1,5 +1,10 @@
 export type SourceFile = { name: string; content: string };
-export type Check = { name: string; stdin: string; expectedOutput: string };
+/**
+ * A test. `output` tests (the default) compare standard output for the given input.
+ * `call` tests evaluate a Java expression such as `sum(new int[]{1, 2})` on `target` and compare its value,
+ * or `throws ExceptionName`, with `expectedOutput`.
+ */
+export type Check = { name: string; stdin: string; expectedOutput: string; kind?: 'output' | 'call'; target?: string; call?: string };
 export type Project = { version: 1; name: string; example: string; files: SourceFile[]; mainClass: string; stdin: string; maxSteps: number; checks: Check[] };
 export type TraceValue = { kind: 'null' | 'primitive' | 'reference'; type?: string; value?: string; ref?: string; omitted?: boolean };
 export type Variable = { name: string; type: string; value: TraceValue; argument?: boolean };

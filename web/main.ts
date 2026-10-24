@@ -1,10 +1,16 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2 } from 'lucide';
+import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces } from 'lucide';
 import { categories, copyExample, demoFor, demos, exampleIndex, examples } from './examples';
 import type { DemoCategory } from './examples';
-import { checkPassed, exceptionMessage, failingCheck, normalizeOutput, output, questionsFor, sameSource, snapshots, validateProject, valueText } from './learning';
+import { exceptionMessage, failingCheck, normalizeOutput, output, questionsFor, sameSource, snapshots, validateProject, valueText } from './learning';
+import { Library, StorageFullError } from './library';
+import type { DocRef } from './library';
+import { droppedFiles, importFiles, limitProblem, projectFromSources, projectToZip, validFileName } from './importer';
+import { analyzeJava, fileIssues, mainClasses, preferredMain, renameType, setPackage, testTargets } from './javasource';
+import { describeTest, evaluateTest, isCallTest, requestForTest, testProblems } from './tests';
+import { templates } from './templates';
 import { boxedValue, describeStep, displayMethod, heapIndex, isInlineValue, returnedCall, simpleType, stepBackOver, stepOut, stepOver } from './narrate';
 import type { StoryItem } from './narrate';
 import { drawArrows, focusArrows } from './arrows';
@@ -21,17 +27,24 @@ import './tokens.css';
 import './style.css';
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
-const iconSet = { Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2 };
+const iconSet = { Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces };
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 /** Escapes text and renders `backtick` spans as inline code. */
 const rich = (value: unknown): string => esc(value).replace(/`([^`]+)`/g, '<code>$1</code>');
 const icon = (name: string, cls = '') => `<i data-lucide="${name}" class="${cls}" aria-hidden="true"></i>`;
 const icons = () => createIcons({ icons: iconSet, attrs: { 'stroke-width': 1.75 } });
-const FILE_PATTERN = /^(?:[A-Za-z_$][\w$]*\/)*[A-Za-z_$][\w$]*\.java$/;
-const VERSION = '1.0';
-const BLANK: Project = { version: 1, name: 'Untitled project', example: '', mainClass: 'Main', stdin: '', maxSteps: 500, checks: [],
-  files: [{ name: 'Main.java', content: 'public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, TraceLab!");\n    }\n}\n' }] };
+const VERSION = '1.1';
+const DEFAULT_EXAMPLE = 'bounds';
+/** "3 minutes ago"-style label for project lists. */
+function relativeTime(time: number): string {
+  const seconds = Math.round((Date.now() - time) / 1000);
+  if (seconds < 45) return 'just now';
+  const units: [number, Intl.RelativeTimeFormatUnit][] = [[60, 'minute'], [3600, 'hour'], [86400, 'day'], [604800, 'week'], [2629800, 'month'], [31557600, 'year']];
+  const format = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  for (let i = units.length - 1; i >= 0; i--) if (seconds >= units[i][0]) return format.format(-Math.round(seconds / units[i][0]), units[i][1]);
+  return format.format(-Math.round(seconds / 60), 'minute');
+}
 
 type UiSettings = { arrows: boolean; inline: boolean };
 function loadUi(): UiSettings {
@@ -41,10 +54,29 @@ function loadUi(): UiSettings {
 function saveUi() { try { localStorage.setItem('tracelab.ui.v1', JSON.stringify(ui)); } catch { /* Preferences are optional. */ } }
 
 applyTheme();
-let project = copyExample();
-let storageFailed = false;
-try { const saved = JSON.parse(localStorage.getItem('tracelab.project.v1') ?? 'null'); if (validateProject(saved)) project = saved; } catch { /* An invalid or inaccessible saved project falls back to the first demo. */ }
+/** In-memory storage when the browser blocks localStorage (for example, some private modes). */
+const memoryStorage = (() => { const map = new Map<string, string>(); return { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => { map.set(k, v); }, removeItem: (k: string) => { map.delete(k); } }; })();
+const storage = (() => { try { localStorage.setItem('tracelab.probe', '1'); localStorage.removeItem('tracelab.probe'); return localStorage; } catch { return memoryStorage; } })();
+const library = new Library(storage, validateProject);
+const exampleIds = new Set(examples.map(e => e.example));
+const pristineExample = (value: Project) => examples.find(e => JSON.stringify(e) === JSON.stringify(value))?.example ?? null;
+library.migrateLegacy(pristineExample, exampleIds);
+/** The document being edited: a user project, or an example (whose edits are kept separately). */
+let doc: DocRef = { kind: 'example', id: DEFAULT_EXAMPLE };
+let project: Project = copyExample(exampleIndex(DEFAULT_EXAMPLE));
+function loadDoc(ref: DocRef): Project | null {
+  if (ref.kind === 'project') return library.load(ref);
+  const index = exampleIndex(ref.id);
+  return index < 0 ? null : library.load(ref) ?? copyExample(index);
+}
+{
+  const ref = library.current ?? (library.list()[0] ? { kind: 'project' as const, id: library.list()[0].id } : null);
+  const loaded = ref ? loadDoc(ref) : null;
+  if (ref && loaded) { doc = ref; project = loaded; }
+}
+let storageFailed = storage === memoryStorage;
 let activeFile = initialFile(project);
+const collapsedFolders = new Set<string>();
 let run: Run | null = null;
 let previousRun: Run | null = null;
 let step = 0;
@@ -80,7 +112,10 @@ $('#app').innerHTML = `
   <header class="topbar">
     <a class="logo" href="/" title="TraceLab home">${LOGO_SVG}<span>TraceLab</span></a>
     <span class="topbar-divider" aria-hidden="true"></span>
-    <button class="project-switch" id="project-switch" title="Rename project or change run settings"><span id="project-title"></span>${icon('chevron-down')}</button>
+    <div class="menu-wrap project-wrap"><button class="project-switch" id="project-switch" aria-haspopup="menu" aria-expanded="false" aria-controls="project-menu" title="Switch project"><span id="doc-kind" class="doc-kind" hidden>Example</span><span id="project-title"></span>${icon('chevron-down')}</button>
+      <div class="menu project-menu" id="project-menu" role="menu" hidden></div>
+    </div>
+    <button id="save-copy" class="btn btn-secondary btn-compact" hidden title="Copy this example into your projects">${icon('save')}Save as my project</button>
     <span class="save-state" id="save-state">Saved</span>
     <div class="topbar-run">
       <button id="run" class="btn btn-primary" title="Compile, run and record (Ctrl+Enter)">${icon('play')}Run<kbd>Ctrl ↵</kbd></button>
@@ -97,14 +132,16 @@ $('#app').innerHTML = `
       <button id="share" class="btn btn-secondary" title="Copy a link that contains this project">${icon('share-2')}Share</button>
       <div class="menu-wrap"><button id="menu-button" class="icon-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="main-menu" title="More actions" aria-label="More actions">${icon('ellipsis')}</button>
         <div class="menu" id="main-menu" role="menu" hidden>
-          <button role="menuitem" data-action="new-project">${icon('file-plus-2')}New project</button>
+          <button role="menuitem" data-action="new-project">${icon('file-plus-2')}New project…</button>
+          <button role="menuitem" data-action="projects">${icon('folder-kanban')}My projects</button>
           <button role="menuitem" data-action="gallery">${icon('layout-grid')}Browse examples…</button>
           <div class="menu-separator" role="separator"></div>
-          <button role="menuitem" data-action="import">${icon('upload')}Import project…</button>
-          <button role="menuitem" data-action="export">${icon('download')}Export project</button>
+          <button role="menuitem" data-action="import">${icon('upload')}Import files, folder or zip…</button>
+          <button role="menuitem" data-action="export-zip">${icon('file-archive')}Export as zip</button>
+          <button role="menuitem" data-action="export">${icon('file-json')}Export as TraceLab file</button>
           <button role="menuitem" data-action="export-trace">${icon('history')}Export recorded trace</button>
           <div class="menu-separator" role="separator"></div>
-          <button role="menuitem" data-action="settings">${icon('settings-2')}Run settings…</button>
+          <button role="menuitem" data-action="settings">${icon('settings-2')}Project settings…</button>
           <button role="menuitem" data-action="shortcuts">${icon('keyboard')}Keyboard shortcuts</button>
           <button role="menuitem" data-action="about">${icon('info')}About TraceLab</button>
           <a role="menuitem" href="/">${icon('house')}TraceLab home</a>
@@ -115,17 +152,23 @@ $('#app').innerHTML = `
   <div class="app-layout">
     <nav class="activity-bar" aria-label="Views">
       <button data-view="explorer" class="activity" title="Explorer" aria-label="Explorer">${icon('files')}</button>
+      <button data-view="projects" class="activity" title="My projects" aria-label="My projects">${icon('folder-kanban')}</button>
       <button data-view="examples" class="activity" title="Examples" aria-label="Examples">${icon('flask-conical')}</button>
       <span class="activity-spacer"></span>
       <button data-action="shortcuts" class="activity" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">${icon('keyboard')}</button>
-      <button data-action="settings" class="activity" title="Run settings" aria-label="Run settings">${icon('settings-2')}</button>
+      <button data-action="settings" class="activity" title="Project settings" aria-label="Project settings">${icon('settings-2')}</button>
     </nav>
     <aside class="sidebar" aria-label="Sidebar">
-      <section data-view-panel="explorer" class="side-view">
-        <div class="side-header"><h2>Explorer</h2><div><button id="new-file" class="icon-btn small" title="New Java file" aria-label="New Java file">${icon('file-plus-2')}</button><button data-action="import" class="icon-btn small" title="Import project" aria-label="Import project">${icon('upload')}</button></div></div>
+      <section data-view-panel="explorer" class="side-view" id="explorer">
+        <div class="side-header"><h2>Explorer</h2><div><button id="new-file" class="icon-btn small" title="New Java file" aria-label="New Java file">${icon('file-plus-2')}</button><button data-action="add-files" class="icon-btn small" title="Add files to this project" aria-label="Add files to this project">${icon('upload')}</button></div></div>
         <div class="tree-root" id="tree-root">${icon('chevron-down')}<span id="folder-name"></span></div>
-        <div id="file-list" class="file-list" role="list"></div>
-        <div class="side-footer"><span>${icon('shield-check')} Saved in this browser</span></div>
+        <div id="file-list" class="file-list" role="tree" aria-label="Project files"></div>
+        <div class="drop-hint">Drop .java files, a folder or a zip here to add them.</div>
+        <div class="side-footer"><span id="side-footer">${icon('shield-check')} Saved in this browser</span></div>
+      </section>
+      <section data-view-panel="projects" class="side-view" hidden>
+        <div class="side-header"><h2>My projects</h2><div><button data-action="new-project" class="icon-btn small" title="New project" aria-label="New project">${icon('plus')}</button><button data-action="import" class="icon-btn small" title="Import as a new project" aria-label="Import as a new project">${icon('upload')}</button></div></div>
+        <div id="project-list" class="project-list"></div>
       </section>
       <section data-view-panel="examples" class="side-view" hidden>
         <div class="side-header"><h2>Examples</h2><button data-action="gallery" class="icon-btn small" title="Open gallery" aria-label="Open example gallery">${icon('layout-grid')}</button></div>
@@ -137,6 +180,7 @@ $('#app').innerHTML = `
         <section class="editor-panel panel" aria-label="Code editor">
           <div class="panel-tabs editor-tabs" id="editor-tabs" role="tablist"></div>
           <div id="source-banner" class="source-banner" hidden></div>
+          <div id="lint-banner" class="source-banner lint" hidden></div>
           <div class="editor-container" id="editor"></div>
         </section>
         <div class="splitter vertical" id="split-columns" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize editor and debugger" aria-controls="workbench" aria-valuemin="25" aria-valuemax="75" title="Drag to resize · double-click to reset"></div>
@@ -165,7 +209,7 @@ $('#app').innerHTML = `
       <div class="coach-scroll">
         <ol class="learning-stages" id="learning-stages" aria-label="Debugging steps"></ol>
         <div id="coach-content"></div>
-        <section class="tests-card"><div class="card-title">${icon('list-checks')}<h3>Tests</h3><span class="tab-count" id="tests-count"></span><button id="edit-checks" class="link-btn">Edit</button></div><p class="muted">Each test runs your current code in a fresh JVM and compares its output.</p><button id="verify" class="btn btn-secondary btn-block">${icon('play')}Run tests</button><div id="check-results" aria-live="polite"></div></section>
+        <section class="tests-card"><div class="card-title">${icon('list-checks')}<h3>Tests</h3><span class="tab-count" id="tests-count"></span><button id="edit-checks" class="link-btn">Edit</button></div><p class="muted" id="tests-blurb">Each test runs your current code in a fresh JVM and checks its output or a method’s result.</p><div class="tests-actions"><button id="verify" class="btn btn-secondary">${icon('play')}Run tests</button><button id="add-test" class="btn btn-ghost">${icon('list-plus')}Add test</button></div><button id="save-run-test" class="link-btn" hidden>${icon('save')}Save this run’s output as a test</button><div id="check-results" aria-live="polite"></div></section>
         <section class="progress-card" id="progress-card"></section>
         <p class="coach-footnote">Questions are generated from values recorded during your run and from the recorded source. Passing tests confirms those cases, not every possible input.</p>
       </div>
@@ -179,8 +223,10 @@ $('#app').innerHTML = `
     <span class="status-item" id="editor-position">Ln 1, Col 1</span>
     <span class="status-item">Spaces: 4</span><span class="status-item">UTF-8</span><span class="status-item">Java 21</span>
   </footer>
-  <input type="file" id="import-input" accept="application/json,.json" hidden />
-  <dialog id="dialog" aria-labelledby="dialog-title"><form method="dialog" id="dialog-form"><div class="dialog-heading"><h2 id="dialog-title"></h2><button value="cancel" class="icon-btn" aria-label="Close dialog">${icon('x')}</button></div><div id="dialog-body"></div><div class="dialog-error" id="dialog-error" role="alert"></div><div class="dialog-actions" id="dialog-actions"><button value="cancel" class="btn btn-secondary" id="dialog-cancel">Cancel</button><button type="button" id="dialog-submit" class="btn btn-primary">Save</button></div></form></dialog>
+  <input type="file" id="import-input" accept=".java,.zip,.json,application/zip,application/json" multiple hidden />
+  <input type="file" id="import-folder" webkitdirectory multiple hidden />
+  <div class="drop-overlay" id="drop-overlay" hidden><div>${icon('upload')}<strong id="drop-title">Drop to import</strong><span id="drop-detail">.java files, a folder, a zip or a TraceLab project</span></div></div>
+  <dialog id="dialog" aria-labelledby="dialog-title"><form id="dialog-form" novalidate><div class="dialog-heading"><h2 id="dialog-title"></h2><button type="button" class="icon-btn" data-close-dialog aria-label="Close dialog">${icon('x')}</button></div><div id="dialog-body"></div><div class="dialog-error" id="dialog-error" role="alert"></div><div class="dialog-actions" id="dialog-actions"><button type="button" class="btn btn-secondary" id="dialog-cancel" data-close-dialog>Cancel</button><button type="submit" id="dialog-submit" class="btn btn-primary">Save</button></div></form></dialog>
   <dialog id="gallery" class="gallery-dialog" aria-labelledby="gallery-title"><div class="gallery-head"><div><h2 id="gallery-title">Examples</h2><p class="muted">Each buggy example comes with questions about what went wrong and tests that check your fix.</p></div><button class="icon-btn" id="gallery-close" aria-label="Close gallery">${icon('x')}</button></div><div class="filter-bar" id="gallery-filters"></div><div class="demo-grid" id="gallery-grid"></div></dialog>
   <div id="toast" role="status" hidden></div>
 `;
@@ -257,12 +303,21 @@ function toast(message: string, tone: 'info' | 'success' | 'error' = 'info') {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, 5000);
 }
-function save() {
-  try { localStorage.setItem('tracelab.project.v1', JSON.stringify(project)); storageFailed = false; }
-  catch { storageFailed = true; }
-  $('#save-state').textContent = storageFailed ? 'Not saved — export to keep changes' : 'Saved';
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+/** Saves the open document. Typing schedules a save; other changes save immediately. */
+function save(delayed = false) {
+  clearTimeout(saveTimer);
+  if (delayed) { $('#save-state').textContent = 'Saving…'; saveTimer = setTimeout(() => save(), 400); return; }
+  const blocked = storage === memoryStorage;
+  // An example that matches its original has no edits to keep.
+  const pristine = doc.kind === 'example' && JSON.stringify(project) === JSON.stringify(examples[exampleIndex(doc.id)]);
+  try { if (pristine) library.resetExample(doc.id); else library.save(doc, project); storageFailed = blocked; }
+  catch (error) { storageFailed = true; if (error instanceof StorageFullError) toast(error.message, 'error'); }
+  $('#save-state').textContent = storageFailed ? (blocked ? 'Not saved: browser storage is blocked' : 'Not saved — export to keep changes') : doc.kind === 'example' ? 'Example · changes saved' : 'Saved';
   $('#save-state').classList.toggle('warning', storageFailed);
+  renderDocChrome();
 }
+window.addEventListener('beforeunload', () => { if (saveTimer) save(); });
 function sourceKey() { return JSON.stringify({ files: project.files, mainClass: project.mainClass, checks: project.checks }); }
 function dirtyTrace() { return !!run && !sameSource(project, run); }
 function currentStates() { return snapshots(run); }
@@ -287,7 +342,7 @@ function getModel(file: string, historical: boolean) {
     if (!historical) model.onDidChangeContent(() => {
       if (changingModel) return;
       const target = project.files.find(f => f.name === source.name);
-      if (target) { target.content = model!.getValue(); monaco.editor.setModelMarkers(model!, 'java-compiler', []); save(); renderSourceBanner(); renderCheckResults(); renderStages(); updateDecorations(); }
+      if (target) { target.content = model!.getValue(); monaco.editor.setModelMarkers(model!, 'java-compiler', []); save(true); renderSourceBanner(); renderCheckResults(); renderStages(); updateDecorations(); scheduleLint(); }
     });
   }
   return model;
@@ -304,13 +359,47 @@ function selectFile(name: string, historical = traceSource) {
   renderFiles(); renderSourceBanner(); updateDecorations();
 }
 
+/** Explorer tree: files grouped into package folders, with main-class and path-problem markers. */
+function renderTree(): string {
+  const issues = fileIssues(project.files);
+  const mains = new Set(mainClasses(project.files));
+  type Node = { folders: Map<string, Node>; files: string[] };
+  const root: Node = { folders: new Map(), files: [] };
+  for (const file of [...project.files].sort((a, b) => a.name.localeCompare(b.name))) {
+    const parts = file.name.split('/');
+    let node = root;
+    for (const part of parts.slice(0, -1)) {
+      if (!node.folders.has(part)) node.folders.set(part, { folders: new Map(), files: [] });
+      node = node.folders.get(part)!;
+    }
+    node.files.push(file.name);
+  }
+  const fileRow = (name: string, depth: number) => {
+    const file = project.files.find(f => f.name === name)!;
+    const info = analyzeJava(file.content);
+    const qualified = info.types.filter(t => t.hasMain).map(t => info.packageName ? `${info.packageName}.${t.name}` : t.name);
+    const isMain = qualified.includes(project.mainClass);
+    const issue = issues.get(name);
+    const runnable = qualified.find(q => q !== project.mainClass && mains.has(q));
+    return `<div class="file-row ${name === activeFile && !traceSource ? 'active' : ''}" role="treeitem" aria-selected="${name === activeFile && !traceSource}" style="--depth:${depth}"><button data-file="${esc(name)}" title="${esc(issue ? issue.message : name)}">${icon('file-code-2')}<span>${esc(name.split('/').at(-1))}</span>${isMain ? `<span class="file-badge main" title="Main class: Run starts here">${icon('circle-play')}</span>` : ''}${issue ? `<span class="file-badge warn" title="${esc(issue.message)}">${icon('triangle-alert')}</span>` : ''}</button>${runnable ? `<button data-set-main="${esc(runnable)}" class="file-action" title="Run from ${esc(runnable)}" aria-label="Make ${esc(runnable)} the main class">${icon('circle-play')}</button>` : ''}<button data-rename="${esc(name)}" class="file-action" title="Rename or move" aria-label="Rename ${esc(name)}">${icon('pencil')}</button><button data-delete="${esc(name)}" class="file-action" title="Delete" aria-label="Delete ${esc(name)}">${icon('trash-2')}</button></div>`;
+  };
+  const folderRows = (node: Node, path: string, depth: number): string => [...node.folders.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, child]) => {
+    const full = path ? `${path}/${name}` : name;
+    const open = !collapsedFolders.has(full);
+    return `<div class="folder-row" role="treeitem" aria-expanded="${open}" style="--depth:${depth}"><button data-folder="${esc(full)}" title="Package ${esc(full.replace(/\//g, '.'))}">${icon(open ? 'chevron-down' : 'chevron-right')}${icon(open ? 'folder-open' : 'folder')}<span>${esc(name)}</span></button><button data-new-in="${esc(full)}" class="file-action" title="New file in this package" aria-label="New file in ${esc(full)}">${icon('plus')}</button></div>${open ? `<div role="group">${folderRows(child, full, depth + 1)}${child.files.map(f => fileRow(f, depth + 1)).join('')}</div>` : ''}`;
+  }).join('');
+  return folderRows(root, '', 0) + root.files.map(f => fileRow(f, 0)).join('');
+}
+
 function renderFiles() {
   const available = traceSource && run ? run.request.files : project.files;
   $('#project-title').textContent = project.name;
   document.title = `${project.name} · TraceLab`;
   $('#folder-name').textContent = project.name;
-  $('#file-list').innerHTML = project.files.map(f => `<div class="file-row ${f.name === activeFile && !traceSource ? 'active' : ''}" role="listitem"><button data-file="${esc(f.name)}" title="${esc(f.name)}">${icon('file-code-2')}<span>${esc(f.name)}</span></button><button data-rename="${esc(f.name)}" class="file-action" title="Rename" aria-label="Rename ${esc(f.name)}">${icon('pencil')}</button><button data-delete="${esc(f.name)}" class="file-action" title="Delete" aria-label="Delete ${esc(f.name)}">${icon('trash-2')}</button></div>`).join('');
-  $('#editor-tabs').innerHTML = available.map(f => `<button class="panel-tab ${f.name === activeFile ? 'active' : ''}" role="tab" aria-selected="${f.name === activeFile}" data-tab="${esc(f.name)}">${icon('file-code-2')}${esc(f.name)}</button>`).join('') + (traceSource ? '<span class="tab-note">Recorded source · read-only</span>' : '');
+  $('#file-list').innerHTML = renderTree();
+  $('#editor-tabs').innerHTML = available.map(f => `<button class="panel-tab ${f.name === activeFile ? 'active' : ''}" role="tab" aria-selected="${f.name === activeFile}" data-tab="${esc(f.name)}" title="${esc(f.name)}">${icon('file-code-2')}${esc(f.name.split('/').at(-1))}</button>`).join('') + (traceSource ? '<span class="tab-note">Recorded source · read-only</span>' : '');
+  renderDocChrome();
+  renderLint();
   $('#example-list').innerHTML = categories.map(c => {
     const items = demos.filter(d => d.category === c.id);
     return `<div class="example-group"><h3>${esc(c.label)}</h3>${items.map(d => `<button class="example-item ${project.example === d.id ? 'active' : ''}" data-open-demo="${esc(d.id)}" title="${esc(d.summary)}"><span class="example-dot ${c.id}"></span><span class="example-text"><span>${esc(demoName(d))}</span><small>${esc(d.symptom)}</small></span></button>`).join('')}</div>`;
@@ -318,6 +407,82 @@ function renderFiles() {
   $('#checks-count').textContent = String(project.checks.length);
   $('#tests-count').textContent = String(project.checks.length);
   icons();
+}
+
+/** Topbar and sidebar state that depends on which document is open. */
+function renderDocChrome() {
+  const example = doc.kind === 'example';
+  $('#doc-kind').hidden = !example;
+  $('#save-copy').hidden = !example;
+  $('#side-footer').innerHTML = example
+    ? `${icon('flask-conical')} Example · <button class="link-btn" data-action="save-copy">Save as my project</button>`
+    : `${icon('shield-check')} Saved in this browser`;
+  renderProjectList();
+  icons();
+}
+
+function renderProjectList() {
+  const list = library.list();
+  const edited = examples.filter(e => library.hasExampleEdits(e.example));
+  const row = (ref: DocRef, name: string, meta: string, actions: string) => `<div class="project-row ${doc.kind === ref.kind && doc.id === ref.id ? 'active' : ''}"><button data-open-doc="${ref.kind}:${esc(ref.id)}" title="Open ${esc(name)}">${icon(ref.kind === 'example' ? 'flask-conical' : 'folder')}<span class="project-text"><span>${esc(name)}</span><small>${esc(meta)}</small></span></button>${actions}</div>`;
+  $('#project-list').innerHTML = `${list.length ? list.map(p => row({ kind: 'project', id: p.id }, p.name, `${p.fileCount} file${p.fileCount === 1 ? '' : 's'} · ${relativeTime(p.updatedAt)}`,
+    `<button class="file-action" data-project-action="rename" data-id="${esc(p.id)}" title="Rename" aria-label="Rename ${esc(p.name)}">${icon('pencil')}</button><button class="file-action" data-project-action="duplicate" data-id="${esc(p.id)}" title="Duplicate" aria-label="Duplicate ${esc(p.name)}">${icon('copy')}</button><button class="file-action" data-project-action="export" data-id="${esc(p.id)}" title="Export as zip" aria-label="Export ${esc(p.name)}">${icon('download')}</button><button class="file-action" data-project-action="delete" data-id="${esc(p.id)}" title="Delete" aria-label="Delete ${esc(p.name)}">${icon('trash-2')}</button>`)).join('')
+    : `<div class="side-empty"><p>Your projects appear here. Create one from a template, paste code, or drop in .java files.</p></div>`}
+    <button class="btn btn-primary btn-block" data-action="new-project">${icon('plus')}New project</button>
+    ${edited.length ? `<h3 class="side-subhead">Examples you changed</h3>${edited.map(e => row({ kind: 'example', id: e.example }, e.name, 'Edited example', `<button class="file-action" data-reset-example="${esc(e.example)}" title="Reset to the original" aria-label="Reset ${esc(e.name)}">${icon('rotate-ccw')}</button>`)).join('')}` : ''}`;
+}
+
+function renderProjectMenu() {
+  const recent = library.list().slice(0, 8);
+  $('#project-menu').innerHTML = `<div class="menu-label">Recent projects</div>${recent.length ? recent.map(p => `<button role="menuitem" data-open-doc="project:${esc(p.id)}" class="${doc.kind === 'project' && doc.id === p.id ? 'current' : ''}">${icon('folder')}<span class="menu-text">${esc(p.name)}<small>${esc(relativeTime(p.updatedAt))}</small></span></button>`).join('') : '<p class="menu-empty">No projects yet.</p>'}
+    <div class="menu-separator" role="separator"></div>
+    <button role="menuitem" data-action="new-project">${icon('plus')}New project…</button>
+    <button role="menuitem" data-action="projects">${icon('folder-kanban')}All projects</button>
+    <button role="menuitem" data-action="rename-project">${icon('pencil')}Rename “${esc(project.name)}”…</button>
+    <button role="menuitem" data-action="settings">${icon('settings-2')}Project settings…</button>`;
+  icons();
+}
+
+let lintTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleLint() { clearTimeout(lintTimer); lintTimer = setTimeout(() => { renderLint(); $('#file-list').innerHTML = renderTree(); icons(); }, 500); }
+/** Warns when a file's path does not match its package and public class, with a one-click move. */
+function renderLint() {
+  const issues = fileIssues(project.files);
+  for (const file of project.files) {
+    const issue = issues.get(file.name);
+    const model = models.get(`workspace/${file.name}`);
+    if (model) monaco.editor.setModelMarkers(model, 'tracelab-paths', issue ? [{ severity: monaco.MarkerSeverity.Warning, message: `${issue.message} TraceLab records a class only when its file path matches.`, startLineNumber: issue.line, endLineNumber: issue.line, startColumn: 1, endColumn: model.getLineMaxColumn(issue.line) }] : []);
+  }
+  const issue = !traceSource ? issues.get(activeFile) : undefined;
+  const banner = $('#lint-banner');
+  banner.hidden = !issue;
+  banner.innerHTML = issue ? `${icon('triangle-alert')}<span>${esc(issue.message)}</span><button class="link-btn" data-move-file="${esc(activeFile)}" data-move-to="${esc(issue.expected)}">Move to ${esc(issue.expected)}</button>` : '';
+  icons();
+}
+
+function moveFile(from: string, to: string): boolean {
+  if (from === to) return true;
+  if (!validFileName(to)) { toast(`${to} is not a valid Java file path.`, 'error'); return false; }
+  if (project.files.some(f => f.name !== from && f.name.toLowerCase() === to.toLowerCase())) { toast(`${to} already exists.`, 'error'); return false; }
+  const file = project.files.find(f => f.name === from);
+  if (!file) return false;
+  file.name = to;
+  // A changed package renames the class's qualified name: keep the main class and test targets pointing at it.
+  if (!mainClasses(project.files).includes(project.mainClass)) {
+    const moved = mainClasses([file]).find(m => m.split('.').at(-1) === project.mainClass.split('.').at(-1));
+    if (moved) project.mainClass = moved;
+  }
+  const targets = testTargets(project.files);
+  for (const check of project.checks) {
+    if (!check.target || targets.some(t => t.qualified === check.target)) continue;
+    const match = targets.filter(t => t.name === check.target!.split('.').at(-1));
+    if (match.length === 1) check.target = match[0].qualified;
+  }
+  const key = `workspace/${from}`; models.get(key)?.dispose(); models.delete(key);
+  const marks = breakpoints.get(from); breakpoints.delete(from); if (marks) breakpoints.set(to, marks);
+  if (activeFile === from) activeFile = to;
+  save(); selectFile(activeFile, false);
+  return true;
 }
 
 function renderSourceBanner() {
@@ -507,7 +672,7 @@ function renderConsole() {
   } else if (consoleTab === 'diagnostics') {
     el.innerHTML = diagnostics.length ? diagnostics.map(d => `<button class="diagnostic ${d.severity}" data-diagnostic="${esc(d.file)}" data-line="${d.line ?? 1}">${icon(d.severity === 'error' ? 'circle-x' : 'info')}<span><strong>${esc(d.message)}</strong><small>${esc(d.file)} · line ${d.line}, column ${d.column}</small></span></button>`).join('') : '<div class="console-empty">No problems in the last run.</div>';
   } else if (consoleTab === 'checks') {
-    el.innerHTML = project.checks.length ? `<table class="test-table"><thead><tr><th>Test</th><th>Input</th><th>Expected output</th></tr></thead><tbody>${project.checks.map(c => `<tr><td>${esc(c.name)}</td><td><code>${esc(JSON.stringify(c.stdin))}</code></td><td><code>${esc(JSON.stringify(c.expectedOutput))}</code></td></tr>`).join('')}</tbody></table>` : '<div class="console-empty">This project has no tests. Add some from the Tutor panel.</div>';
+    el.innerHTML = project.checks.length ? `<table class="test-table"><thead><tr><th>Test</th><th>Type</th><th>Input or call</th><th>Expected</th></tr></thead><tbody>${project.checks.map(c => { const d = describeTest(c); return `<tr><td>${esc(c.name)}</td><td>${esc(d.kind)}</td><td><code>${esc(d.given)}</code></td><td><code>${esc(d.expects)}</code></td></tr>`; }).join('')}</tbody></table>` : '<div class="console-empty">This project has no tests yet. Use Add test in the Tutor panel.</div>';
   } else {
     const sequence = currentEvent()?.sequence ?? Infinity;
     const stdout = run ? output(run, 'stdout', sequence) : '';
@@ -617,16 +782,34 @@ async function collect(request: RunRequest, onUpdate?: (value: Run) => void): Pr
 
 function resetQuestions() { questions = []; questionIndex = 0; questionAnswers = {}; questionAttempts = {}; solvedQuestions = new Set(); hintsShown = 0; }
 
-async function startRun() {
+/** Checks the main class before a run, switching automatically when exactly one class has main. */
+function ensureMainClass(): boolean {
+  const mains = mainClasses(project.files);
+  if (mains.includes(project.mainClass) || !mains.length) return true;
+  if (mains.length === 1 || mains.some(m => m.split('.').at(-1) === 'Main')) {
+    const chosen = preferredMain(project.files)!;
+    toast(`${project.mainClass} has no main method, so TraceLab is running ${chosen}.`);
+    project.mainClass = chosen; save(); renderFiles();
+    return true;
+  }
+  toast(`${project.mainClass} has no main method. Choose which class to run.`, 'error');
+  settingsDialog();
+  return false;
+}
+
+async function startRun(override?: RunRequest) {
   if (running || checking) return;
   if (!runnerOnline) { toast('The Java runner isn’t connected. Start it with npm start, then try again.', 'error'); checkHealth(); return; }
+  const problem = limitProblem(project.files);
+  if (problem) { toast(problem, 'error'); return; }
+  if (!override && !ensureMainClass()) return;
   stopPlayback(); traceSource = false; selectFile(activeFile, false);
   if (run) previousRun = run;
   run = null; step = 0; resetQuestions();
   running = true; stopRequested = false; setBusy(); renderTrace(); renderCoach();
   try {
     let lastRender = 0;
-    run = await collect(requestFor(), value => {
+    run = await collect(override ?? requestFor(), value => {
       run = value;
       if (Date.now() - lastRender < 150) return;
       lastRender = Date.now(); step = Math.max(0, snapshots(value).length - 1); renderTrace();
@@ -639,7 +822,15 @@ async function startRun() {
     if (questions.length && !layout.coach && window.innerWidth >= 1100) setLayout({ coach: true });
     applyDiagnostics();
   } catch (error) { toast(error instanceof Error ? error.message : 'The run failed.', 'error'); }
-  finally { running = false; currentRunId = null; setBusy(); renderTrace(true); renderCoach(); renderSourceBanner(); renderCheckResults(); }
+  finally { running = false; currentRunId = null; setBusy(); renderTrace(true); renderCoach(); renderSourceBanner(); renderCheckResults(); renderSaveRunTest(); }
+}
+
+/** Offers to save a finished run's output as a test, unless a test already covers that input. */
+function renderSaveRunTest() {
+  const offer = !!run && run.status === 'finished' && run.events.at(-1)?.stopReason === 'completed' && !dirtyTrace()
+    && !run.request.files.some(f => f.name.endsWith('TraceLabCall__.java'))
+    && !project.checks.some(c => !isCallTest(c) && normalizeOutput(c.stdin) === normalizeOutput(run!.request.stdin));
+  $('#save-run-test').hidden = !offer;
 }
 
 function applyDiagnostics() {
@@ -652,6 +843,9 @@ function applyDiagnostics() {
 async function verify() {
   if (running || checking || !project.checks.length) return;
   if (!runnerOnline) { toast('The Java runner isn’t connected. Start it with npm start, then try again.', 'error'); checkHealth(); return; }
+  const problem = limitProblem(project.files);
+  if (problem) { toast(problem, 'error'); return; }
+  if (project.checks.some(c => !isCallTest(c)) && !ensureMainClass()) return;
   if (!layout.coach) setLayout({ coach: true });
   stopPlayback(); checking = true; checkCancelled = false; stopRequested = false; setBusy();
   checksSource = sourceKey(); checkResults = [];
@@ -661,14 +855,11 @@ async function verify() {
       if (checkCancelled) break;
       const result = { name: test.name, index, status: 'running' as 'running' | 'passed' | 'failed', detail: '' };
       checkResults.push(result); renderCheckResults();
-      const checked = await collect({ ...request, stdin: test.stdin });
-      result.status = checkPassed(checked, test) ? 'passed' : 'failed';
-      const reason = checked.events.at(-1)?.stopReason;
-      const exception = checked.events.findLast(e => e.exception && !e.exception.caught);
-      result.detail = result.status === 'passed' ? 'Output matches'
-        : reason === 'exception' && exception ? `${exception.exception!.type.split('.').at(-1)}${exceptionMessage(checked, exception) ? `: ${exceptionMessage(checked, exception)}` : ''}`
-        : reason !== 'completed' ? (STOP_LABELS[reason ?? '']?.[0] ?? 'Runner error')
-        : `Expected ${JSON.stringify(normalizeOutput(test.expectedOutput))}, got ${JSON.stringify(normalizeOutput(output(checked, 'stdout')))}`;
+      const invalid = testProblems(test, project);
+      if (invalid.length) { result.status = 'failed'; result.detail = invalid[0]; renderCheckResults(); continue; }
+      const outcome = evaluateTest(await collect(requestForTest(project, test, request)), test);
+      result.status = outcome.passed ? 'passed' : 'failed';
+      result.detail = outcome.detail;
       renderCheckResults();
     }
   } catch (error) {
@@ -684,6 +875,11 @@ async function verify() {
 function traceCheck(index: number) {
   const check = project.checks[index];
   if (!check || running || checking) return;
+  if (isCallTest(check)) {
+    toast(`Recording the call ${check.call} from the “${check.name}” test.`);
+    startRun(requestForTest(project, check, requestFor(check.stdin)));
+    return;
+  }
   project.stdin = check.stdin; save();
   toast(`Input set to the “${check.name}” test.`);
   startRun();
@@ -722,15 +918,26 @@ function download(name: string, value: unknown) {
   const link = document.createElement('a'); link.href = url; link.download = name; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function openDialog(title: string, body: string, onSave: () => void, button = 'Save', options: { cancel?: string | null; danger?: boolean } = {}) {
+function openDialog(title: string, body: string, onSave: () => void, button = 'Save', options: { cancel?: string | null; danger?: boolean; wide?: boolean } = {}) {
+  // Replace the body element so listeners added by the previous dialog are discarded.
+  const fresh = $('#dialog-body').cloneNode(false) as HTMLElement;
+  $('#dialog-body').replaceWith(fresh);
+  $('#dialog').classList.toggle('wide', !!options.wide);
   $('#dialog-title').textContent = title; $('#dialog-body').innerHTML = body; $('#dialog-error').textContent = '';
   $('#dialog-submit').textContent = button;
   $('#dialog-submit').className = `btn ${options.danger ? 'btn-danger' : 'btn-primary'}`;
   $('#dialog-cancel').hidden = options.cancel === null;
   $('#dialog-cancel').textContent = options.cancel ?? 'Cancel';
-  $('#dialog-submit').onclick = () => { try { onSave(); $<HTMLDialogElement>('#dialog').close(); } catch (e) { $('#dialog-error').textContent = e instanceof Error ? e.message : String(e); } };
-  $<HTMLDialogElement>('#dialog').showModal(); icons();
-  $<HTMLElement>('#dialog-body input, #dialog-body textarea')?.focus();
+  // Enter in a single-line field submits; the form never navigates.
+  $<HTMLFormElement>('#dialog-form').onsubmit = event => {
+    event.preventDefault();
+    try { onSave(); $<HTMLDialogElement>('#dialog').close(); }
+    catch (e) { $('#dialog-error').textContent = e instanceof Error ? e.message : String(e); }
+  };
+  const dialog = $<HTMLDialogElement>('#dialog');
+  if (!dialog.open) dialog.showModal();
+  icons();
+  $<HTMLElement>('#dialog-body input:not([type="radio"]):not([type="checkbox"]), #dialog-body textarea')?.focus();
 }
 /** Promise-based confirmation in the app's own dialog. */
 function confirmDialog(title: string, message: string, button: string, danger = false): Promise<boolean> {
@@ -742,30 +949,132 @@ function confirmDialog(title: string, message: string, button: string, danger = 
     $('#dialog-submit').focus();
   });
 }
-function setProject(next: Project) {
-  if (running || checking) { toast('Stop the current run before changing projects.'); return; }
-  stopPlayback(); project = next; run = null; previousRun = null; step = 0; resetQuestions(); checkResults = []; traceSource = false; breakpoints.clear();
+/** Shows a document in the IDE. The previous document was saved as it was edited. */
+function showDoc(ref: DocRef, next: Project) {
+  if (saveTimer) save();
+  stopPlayback(); doc = ref; project = next; run = null; previousRun = null; step = 0; resetQuestions(); checkResults = []; traceSource = false; breakpoints.clear();
   for (const model of models.values()) model.dispose(); models.clear();
+  try { library.setCurrent(ref); } catch { /* The open document is still usable. */ }
   activeFile = initialFile(project);
-  save(); selectFile(activeFile, false); renderTrace(); renderCoach(); renderCheckResults(); setBusy();
+  save(); selectFile(activeFile, false); renderTrace(); renderCoach(); renderCheckResults(); renderSaveRunTest(); setBusy();
+}
+function openDoc(ref: DocRef): boolean {
+  if (running || checking) { toast('Stop the current run before switching projects.'); return false; }
+  if (ref.kind === doc.kind && ref.id === doc.id) return true;
+  const loaded = loadDoc(ref);
+  if (!loaded) { toast('That project could not be opened. It may have been deleted in another tab.', 'error'); renderProjectList(); return false; }
+  showDoc(ref, loaded);
+  return true;
+}
+/** Adds a project to the library and opens it. */
+function createAndOpen(next: Project, origin?: string): boolean {
+  if (running || checking) { toast('Stop the current run before opening another project.'); return false; }
+  try {
+    const named = { ...next, name: library.uniqueName(next.name.trim() || 'Untitled project') };
+    const id = library.create(named, origin);
+    showDoc({ kind: 'project', id }, named);
+    return true;
+  } catch (error) { toast(error instanceof Error ? error.message : 'The project could not be created.', 'error'); return false; }
+}
+function saveExampleCopy() {
+  if (doc.kind !== 'example') return;
+  const exampleId = doc.id;
+  const copy = { ...structuredClone(project), name: project.name };
+  if (createAndOpen(copy, exampleId)) {
+    library.resetExample(exampleId);
+    renderProjectList(); icons();
+    toast(`Saved “${project.name}” to your projects. The example is back to its original version.`, 'success');
+  }
 }
 /** Opens the file that contains the demo's key line, so the bug is in view. */
 function initialFile(value: Project): string {
   const snippet = demoFor(value.example)?.snippet.split('…')[0].trim();
   return (snippet && value.files.find(f => f.content.includes(snippet))?.name) || value.files.find(f => f.name.endsWith('Main.java'))?.name || value.files[0].name;
 }
-function untouchedExample() { return JSON.stringify(project) === JSON.stringify(examples.find(p => p.example === project.example)) || JSON.stringify(project) === JSON.stringify(BLANK); }
-async function replaceProject(next: Project, what: string) {
-  if (running || checking) { toast('Stop the current run before changing projects.'); return false; }
-  if (!untouchedExample() && !(await confirmDialog(`Open ${what}?`, `This replaces “${project.name}” in your workspace. Export it first if you want to keep your changes.`, 'Replace project'))) return false;
-  setProject(next);
-  return true;
-}
-async function openDemo(id: string) {
+function openDemo(id: string) {
   const index = exampleIndex(id);
   if (index < 0) { toast('That example does not exist.', 'error'); return; }
-  if (project.example === id && untouchedExample()) { closeGallery(); return; }
-  if (await replaceProject(copyExample(index), `“${examples[index].name}”`)) { closeGallery(); toast(`Opened “${examples[index].name}”. Press Run to start.`); }
+  const already = doc.kind === 'example' && doc.id === id;
+  if (!openDoc({ kind: 'example', id })) return;
+  closeGallery();
+  if (!already) toast(library.hasExampleEdits(id) ? `Opened “${examples[index].name}” with your earlier changes.` : `Opened “${examples[index].name}”. Press Run to start.`);
+}
+async function resetExample(id: string) {
+  const name = examples[exampleIndex(id)]?.name ?? 'this example';
+  if (!(await confirmDialog(`Reset “${name}”?`, 'Your changes to this example are discarded and the original code and tests come back. Save it as your own project first to keep them.', 'Reset example', true))) return;
+  library.resetExample(id);
+  if (doc.kind === 'example' && doc.id === id) showDoc(doc, copyExample(exampleIndex(id)));
+  else renderProjectList();
+  toast(`“${name}” is back to the original.`);
+}
+
+async function projectAction(action: string, id: string) {
+  const summary = library.summary(id);
+  if (!summary) return;
+  if (action === 'rename') renameProject({ kind: 'project', id });
+  else if (action === 'duplicate') {
+    try { const copy = library.duplicate(id); if (copy) { renderProjectList(); toast(`Duplicated “${summary.name}”.`, 'success'); } }
+    catch (error) { toast(error instanceof Error ? error.message : 'Could not duplicate the project.', 'error'); }
+  } else if (action === 'export') { const value = library.load({ kind: 'project', id }); if (value) await exportZip(value); }
+  else if (action === 'delete') {
+    if (running || checking) { toast('Stop the current run first.'); return; }
+    if (!(await confirmDialog(`Delete “${summary.name}”?`, 'The project and its tests are removed from this browser. This cannot be undone unless you exported it.', 'Delete project', true))) return;
+    const wasOpen = doc.kind === 'project' && doc.id === id;
+    library.remove(id);
+    if (wasOpen) {
+      const next = library.list()[0];
+      if (next) openDoc({ kind: 'project', id: next.id }); else showDoc({ kind: 'example', id: DEFAULT_EXAMPLE }, loadDoc({ kind: 'example', id: DEFAULT_EXAMPLE })!);
+    }
+    renderProjectList();
+    toast(`Deleted “${summary.name}”.`);
+  }
+}
+
+function renameProject(ref: DocRef = doc) {
+  const current = ref.kind === doc.kind && ref.id === doc.id ? project : library.load(ref);
+  if (!current) return;
+  openDialog('Rename project', `<label class="dialog-label">Project name<input id="project-name" value="${esc(current.name)}" maxlength="120" autocomplete="off" /></label>`, () => {
+    const name = $<HTMLInputElement>('#project-name').value.trim();
+    if (!name) throw new Error('Enter a name.');
+    if (ref.kind === doc.kind && ref.id === doc.id) { project.name = name; save(); renderFiles(); }
+    else library.rename(ref, name);
+    renderProjectList();
+  }, 'Rename');
+  setTimeout(() => $<HTMLInputElement>('#project-name').select());
+}
+
+async function exportZip(value: Project) {
+  try {
+    const bytes = await projectToZip(value);
+    const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/zip' }));
+    const link = document.createElement('a'); link.href = url; link.download = `${value.name.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'project'}.zip`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) { toast(error instanceof Error ? error.message : 'The zip could not be created.', 'error'); }
+}
+
+/** Imports files as a new project, or adds them to the open one. */
+async function handleImport(files: { file: File; path: string }[], mode: 'new' | 'add') {
+  if (!files.length) return;
+  try {
+    const { project: imported, notes } = await importFiles(files, 'Imported project');
+    if (mode === 'add') { addFilesToProject(imported.files, notes); return; }
+    if (createAndOpen(imported)) toast(`Imported “${imported.name}”: ${imported.files.length} file${imported.files.length === 1 ? '' : 's'}${imported.mainClass && mainClasses(imported.files).includes(imported.mainClass) ? `, main class ${imported.mainClass}` : ''}.${notes.length ? ` ${notes.join(' ')}` : ''}`, 'success');
+  } catch (error) { toast(error instanceof Error ? error.message : 'Those files could not be imported.', 'error'); }
+}
+
+function addFilesToProject(files: Project['files'], allNotes: string[] = []) {
+  if (running || checking) { toast('Wait for the current run to finish.'); return; }
+  const replaced = files.filter(f => project.files.some(p => p.name.toLowerCase() === f.name.toLowerCase())).map(f => f.name);
+  const merged = [...project.files.filter(p => !files.some(f => f.name.toLowerCase() === p.name.toLowerCase())), ...files];
+  // The importer judged the new files alone; the merged project may already have a main class.
+  const notes = mainClasses(merged).length ? allNotes.filter(n => !n.startsWith('No class has a main method')) : allNotes;
+  const problem = limitProblem(merged);
+  if (problem) { toast(problem, 'error'); return; }
+  project.files = merged;
+  for (const name of replaced) { const key = `workspace/${name}`; models.get(key)?.dispose(); models.delete(key); }
+  if (!mainClasses(project.files).includes(project.mainClass)) project.mainClass = preferredMain(project.files) ?? project.mainClass;
+  save(); selectFile(files[0].name, false);
+  toast(`Added ${files.length} file${files.length === 1 ? '' : 's'}${replaced.length ? `, replacing ${replaced.join(', ')}` : ''}.${notes.length ? ` ${notes.join(' ')}` : ''}`, 'success');
 }
 
 function renderGallery() {
@@ -795,24 +1104,41 @@ async function openSharedProject() {
   try {
     const value = await decodeProject(payload);
     if (!validateProject(value)) throw new Error('This share link does not contain a valid TraceLab project.');
-    if (await replaceProject(value, `the shared project “${value.name}”`)) toast(`Opened shared project “${value.name}”.`, 'success');
+    if (createAndOpen(value)) toast(`Saved the shared project “${project.name}” to your projects.`, 'success');
   } catch (error) { toast(error instanceof Error ? error.message : 'Could not open this share link.', 'error'); }
+}
+
+/** Accepts `Helper`, `Helper.java`, `util.Helper` or `util/Helper.java` and returns a file path. */
+function toFilePath(input: string): string {
+  const text = input.trim().replace(/\\/g, '/').replace(/\.java$/i, '');
+  return `${text.includes('/') ? text : text.replace(/\./g, '/')}.java`;
 }
 
 function renameFile(oldName: string) {
   if (running || checking) { toast('Wait for the current run to finish.'); return; }
-  openDialog('Rename file', `<label class="dialog-label">File name<input id="rename-name" value="${esc(oldName)}" maxlength="180" autocomplete="off" /></label><p class="dialog-note">A public class must match its file name. Update the class declaration and any references after renaming.</p>`, () => {
-    const name = $<HTMLInputElement>('#rename-name').value.trim();
+  const oldClass = oldName.split('/').at(-1)!.replace(/\.java$/, '');
+  const declaresOld = analyzeJava(project.files.find(f => f.name === oldName)?.content ?? '').types.some(t => t.name === oldClass);
+  openDialog('Rename or move file', `<label class="dialog-label">File<input id="rename-name" value="${esc(oldName)}" maxlength="180" autocomplete="off" /><small>Use folders for packages, for example <code>util/Helper.java</code> or <code>util.Helper</code>.</small></label>${declaresOld ? `<label class="check-label"><input type="checkbox" id="rename-code" checked /> Also update the class name and package declaration in the file</label>` : ''}<p class="dialog-note">Other files that refer to this class by name are not changed.</p>`, () => {
+    const name = toFilePath($<HTMLInputElement>('#rename-name').value);
     if (name === oldName) return;
-    if (!FILE_PATTERN.test(name)) throw new Error('Use a relative Java path, such as Helper.java.');
+    if (!validFileName(name)) throw new Error('Use a Java path such as Helper.java or util/Helper.java.');
     if (project.files.some(f => f.name !== oldName && f.name.toLowerCase() === name.toLowerCase())) throw new Error('A file with that name already exists.');
     const file = project.files.find(f => f.name === oldName)!;
-    file.name = name;
+    if (declaresOld && $<HTMLInputElement>('#rename-code')?.checked) {
+      const newClass = name.split('/').at(-1)!.replace(/\.java$/, '');
+      const packageName = name.includes('/') ? name.slice(0, name.lastIndexOf('/')).replace(/\//g, '.') : '';
+      const oldPackage = analyzeJava(file.content).packageName;
+      const oldQualified = oldPackage ? `${oldPackage}.${oldClass}` : oldClass;
+      file.content = setPackage(renameType(file.content, oldClass, newClass), packageName);
+      if (project.mainClass === oldQualified) project.mainClass = packageName ? `${packageName}.${newClass}` : newClass;
+      for (const check of project.checks) if (check.target === oldQualified) check.target = packageName ? `${packageName}.${newClass}` : newClass;
+    }
     const key = `workspace/${oldName}`; models.get(key)?.dispose(); models.delete(key);
+    file.name = name;
     const marks = breakpoints.get(oldName); breakpoints.delete(oldName); if (marks) breakpoints.set(name, marks);
     save(); selectFile(name, false);
   }, 'Rename');
-  setTimeout(() => { const input = $<HTMLInputElement>('#rename-name'); input.focus(); input.setSelectionRange(0, input.value.lastIndexOf('.java')); });
+  setTimeout(() => { const input = $<HTMLInputElement>('#rename-name'); input.focus(); input.setSelectionRange(input.value.lastIndexOf('/') + 1, input.value.lastIndexOf('.java')); });
 }
 
 async function deleteFile(name: string) {
@@ -824,37 +1150,189 @@ async function deleteFile(name: string) {
   save(); selectFile(project.files[0].name, false);
 }
 
-function newFile() {
+const FILE_KINDS: Record<string, (name: string) => string> = {
+  class: name => `public class ${name} {\n\n}\n`,
+  main: name => `public class ${name} {\n    public static void main(String[] args) {\n        \n    }\n}\n`,
+  interface: name => `public interface ${name} {\n\n}\n`,
+  enum: name => `public enum ${name} {\n    \n}\n`,
+  record: name => `public record ${name}() {\n}\n`,
+};
+
+function newFile(folder = '') {
   if (running || checking) { toast('Wait for the run to finish before changing files.'); return; }
-  openDialog('New Java file', '<label class="dialog-label">File name<input id="file-name" placeholder="Helper.java or util/Helper.java" maxlength="180" autocomplete="off" /></label>', () => {
-    const name = $<HTMLInputElement>('#file-name').value.trim();
-    if (!FILE_PATTERN.test(name)) throw new Error('Use a relative Java path, such as Helper.java.');
+  const prefix = folder ? `${folder.replace(/\//g, '.')}.` : '';
+  openDialog('New Java file', `<label class="dialog-label">Name<input id="file-name" value="${esc(prefix)}" placeholder="Helper or util.Helper" maxlength="180" autocomplete="off" /><small>Add a package with dots or slashes, for example <code>util.Helper</code>.</small></label><label class="dialog-label">Kind<select id="file-kind"><option value="class">Class</option><option value="main">Class with main method</option><option value="interface">Interface</option><option value="enum">Enum</option><option value="record">Record</option></select></label>`, () => {
+    const name = toFilePath($<HTMLInputElement>('#file-name').value);
+    if (!validFileName(name)) throw new Error('Use a Java name such as Helper or util.Helper.');
     if (project.files.some(f => f.name.toLowerCase() === name.toLowerCase())) throw new Error('A file with that name already exists.');
     if (project.files.length >= 20) throw new Error('A project can have up to 20 files.');
-    const parts = name.split('/'); const className = parts.pop()!.replace('.java', '');
-    project.files.push({ name, content: `${parts.length ? `package ${parts.join('.')};\n\n` : ''}public class ${className} {\n\n}\n` });
+    const parts = name.replace(/\.java$/, '').split('/'); const className = parts.pop()!;
+    const kind = $<HTMLSelectElement>('#file-kind').value;
+    project.files.push({ name, content: `${parts.length ? `package ${parts.join('.')};\n\n` : ''}${FILE_KINDS[kind](className)}` });
+    if (kind === 'main' && !mainClasses(project.files.filter(f => f.name !== name)).includes(project.mainClass)) project.mainClass = [...parts, className].join('.');
+    collapsedFolders.delete(parts.join('/'));
     save(); selectFile(name, false);
+    const line = kind === 'main' ? 3 : kind === 'record' ? 1 : 2;
+    editor.setPosition({ lineNumber: line + (parts.length ? 2 : 0), column: kind === 'main' ? 9 : 5 }); editor.focus();
   }, 'Create');
+  setTimeout(() => { const input = $<HTMLInputElement>('#file-name'); input.focus(); input.setSelectionRange(input.value.length, input.value.length); });
 }
 
 function settingsDialog() {
-  openDialog('Project settings', `<label class="dialog-label">Project name<input id="setting-name" value="${esc(project.name)}" maxlength="120" /></label><label class="dialog-label">Main class<input id="setting-main" value="${esc(project.mainClass)}" placeholder="Main or app.Main" /><small>The class whose <code>main</code> method runs.</small></label><label class="dialog-label">Step limit<input id="setting-steps" type="number" min="10" max="2000" value="${project.maxSteps}" /><small>Recording stops after this many line steps (10–2,000). The steps recorded so far stay available.</small></label><p class="dialog-note">Runs use Java 21 with an 8-second time limit. Each step captures up to 24 frames, 64 objects and 32 elements per array or collection.</p>`, () => {
-    const mainClass = $<HTMLInputElement>('#setting-main').value.trim();
+  const mains = mainClasses(project.files);
+  const options = [...new Set([...mains, project.mainClass])];
+  openDialog('Project settings', `<label class="dialog-label">Project name<input id="setting-name" value="${esc(project.name)}" maxlength="120" /></label><label class="dialog-label">Main class<select id="setting-main">${options.map(m => `<option value="${esc(m)}" ${m === project.mainClass ? 'selected' : ''}>${esc(m)}${mains.includes(m) ? '' : ' (no main method found)'}</option>`).join('')}</select><small>${mains.length ? `Run starts in this class’s <code>main</code> method. ${mains.length} class${mains.length === 1 ? ' has' : 'es have'} one.` : 'No class has a <code>public static void main(String[] args)</code> method yet.'}</small></label><label class="dialog-label">Step limit<input id="setting-steps" type="number" min="10" max="2000" value="${project.maxSteps}" /><small>Recording stops after this many line steps (10–2,000). The steps recorded so far stay available.</small></label><p class="dialog-note">Runs use Java 21 with an 8-second time limit. Each step captures up to 24 frames, 64 objects and 32 elements per array or collection.</p>`, () => {
+    const mainClass = $<HTMLSelectElement>('#setting-main').value;
     const maxSteps = Number($<HTMLInputElement>('#setting-steps').value);
-    if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(mainClass)) throw new Error('Enter a valid Java class name.');
+    if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(mainClass)) throw new Error('Choose a main class.');
     if (!Number.isInteger(maxSteps) || maxSteps < 10 || maxSteps > 2000) throw new Error('Choose a step limit from 10 to 2,000.');
     project.mainClass = mainClass; project.maxSteps = maxSteps; project.name = $<HTMLInputElement>('#setting-name').value.trim() || 'Untitled project';
     save(); renderFiles(); renderSourceBanner(); renderCheckResults();
   });
 }
 
-function testsDialog() {
-  openDialog('Edit tests', `<p class="dialog-note">Each test runs your code in a fresh JVM with the given input and compares standard output exactly, ignoring trailing whitespace and line-ending style. Up to 12 tests, as JSON.</p><label class="dialog-label">Tests<textarea id="checks-json" rows="14" spellcheck="false">${esc(JSON.stringify(project.checks, null, 2))}</textarea></label>`, () => {
-    let checks: TestCase[];
-    try { checks = JSON.parse($<HTMLTextAreaElement>('#checks-json').value); } catch { throw new Error('The tests must be valid JSON.'); }
-    if (!validateProject({ ...project, checks })) throw new Error('Use an array of up to 12 objects, each with name, stdin and expectedOutput strings.');
-    project.checks = checks; save(); renderFiles(); renderConsole(); renderCheckResults(); renderCoach(); setBusy();
+// ---------- New project ----------
+
+function newProjectDialog() {
+  if (running || checking) { toast('Stop the current run before creating a project.'); return; }
+  closeMenu();
+  const cards = templates.map((t, i) => `<label class="template-card"><input type="radio" name="template" value="${t.id}" ${i === 0 ? 'checked' : ''} />${icon(t.icon)}<span><strong>${esc(t.name)}</strong><small>${esc(t.description)}</small></span></label>`).join('');
+  openDialog('New project', `<label class="dialog-label">Project name<input id="new-project-name" value="${esc(library.uniqueName('My project'))}" maxlength="120" autocomplete="off" /></label>
+    <fieldset class="template-grid"><legend>Start from</legend>${cards}<label class="template-card"><input type="radio" name="template" value="paste" />${icon('clipboard-paste')}<span><strong>Paste code</strong><small>Paste one or more Java classes. TraceLab creates the files.</small></span></label></fieldset>
+    <div id="paste-area" hidden><label class="dialog-label">Java source<textarea id="paste-code" rows="10" spellcheck="false" placeholder="public class Main {&#10;    public static void main(String[] args) {&#10;        …&#10;    }&#10;}"></textarea></label><p class="paste-preview" id="paste-preview" aria-live="polite"></p></div>
+    <div class="import-row">${icon('upload')}<span>Have files already?</span><button type="button" class="link-btn" data-action="import">Import .java files or a zip</button><button type="button" class="link-btn" data-action="import-folder">Import a folder</button><button type="button" class="link-btn" data-action="gallery">Open an example</button></div>`, () => {
+    const name = $<HTMLInputElement>('#new-project-name').value.trim() || 'My project';
+    const choice = document.querySelector<HTMLInputElement>('input[name="template"]:checked')?.value ?? 'blank';
+    if (choice === 'paste') {
+      const code = $<HTMLTextAreaElement>('#paste-code').value;
+      if (!code.trim()) throw new Error('Paste some Java code first.');
+      const { project: created, notes } = projectFromSources(name, [{ path: '', text: code }]);
+      if (createAndOpen(created)) toast(`Created “${project.name}” with ${created.files.map(f => f.name).join(', ')}.${notes.length ? ` ${notes.join(' ')}` : ''}`, 'success');
+      return;
+    }
+    const template = templates.find(t => t.id === choice)!;
+    if (createAndOpen(template.create(name))) toast(`Created “${project.name}”. Press Run to try it.`, 'success');
+  }, 'Create project', { wide: true });
+  const preview = () => {
+    const code = $<HTMLTextAreaElement>('#paste-code').value;
+    const el = $('#paste-preview');
+    if (!code.trim()) { el.textContent = ''; return; }
+    try {
+      const { project: draft, notes } = projectFromSources('preview', [{ path: '', text: code }]);
+      const mains = mainClasses(draft.files);
+      el.innerHTML = `${icon('check')}<span>Creates ${draft.files.map(f => `<code>${esc(f.name)}</code>`).join(', ')}${mains.length ? ` · runs <code>${esc(draft.mainClass)}</code>` : ' · no main method yet'}${notes.length ? `<br><small>${esc(notes.join(' '))}</small>` : ''}</span>`;
+      el.className = 'paste-preview ok';
+    } catch (error) { el.innerHTML = `${icon('triangle-alert')}<span>${esc(error instanceof Error ? error.message : String(error))}</span>`; el.className = 'paste-preview warn'; }
+    icons();
+  };
+  $('#dialog-body').addEventListener('change', e => {
+    if ((e.target as HTMLInputElement).name !== 'template') return;
+    const paste = (e.target as HTMLInputElement).value === 'paste';
+    $('#paste-area').hidden = !paste;
+    if (paste) $<HTMLTextAreaElement>('#paste-code').focus();
   });
+  $('#paste-code').addEventListener('input', preview);
+  setTimeout(() => $<HTMLInputElement>('#new-project-name').select());
+}
+
+// ---------- Test editor ----------
+
+type DraftTest = TestCase & { kind: 'output' | 'call' };
+
+function testFields(test: DraftTest, index: number, targets: ReturnType<typeof testTargets>): string {
+  const call = test.kind === 'call';
+  return `<article class="test-editor" data-index="${index}">
+    <header><input class="test-name" data-field="name" value="${esc(test.name)}" maxlength="120" aria-label="Test name" placeholder="Test name" />
+      <div class="segmented-text" role="radiogroup" aria-label="Test type"><button type="button" role="radio" data-kind="output" aria-checked="${!call}">Program output</button><button type="button" role="radio" data-kind="call" aria-checked="${call}">Method call</button></div>
+      <div class="test-tools"><button type="button" class="icon-btn small" data-test-move="-1" title="Move up" aria-label="Move up" ${index === 0 ? 'disabled' : ''}>${icon('arrow-up')}</button><button type="button" class="icon-btn small" data-test-move="1" title="Move down" aria-label="Move down">${icon('arrow-down')}</button><button type="button" class="icon-btn small" data-test-copy title="Duplicate" aria-label="Duplicate test">${icon('copy')}</button><button type="button" class="icon-btn small" data-test-delete title="Delete" aria-label="Delete test">${icon('trash-2')}</button></div></header>
+    ${call ? `<div class="test-grid call">
+        <label>Class<select data-field="target">${targets.map(t => `<option value="${esc(t.qualified)}" ${t.qualified === test.target ? 'selected' : ''}>${esc(t.qualified)}</option>`).join('') || '<option value="">No classes found</option>'}</select></label>
+        <label>Call<input data-field="call" value="${esc(test.call ?? '')}" placeholder="sum(new int[]{1, 2})" spellcheck="false" maxlength="500" /><small>Call a static method by name, or create an object: <code>new Counter().next()</code></small></label>
+        <label>Expected value<input data-field="expectedOutput" value="${esc(test.expectedOutput)}" placeholder='3   "text"   [1, 2]   throws ArithmeticException' spellcheck="false" /><small>Quotes around text are optional. Decimals match to about 9 digits.</small></label>
+      </div>`
+    : `<div class="test-grid">
+        <label><span>Input <span class="muted">(standard input)</span></span><textarea data-field="stdin" rows="3" spellcheck="false" placeholder="No input">${esc(test.stdin)}</textarea></label>
+        <label>Expected output<textarea data-field="expectedOutput" rows="3" spellcheck="false">${esc(test.expectedOutput)}</textarea><small>Compared exactly, ignoring trailing spaces and line-ending style.</small></label>
+      </div>`}
+    <p class="test-problem" hidden></p>
+  </article>`;
+}
+
+function testsDialog(initial?: DraftTest, note?: string) {
+  const drafts: DraftTest[] = project.checks.map(c => ({ ...structuredClone(c), kind: c.kind === 'call' ? 'call' : 'output' }));
+  if (initial) drafts.push(initial);
+  const targets = testTargets(project.files);
+  const defaultTarget = () => targets.find(t => t.methods.some(m => m.isStatic && m.name !== 'main'))?.qualified ?? targets[0]?.qualified ?? '';
+  const render = () => {
+    $('#test-list').innerHTML = drafts.length ? drafts.map((t, i) => testFields(t, i, targets)).join('') : '<p class="dialog-note">No tests yet. Add one to describe what correct behavior looks like.</p>';
+    $('#test-count').textContent = `${drafts.length} of 20`;
+    icons();
+  };
+  openDialog('Tests', `${note ? `<div class="callout warning">${icon('triangle-alert')}<div>${note}</div></div>` : ''}<p class="dialog-note">Tests run your current code in a fresh JVM. Use program-output tests for what <code>main</code> prints, and method-call tests to check one method’s return value.</p><div id="test-list" class="test-list"></div><div class="test-add"><button type="button" class="btn btn-secondary" data-add-test="output">${icon('plus')}Output test</button><button type="button" class="btn btn-secondary" data-add-test="call">${icon('braces')}Method test</button><span class="muted" id="test-count"></span></div>`, () => {
+    const problems: string[] = [];
+    for (const card of document.querySelectorAll<HTMLElement>('#test-list .test-editor')) {
+      const test = drafts[Number(card.dataset.index)];
+      const found = testProblems(test, project);
+      const el = card.querySelector<HTMLElement>('.test-problem')!;
+      el.hidden = !found.length; el.textContent = found.join(' ');
+      card.classList.toggle('invalid', found.length > 0);
+      if (found.length) problems.push(`“${test.name || 'Untitled test'}”: ${found[0]}`);
+    }
+    if (problems.length) throw new Error(problems.length === 1 ? problems[0] : `${problems.length} tests need attention. ${problems[0]}`);
+    const checks: TestCase[] = drafts.map(t => t.kind === 'call'
+      ? { name: t.name.trim(), kind: 'call', target: t.target, call: t.call!.trim(), stdin: t.stdin ?? '', expectedOutput: t.expectedOutput.trim() }
+      : { name: t.name.trim(), stdin: t.stdin, expectedOutput: t.expectedOutput });
+    if (!validateProject({ ...project, checks })) throw new Error('One of the tests is too long. Inputs are limited to 16 KiB and outputs to 32 KiB.');
+    project.checks = checks; save(); renderFiles(); renderConsole(); renderCheckResults(); renderCoach(); renderSaveRunTest(); setBusy();
+    toast(`Saved ${checks.length} test${checks.length === 1 ? '' : 's'}.`, 'success');
+  }, 'Save tests', { wide: true });
+  render();
+  const body = $('#dialog-body');
+  body.addEventListener('input', e => {
+    const field = (e.target as HTMLElement).dataset.field as keyof DraftTest | undefined;
+    const card = (e.target as HTMLElement).closest<HTMLElement>('.test-editor');
+    if (!field || !card) return;
+    (drafts[Number(card.dataset.index)] as Record<string, unknown>)[field] = (e.target as HTMLInputElement).value;
+  });
+  body.addEventListener('change', e => {
+    const field = (e.target as HTMLElement).dataset.field;
+    const card = (e.target as HTMLElement).closest<HTMLElement>('.test-editor');
+    if (field && card) (drafts[Number(card.dataset.index)] as Record<string, unknown>)[field] = (e.target as HTMLSelectElement).value;
+  });
+  body.addEventListener('click', e => {
+    const button = (e.target as Element).closest<HTMLElement>('button');
+    if (!button) return;
+    const card = button.closest<HTMLElement>('.test-editor');
+    const index = card ? Number(card.dataset.index) : -1;
+    if (button.dataset.addTest) {
+      if (drafts.length >= 20) { $('#dialog-error').textContent = 'A project can have up to 20 tests.'; return; }
+      const call = button.dataset.addTest === 'call';
+      drafts.push(call ? { name: `Method test ${drafts.length + 1}`, kind: 'call', target: defaultTarget(), call: '', stdin: '', expectedOutput: '' } : { name: `Test ${drafts.length + 1}`, kind: 'output', stdin: '', expectedOutput: '' });
+      render();
+      $<HTMLElement>(`#test-list .test-editor:last-child ${call ? '[data-field="call"]' : '[data-field="stdin"]'}`)?.focus();
+    } else if (button.dataset.kind && index >= 0) {
+      const test = drafts[index];
+      test.kind = button.dataset.kind as DraftTest['kind'];
+      if (test.kind === 'call' && !test.target) test.target = defaultTarget();
+      render();
+    } else if (button.dataset.testMove && index >= 0) {
+      const to = index + Number(button.dataset.testMove);
+      if (to < 0 || to >= drafts.length) return;
+      [drafts[index], drafts[to]] = [drafts[to], drafts[index]]; render();
+    } else if (button.dataset.testCopy !== undefined && index >= 0) {
+      if (drafts.length >= 20) return;
+      drafts.splice(index + 1, 0, { ...structuredClone(drafts[index]), name: `${drafts[index].name} (copy)` }); render();
+    } else if (button.dataset.testDelete !== undefined && index >= 0) { drafts.splice(index, 1); render(); }
+  });
+  if (initial) setTimeout(() => $<HTMLElement>('#test-list .test-editor:last-child .test-name')?.focus());
+}
+
+/** Opens the test editor with a new test built from the last run's input and output. */
+function saveRunAsTest() {
+  if (!run) return;
+  const actual = normalizeOutput(output(run, 'stdout'));
+  testsDialog({ name: `Test ${project.checks.length + 1}`, kind: 'output', stdin: run.request.stdin, expectedOutput: actual },
+    '<strong>Check the expected output before saving.</strong><p>This copies what the program printed. If the program has a bug, this test would expect the wrong answer.</p>');
 }
 
 function shortcutsDialog() {
@@ -876,11 +1354,29 @@ function toggleMenu() {
   if (open) menu().querySelector<HTMLElement>('[role="menuitem"]')?.focus();
 }
 
-async function runAction(action: string) {
+let importMode: 'new' | 'add' = 'new';
+function closeProjectMenu() { if (!$('#project-menu').hidden) { $('#project-menu').hidden = true; $('#project-switch').setAttribute('aria-expanded', 'false'); } }
+function toggleProjectMenu() {
+  const open = $('#project-menu').hidden;
   closeMenu();
-  if (action === 'new-project') { if (await replaceProject(structuredClone(BLANK), 'a new project')) toast('New project created.'); }
+  if (open) renderProjectMenu();
+  $('#project-menu').hidden = !open; $('#project-switch').setAttribute('aria-expanded', String(open));
+  if (open) $('#project-menu').querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+}
+
+async function runAction(action: string) {
+  closeMenu(); closeProjectMenu();
+  // Actions that open a chooser or another dialog replace an open dialog.
+  if (['import', 'import-folder', 'add-files', 'gallery', 'new-project', 'settings', 'shortcuts', 'about', 'rename-project'].includes(action)) { const d = $<HTMLDialogElement>('#dialog'); if (d.open) d.close(); }
+  if (action === 'new-project') newProjectDialog();
+  else if (action === 'projects') setLayout({ sidebar: true, view: 'projects' });
+  else if (action === 'rename-project') renameProject();
+  else if (action === 'save-copy') saveExampleCopy();
   else if (action === 'gallery') openGallery();
-  else if (action === 'import') $<HTMLInputElement>('#import-input').click();
+  else if (action === 'import') { importMode = 'new'; $<HTMLInputElement>('#import-input').click(); }
+  else if (action === 'import-folder') { importMode = 'new'; $<HTMLInputElement>('#import-folder').click(); }
+  else if (action === 'add-files') { importMode = 'add'; $<HTMLInputElement>('#import-input').click(); }
+  else if (action === 'export-zip') await exportZip(project);
   else if (action === 'export') download(`${project.name.replace(/[^\w-]+/g, '-').toLowerCase() || 'project'}.tracelab.json`, project);
   else if (action === 'export-trace') { if (run) download(`trace-${run.id}.json`, run); else toast('Run the program first to record a trace.'); }
   else if (action === 'settings') settingsDialog();
@@ -896,24 +1392,44 @@ $('#verify').onclick = () => verify();
 $('#verify-top').onclick = () => verify();
 $('#share').onclick = () => shareProject();
 $('#theme').onclick = () => { const order: ThemeChoice[] = ['system', 'light', 'dark']; setTheme(order[(order.indexOf(themeChoice()) + 1) % 3]); renderTheme(); };
-$('#project-switch').onclick = () => settingsDialog();
-$('#menu-button').onclick = e => { e.stopPropagation(); toggleMenu(); };
+$('#project-switch').onclick = e => { e.stopPropagation(); toggleProjectMenu(); };
+$('#save-copy').onclick = () => saveExampleCopy();
+$('#menu-button').onclick = e => { e.stopPropagation(); closeProjectMenu(); toggleMenu(); };
 $('#new-file').onclick = () => newFile();
 $('#edit-checks').onclick = () => testsDialog();
+$('#add-test').onclick = () => testsDialog({ name: `Test ${project.checks.length + 1}`, kind: 'output', stdin: '', expectedOutput: '' });
+$('#save-run-test').onclick = () => saveRunAsTest();
 $('#gallery-close').onclick = () => closeGallery();
 $('#gallery').addEventListener('click', e => { if (e.target === e.currentTarget) closeGallery(); });
 $('#gallery-filters').addEventListener('click', e => { const b = (e.target as Element).closest<HTMLElement>('[data-filter]'); if (b) { galleryFilter = b.dataset.filter as DemoCategory | 'all'; renderGallery(); } });
-$('#import-input').onchange = async e => {
-  const input = e.target as HTMLInputElement; const file = input.files?.[0];
-  if (!file) return;
-  try {
-    if (file.size > 512 * 1024) throw new Error('Imports are limited to 512 KiB.');
-    const value: unknown = JSON.parse(await file.text());
-    if (!validateProject(value)) throw new Error('This file is not a TraceLab project export.');
-    if (await replaceProject(value, `“${value.name}”`)) toast(`Imported “${value.name}”.`, 'success');
-  } catch (e) { toast(e instanceof Error ? e.message : 'Could not import this file.', 'error'); }
+for (const id of ['#import-input', '#import-folder']) $<HTMLInputElement>(id).onchange = async e => {
+  const input = e.target as HTMLInputElement;
+  const files = [...input.files ?? []].map(file => ({ file, path: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name }));
   input.value = '';
+  await handleImport(files, importMode);
 };
+
+// Drag and drop: onto the Explorer adds files to this project; anywhere else imports a new project.
+let dragDepth = 0;
+const dropMode = (e: DragEvent): 'new' | 'add' => (e.target as Element).closest?.('#explorer') && layout.sidebar && layout.view === 'explorer' ? 'add' : 'new';
+const hasFiles = (e: DragEvent) => [...(e.dataTransfer?.types ?? [])].includes('Files');
+document.addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; $('#drop-overlay').hidden = false; });
+document.addEventListener('dragover', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  const mode = dropMode(e);
+  $('#drop-overlay').classList.toggle('add', mode === 'add');
+  $('#explorer').classList.toggle('drop-target', mode === 'add');
+  $('#drop-title').textContent = mode === 'add' ? `Add to “${project.name}”` : 'Import as a new project';
+});
+document.addEventListener('dragleave', e => { if (!hasFiles(e)) return; if (--dragDepth <= 0) { dragDepth = 0; $('#drop-overlay').hidden = true; $('#explorer').classList.remove('drop-target'); } });
+document.addEventListener('drop', async e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0; $('#drop-overlay').hidden = true; $('#explorer').classList.remove('drop-target');
+  const mode = dropMode(e);
+  try { await handleImport(await droppedFiles(e.dataTransfer!), mode); }
+  catch (error) { toast(error instanceof Error ? error.message : 'Those files could not be read.', 'error'); }
+});
 $('#first').onclick = () => { stopPlayback(); goTo(0); };
 $('#back').onclick = () => navigate('back');
 $('#next').onclick = () => navigate('into');
@@ -957,10 +1473,22 @@ new ResizeObserver(() => scheduleArrows()).observe(canvas);
 document.fonts?.ready.then(() => scheduleArrows());
 
 document.addEventListener('click', e => {
-  if (!(e.target as Element).closest('.menu-wrap')) closeMenu();
+  if (!(e.target as Element).closest('.menu-wrap')) { closeMenu(); closeProjectMenu(); }
   const target = (e.target as Element).closest<HTMLElement>('button, a[data-action]');
   if (!target) return;
+  if (target.dataset.closeDialog !== undefined) { $<HTMLDialogElement>('#dialog').close(); return; }
   if (target.dataset.action) { e.preventDefault(); runAction(target.dataset.action); }
+  if (target.dataset.openDoc) {
+    const [kind, ...rest] = target.dataset.openDoc.split(':');
+    closeProjectMenu();
+    if (kind === 'example') openDemo(rest.join(':')); else openDoc({ kind: 'project', id: rest.join(':') });
+  }
+  if (target.dataset.projectAction && target.dataset.id) projectAction(target.dataset.projectAction, target.dataset.id);
+  if (target.dataset.resetExample) resetExample(target.dataset.resetExample);
+  if (target.dataset.folder) { const f = target.dataset.folder; if (collapsedFolders.has(f)) collapsedFolders.delete(f); else collapsedFolders.add(f); $('#file-list').innerHTML = renderTree(); icons(); }
+  if (target.dataset.newIn) newFile(target.dataset.newIn);
+  if (target.dataset.setMain) { project.mainClass = target.dataset.setMain; save(); renderFiles(); toast(`Run now starts in ${project.mainClass}.`); }
+  if (target.dataset.moveFile && target.dataset.moveTo && moveFile(target.dataset.moveFile, target.dataset.moveTo)) toast(`Moved to ${target.dataset.moveTo}.`, 'success');
   if (target.dataset.view) showView(target.dataset.view as SidebarView);
   if (target.dataset.openDemo) openDemo(target.dataset.openDemo);
   if (target.dataset.run !== undefined) startRun();
@@ -995,10 +1523,11 @@ document.addEventListener('click', e => {
   if (target.id === 'reset-progress') confirmDialog('Reset practice history?', 'This clears the concepts you have practiced in this browser.', 'Reset', true).then(ok => { if (ok) { progress = resetProgress(); renderProgress(); } });
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeMenu();
-  if (!menu().hidden && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+  if (e.key === 'Escape') { closeMenu(); closeProjectMenu(); }
+  const openMenu = !menu().hidden ? menu() : !$('#project-menu').hidden ? $('#project-menu') : null;
+  if (openMenu && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
     e.preventDefault();
-    const items = [...menu().querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    const items = [...openMenu.querySelectorAll<HTMLElement>('[role="menuitem"]')];
     const at = items.indexOf(document.activeElement as HTMLElement);
     items[(at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
     return;
@@ -1024,19 +1553,29 @@ async function checkHealth() {
   $('#runner-status').title = runnerOnline ? 'Connected to the local Java runner. Click for details.' : 'The Java runner is not reachable. Start it with npm start.';
 }
 
-async function openRequestedDemo() {
+/** Handles `?demo=<id>` (open an example) and `?new` (start a new project) from links. */
+function openRequestedDoc() {
   const params = new URLSearchParams(location.search);
   const id = params.get('demo');
-  if (!id) return;
-  params.delete('demo');
+  const wantsNew = params.has('new');
+  if (!id && !wantsNew) return;
+  params.delete('demo'); params.delete('new');
   const rest = params.toString();
   history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
-  await openDemo(id);
+  if (id) openDemo(id);
+  else newProjectDialog();
 }
 
 renderTheme();
-selectFile(activeFile, false); renderTrace(); renderCoach(); renderCheckResults(); renderProgress(); setBusy(); icons();
+selectFile(activeFile, false); renderTrace(); renderCoach(); renderCheckResults(); renderProgress(); setBusy(); save(); icons();
 checkHealth().then(() => { if (!runnerOnline) toast('The Java runner isn’t running. Start it with npm start to run programs.', 'error'); });
 setInterval(() => { if (!runnerOnline) checkHealth(); }, 5000);
-openRequestedDemo().then(() => openSharedProject());
+openRequestedDoc();
+openSharedProject();
 window.addEventListener('hashchange', () => openSharedProject());
+// Another tab changed the library: refresh lists, and reload the open project if it was edited elsewhere.
+window.addEventListener('storage', e => {
+  if (!e.key?.startsWith('tracelab.')) return;
+  renderProjectList();
+  if (doc.kind === 'project' && !library.summary(doc.id)) toast('This project was deleted in another tab. Keep editing to save a new copy, or export it.', 'error');
+});

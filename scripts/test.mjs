@@ -6,6 +6,12 @@ import { demos, examples } from '../web/examples.ts';
 import { checkPassed, failingCheck, output, questionsFor, sameSource, snapshots, validateProject } from '../web/learning.ts';
 import { describeStep, stepBackOver, stepOut, stepOver } from '../web/narrate.ts';
 import { decodeProject, encodeProject } from '../web/share.ts';
+import { analyzeJava, expectedPath, fileIssues, mainClasses, renameType, setPackage, splitTopLevelTypes } from '../web/javasource.ts';
+import { limitProblem, projectFromSources, projectFromZip, projectToZip } from '../web/importer.ts';
+import { Library } from '../web/library.ts';
+import { evaluateTest, requestForTest, testProblems, valuesMatch } from '../web/tests.ts';
+import { templates } from '../web/templates.ts';
+import { readZip, writeZip } from '../web/zip.ts';
 
 await buildWorker();
 await command('cargo', ['test', '--locked']);
@@ -366,6 +372,119 @@ public class Main {
     assert.equal(missing.status, 404);
     assert.match(await missing.text(), /This page doesn’t exist/);
     for (const theme of ['light', 'dark']) assert.equal((await fetch(`${base}/screenshots/ide-${theme}.webp`)).status, 200);
+  });
+  await test('source analysis ignores comments, strings and text blocks', () => {
+    const src = `package com.example.app;\nimport java.util.*;\n/** class Fake { */\npublic final class Main {\n  static final String S = "class Nope { } \\" }";\n  char c = '{';\n  String t = """\n    class AlsoNope {\n    """;\n  record Pair(int a, int b) {}\n  public static void main(final String... args) { helper(1); }\n  private static int helper(int n) { return n; }\n  int field = helper(2);\n}\nclass Helper { public static void main(String args[]) {} }\n`;
+    const info = analyzeJava(src);
+    assert.equal(info.packageName, 'com.example.app');
+    assert.deepEqual(info.types.map(t => [t.name, t.isPublic, t.hasMain]), [['Main', true, true], ['Helper', false, true]]);
+    assert.deepEqual(info.types[0].methods.map(m => m.name), ['main', 'helper']);
+    assert.equal(expectedPath(src), 'com/example/app/Main.java');
+    assert.deepEqual(mainClasses([{ name: 'x', content: src }]), ['com.example.app.Main', 'com.example.app.Helper']);
+    assert.equal(renameType('public class Old { Old() {} }', 'Old', 'New'), 'public class New { Old() {} }');
+    assert.equal(setPackage('package a;\npublic class A {}', 'b.c'), 'package b.c;\npublic class A {}');
+    assert.equal(setPackage('public class A {}', 'p'), 'package p;\n\npublic class A {}');
+    const issues = fileIssues([{ name: 'Main.java', content: src }, { name: 'Wrong.java', content: 'public class Right {}' }, { name: 'ok/T.java', content: 'package ok; public class T {}' }]);
+    assert.deepEqual([...issues.entries()].map(([k, v]) => [k, v.expected]), [['Main.java', 'com/example/app/Main.java'], ['Wrong.java', 'Right.java']]);
+    for (const e of examples) assert.equal(fileIssues(e.files).size, 0, `${e.example} file paths match their classes`);
+  });
+  await test('pasted and uploaded sources become correctly placed project files', async () => {
+    const split = splitTopLevelTypes('import java.util.List;\n\npublic class A { List<String> x; }\n\nclass Hidden {}\n\npublic interface B { void go(); }\n');
+    assert.deepEqual(split.map(f => f.name), ['A.java', 'B.java']);
+    assert.match(split[0].content, /class Hidden/);
+    assert.match(split[1].content, /^import java\.util\.List;/);
+    const folder = projectFromSources('Folder', [
+      { path: 'proj/src/main/java/com/x/App.java', text: 'package com.x;\r\npublic class App { public static void main(String[] a) {} }' },
+      { path: 'proj/src/main/java/com/x/util/U.java', text: '\uFEFFpackage com.x.util;\npublic class U {}' },
+    ]);
+    assert.deepEqual(folder.project.files.map(f => f.name), ['com/x/App.java', 'com/x/util/U.java']);
+    assert.equal(folder.project.mainClass, 'com.x.App');
+    assert.ok(folder.project.files.every(f => !f.content.includes('\r') && !f.content.startsWith('\uFEFF')));
+    assert.match(limitProblem(Array.from({ length: 21 }, (_, i) => ({ name: `C${i}.java`, content: `class C${i} {}` }))), /up to 20/);
+    assert.throws(() => projectFromSources('x', [{ path: 'Notes.java', text: '// just a comment' }]), /no Java files/);
+    for (const project of [...examples, ...templates.map(t => t.create('T'))]) {
+      const back = await projectFromZip(await projectToZip(project), 'zip');
+      assert.deepEqual({ ...back.project, example: project.example }, { ...project }, `${project.name} survives a zip round trip`);
+    }
+    const plain = await writeZip([{ path: 'repo/src/Main.java', data: new TextEncoder().encode('public class Main { public static void main(String[] a) {} }') }, { path: 'repo/README.md', data: new Uint8Array(10) }]);
+    const imported = await projectFromZip(plain, 'repo');
+    assert.deepEqual([imported.project.name, imported.project.files.map(f => f.name)], ['repo', ['Main.java']]);
+    const bomb = await writeZip([{ path: 'Big.java', data: new Uint8Array(200000).fill(32) }]);
+    await assert.rejects(readZip(bomb, { maxEntries: 10, maxEntry: 65536, maxTotal: 100000 }), /larger than 64 KiB/);
+    await assert.rejects(projectFromZip(new Uint8Array([1, 2, 3]), 'x'), /not a zip/);
+  });
+  await test('project library keeps projects and example edits apart', () => {
+    const map = new Map();
+    const storage = { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, v), removeItem: k => map.delete(k) };
+    let clock = 1000;
+    const lib = new Library(storage, validateProject, () => clock++);
+    map.set('tracelab.project.v1', JSON.stringify({ ...example('loop'), name: 'My old work' }));
+    const migrated = lib.migrateLegacy(p => examples.find(e => JSON.stringify(e) === JSON.stringify(p))?.example ?? null, new Set(examples.map(e => e.example)));
+    assert.deepEqual(migrated, { kind: 'example', id: 'loop' }, 'an edited example stays an example with saved edits');
+    assert.equal(lib.load(migrated).name, 'My old work');
+    assert.equal(map.has('tracelab.project.v1'), false);
+    const a = lib.create(templates[0].create('Alpha'));
+    const b = lib.create(templates[2].create('Beta'));
+    assert.deepEqual(lib.list().map(p => p.name), ['Beta', 'Alpha']);
+    const edited = lib.load({ kind: 'project', id: a }); edited.files[0].content += '// edit';
+    lib.save({ kind: 'project', id: a }, edited);
+    assert.deepEqual(lib.list().map(p => p.name), ['Alpha', 'Beta'], 'most recently saved first');
+    const copy = lib.duplicate(b);
+    assert.equal(lib.summary(copy).name, 'Beta (copy)');
+    assert.equal(lib.uniqueName('Alpha'), 'Alpha 2');
+    lib.setCurrent({ kind: 'project', id: b });
+    lib.remove(b);
+    assert.equal(lib.current, null);
+    assert.equal(lib.load({ kind: 'project', id: b }), null);
+    const reopened = new Library(storage, validateProject);
+    assert.deepEqual(reopened.list().map(p => p.name).sort(), ['Alpha', 'Beta (copy)']);
+    assert.equal(reopened.hasExampleEdits('loop'), true);
+    reopened.resetExample('loop');
+    assert.equal(reopened.hasExampleEdits('loop'), false);
+  });
+  await test('method-call tests evaluate expressions against the real program', async () => {
+    const library = { version: 1, name: 'Calls', example: '', mainClass: 'app.Main', stdin: '', maxSteps: 300, checks: [], files: [
+      { name: 'app/Main.java', content: 'package app;\npublic class Main { public static void main(String[] a) { System.out.println(MathUtil.average(new int[]{1, 2})); } }\n' },
+      { name: 'app/MathUtil.java', content: 'package app;\nimport java.util.*;\npublic class MathUtil {\n  public static double average(int[] xs) { int s = 0; for (int x : xs) s += x; System.out.print("noise"); return (double) s / xs.length; }\n  static int divide(int a, int b) { return a / b; }\n  public static String shout(String s) { return s.toUpperCase(); }\n  public static int[] pair(int a) { return new int[]{a, a}; }\n  public static List<String> names() { return List.of("Ada", "Lin"); }\n  public static void nothing() {}\n  public int instance() { return 7; }\n}\n' },
+    ] };
+    const cases = [
+      [{ call: 'average(new int[]{1, 2})', expectedOutput: '1.5' }, true, /Returned 1\.5/],
+      [{ call: 'MathUtil.divide(7, 2)', expectedOutput: '3' }, true],
+      [{ call: 'divide(1, 0)', expectedOutput: 'throws ArithmeticException' }, true],
+      [{ call: 'shout("hi")', expectedOutput: 'HI' }, true],
+      [{ call: 'pair(4)', expectedOutput: '[4, 4]' }, true],
+      [{ call: 'names()', expectedOutput: '["Ada", "Lin"]' }, true],
+      [{ call: 'new MathUtil().instance()', expectedOutput: '7' }, true],
+      [{ call: 'divide(9, 3)', expectedOutput: '4' }, false, /Expected 4, got 3/],
+      [{ call: 'nothing()', expectedOutput: '0' }, false, /returns void/],
+      [{ call: 'instance()', expectedOutput: '7' }, false, /instance method/],
+      [{ call: 'missing(1)', expectedOutput: '1' }, false, /does not compile/],
+    ];
+    for (const [fields, passes, detail] of cases) {
+      const check = { name: fields.call, kind: 'call', target: 'app.MathUtil', stdin: '', ...fields };
+      assert.deepEqual(testProblems(check, library), []);
+      const req = requestForTest(library, check, request(library));
+      assert.equal(req.mainClass, 'app.TraceLabCall__');
+      const outcome = evaluateTest(await execute(req), check);
+      assert.equal(outcome.passed, passes, `${fields.call}: ${outcome.detail}`);
+      if (detail) assert.match(outcome.detail, detail);
+    }
+    assert.match(testProblems({ name: 'x', kind: 'call', target: 'app.Nope', call: 'f(); g()', stdin: '', expectedOutput: '' }, library).join(' '), /single expression.*Choose the class.*expected value/);
+    assert.equal(valuesMatch('0.3', '0.30000000000000004'), true);
+    assert.equal(valuesMatch('hi', '"hi"'), true);
+    assert.equal(valuesMatch('throws java.lang.ArithmeticException', 'value 3'), false);
+  });
+  await test('every new-project template runs and passes its own tests', async () => {
+    for (const template of templates) {
+      const project = template.create(template.name);
+      assert.ok(validateProject(project), template.id);
+      assert.deepEqual([...fileIssues(project.files).keys()], [], `${template.id} paths match`);
+      assert.ok(mainClasses(project.files).includes(project.mainClass), `${template.id} main class exists`);
+      for (const check of project.checks) {
+        const outcome = evaluateTest(await execute(requestForTest(project, check, request(project))), check);
+        assert.equal(outcome.passed, true, `${template.id} / ${check.name}: ${outcome.detail}`);
+      }
+    }
   });
   await test('project import rejects malformed nested values without throwing', () => {
     assert.equal(validateProject({ ...examples[0], files: [null] }), false);
