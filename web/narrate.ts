@@ -17,7 +17,7 @@ export function boxedValue(object?: HeapObject): string | undefined {
 }
 /** Immutable values that read better inline than as separate heap cards. */
 export function isInlineValue(object?: HeapObject): boolean {
-  return !!object && ((object.kind === 'string' && object.type === 'java.lang.String') || boxedValue(object) !== undefined);
+  return !!object && ((object.kind === 'string' && object.type === 'java.lang.String') || object.kind === 'value' || boxedValue(object) !== undefined);
 }
 export function heapIndex(state?: TraceEvent): Map<string, HeapObject> { return new Map((state?.heap ?? []).map(o => [o.id, o])); }
 
@@ -28,6 +28,7 @@ export function describeValue(value: TraceValue | undefined, heap: Map<string, H
   if (value.kind !== 'reference') return value.value ?? 'null';
   const object = heap.get(value.ref!);
   if (object?.kind === 'string' && object.type === 'java.lang.String') return JSON.stringify(clip(object.text ?? ''));
+  if (object?.kind === 'value') return clip(object.text ?? '');
   const boxed = boxedValue(object);
   if (boxed !== undefined) return boxed;
   const type = simpleType(value.type ?? object?.type ?? 'Object');

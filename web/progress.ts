@@ -20,6 +20,11 @@ export const CONCEPTS: Record<string, string> = {
   'pass-by-value': 'Pass by value',
   types: 'Types and conversions',
   'compile-errors': 'Compiler errors',
+  bfs: 'Breadth-first search',
+  dfs: 'Depth-first search',
+  trees: 'Binary trees',
+  'binary-search': 'Binary search',
+  sorting: 'Sorting',
 };
 
 export function loadProgress(): Progress {

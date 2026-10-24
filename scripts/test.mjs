@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { buildWorker, environment, run as command, serverBinary } from './env.mjs';
 import { demos, examples } from '../web/examples.ts';
-import { checkPassed, failingCheck, output, questionsFor, sameSource, snapshots, validateProject } from '../web/learning.ts';
+import { checkPassed, expandEvents, failingCheck, output, questionsFor, sameSource, snapshots, validateProject } from '../web/learning.ts';
 import { describeStep, stepBackOver, stepOut, stepOver } from '../web/narrate.ts';
 import { decodeProject, encodeProject } from '../web/share.ts';
 import { analyzeJava, expectedPath, fileIssues, mainClasses, renameType, setPackage, splitTopLevelTypes } from '../web/javasource.ts';
@@ -13,11 +13,13 @@ import { batchOutcome, batchRequest, batchResults, evaluateTest, harnessErrorDet
 import { caseToCheck, planTests, sampleCalls } from '../web/testgen.ts';
 import { applyEdits, compileIssues } from '../web/compilehelp.ts';
 import { cursorsFor } from '../web/cursors.ts';
-import { treeViews } from '../web/structures.ts';
+import { chainViews, graphViews, gridViews, recursionTree, treeViews } from '../web/structures.ts';
+import { cursorsByObject } from '../web/cursors.ts';
 import { JavaLanguageClient } from '../web/lsp.ts';
 import { lintHelp } from '../web/linthelp.ts';
 import { buildHelp, enclosingLoop } from '../web/help.ts';
-import { answerText, practiceConcepts, practiceFor, practiceOptions, practiceOutcome } from '../web/practice.ts';
+import { aiPracticeMessages, answerText, parseAiPractice, practiceConcepts, practiceFor, practiceOptions, practiceOutcome, unsafeProgram } from '../web/practice.ts';
+import { checkCondition, describeStart, shiftLine } from '../web/startat.ts';
 import { checkable, spellingTokens } from '../web/spell.ts';
 import { readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -50,7 +52,7 @@ const oneFile = content => ({ files: [{ name: 'Main.java', content }], mainClass
 async function wait(id) {
   for (let i = 0; i < 400; i++) {
     const data = await api(`/api/runs/${id}`);
-    if (data.status === 'finished') return data;
+    if (data.status === 'finished') { expandEvents(data.events); return data; }
     await sleep(80);
   }
   throw new Error('A test run did not finish.');
@@ -686,9 +688,14 @@ public class Main {
       actions = await client.request('textDocument/codeAction', { textDocument: { uri: client.uri('Main.java') }, range: unresolved[0].range, context: { diagnostics: unresolved } });
     }
     assert.ok(actions.some(a => a.title === "Import 'ArrayList' (java.util)"), actions.map(a => a.title).join(' | '));
-    const rename = await client.request('textDocument/rename', { textDocument: { uri: client.uri('Helper.java') }, position: { line: 1, character: 23 }, newName: 'doubled' }, 30000);
-    const changed = [...Object.keys(rename.changes ?? {}), ...(rename.documentChanges ?? []).map(c => c.textDocument.uri)].map(uri => client.nameOf(uri)).sort();
-    assert.deepEqual(changed, ['Helper.java', 'Main.java']);
+    // Renaming across files needs the server's search index, which can lag behind the first diagnostics.
+    let changed = [], rename;
+    for (let i = 0; i < 20 && changed.length < 2; i++) {
+      if (i) await sleep(500);
+      rename = await client.request('textDocument/rename', { textDocument: { uri: client.uri('Helper.java') }, position: { line: 1, character: 23 }, newName: 'doubled' }, 30000);
+      changed = [...Object.keys(rename.changes ?? {}), ...(rename.documentChanges ?? []).map(c => c.textDocument.uri)].map(uri => client.nameOf(uri)).sort();
+    }
+    assert.deepEqual(changed, ['Helper.java', 'Main.java'], JSON.stringify(rename));
     // A second page reuses the running server instead of initializing it again.
     const again = new JavaLanguageClient(base);
     await again.connect([{ name: 'Main.java', content: main }]);
@@ -735,9 +742,13 @@ public class Main {
       if (stdin) assert.match(q.context, /The input had 1 token/);
     }
   });
-  await test('practice problems: every concept runs, and the JVM’s result is one of the options', async () => {
+  await test('practice problems: every concept and variant runs, and the JVM’s result is one of the options', async () => {
     for (const concept of practiceConcepts) {
-      for (const seed of [1, 2, 3]) {
+      // Three seeds per concept, chosen so that every variant (distinct title) runs at least once.
+      const titles = new Map();
+      for (let seed = 1; seed <= 80; seed++) { const t = practiceFor(concept, seed).title.replace(/,.*/, ''); if (!titles.has(t)) titles.set(t, seed); }
+      const seeds = [...new Set([...titles.values(), 1, 2, 3])].slice(0, Math.max(3, titles.size));
+      for (const seed of seeds) {
         const item = practiceFor(concept, seed);
         assert.equal(item.concept, concept);
         const data = await execute({ ...oneFile(item.code), maxSteps: 100, timeoutMs: 3000, mode: 'run' });
@@ -762,7 +773,10 @@ public class Main {
         const request = JSON.parse(body);
         if (request.model === 'bad') { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end('{"error":{"message":"invalid api key"}}'); return; }
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-        for (const piece of ['Index ', '3 is ', '**past** the end.']) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: piece } }] })}\n\n`);
+        // Practice requests get a problem whose "wrong" answers include the real one, which TraceLab must drop.
+        const practiceReply = JSON.stringify({ title: 'Queue order', code: 'import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Deque<Integer> q = new ArrayDeque<>();\n        q.add(1); q.add(2); q.push(3);\n        System.out.println(q.poll() + " " + q.poll());\n    }\n}', prompt: 'What does this program print?', wrong: ['1 2', '3 1', '2 1'], why: 'push adds at the head.' });
+        const pieces = /practice problems/.test(request.messages[0].content) ? [practiceReply.slice(0, 40), practiceReply.slice(40)] : ['Index ', '3 is ', '**past** the end.'];
+        for (const piece of pieces) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: piece } }] })}\n\n`);
         res.end('data: [DONE]\n\n');
       });
     });
@@ -794,6 +808,21 @@ public class Main {
       assert.equal(chat.body.model, 'mock-coder'); assert.equal(chat.body.stream, true);
       assert.match(chat.body.messages[0].content, /tutor inside TraceLab/);
       assert.equal(chat.body.messages.at(-1).content, 'Why did it fail?');
+      // AI practice: the model writes the program and wrong answers; the JVM supplies the answer.
+      const asked = await api('/api/assist/chat', { method: 'POST', body: JSON.stringify({ messages: aiPracticeMessages('bfs', 'Breadth-first search', 7), maxTokens: 2048 }) });
+      for (let i = 0; i < 100; i++) { page = await api(`/api/assist/chat/${asked.id}`); if (page.status !== 'running') break; await sleep(100); }
+      const written = parseAiPractice(page.text, 'bfs');
+      assert.equal(written.source, 'ai', JSON.stringify(written));
+      const outcome = practiceOutcome((await execute({ ...oneFile(written.code), maxSteps: 100, timeoutMs: 3000, mode: 'run' })).events);
+      assert.deepEqual(outcome, { kind: 'output', text: '3 1' });
+      const { options, correct } = practiceOptions(written, outcome, 7);
+      assert.equal(options[correct], '3 1');
+      assert.deepEqual([...options].sort(), ['1 2', '2 1', '3 1'], 'the model’s “wrong” answer that was right is not offered twice');
+      assert.match(parseAiPractice('{"title":"x","code":"import java.io.File;\\npublic class Main { public static void main(String[] a) {} }","prompt":"?","wrong":["1","2"],"why":"y"}', 'bfs'), /outside java\.util/);
+      assert.match(unsafeProgram('public class Main { public static void main(String[] a) throws Exception { Runtime.getRuntime().exec("calc"); } }'), /Runtime/);
+      assert.match(unsafeProgram('public class Main { public static void main(String[] a) { new Thread(() -> {}).start(); } }'), /Thread/);
+      assert.equal(unsafeProgram('import java.util.*;\npublic class Main { public static void main(String[] a) { List<Integer> shortestPath = new ArrayList<>(); System.out.println("Files"); } }'), null);
+      assert.equal(typeof parseAiPractice('Sure! Here is a problem.', 'bfs'), 'string');
       await api('/api/assist/config', { method: 'POST', body: JSON.stringify({ provider: 'custom', url: `http://127.0.0.1:${port}/v1`, model: 'bad' }) });
       const failed = await api('/api/assist/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }) });
       for (let i = 0; i < 100; i++) { page = await api(`/api/assist/chat/${failed.id}`); if (page.status !== 'running') break; await sleep(100); }
@@ -840,6 +869,205 @@ public class Main {
     assert.deepEqual([...tree.nodes].sort((a, b) => a.x - b.x).map(n => n.label), ['20', '30', '40', '50', '60', '70', '80'], 'in-order layout reads sorted');
     assert.deepEqual(tree.nodes.find(n => n.label === '50'), { ...tree.nodes.find(n => n.label === '50'), depth: 0, refs: ['root'] });
     assert.equal(treeViews(snapshots(await execute(request(example('nodes')))).find(s => s.heap?.length > 3)).length, 0, 'a linked list (one self field) is not a tree');
+  });
+  const fib = `public class Main {
+    static int fib(int n) {
+        if (n < 2) {
+            return n;
+        }
+        return fib(n - 1) + fib(n - 2);
+    }
+    public static void main(String[] args) {
+        int f = fib(20);
+        int total = 0;
+        for (int i = 0; i < 30; i++) {
+            total += i;
+        }
+        System.out.println(f + " " + total);
+    }
+}`;
+  await test('recording start points: a line, a condition, a hit count, and clear reasons when they never fire', async () => {
+    const lines = data => snapshots(data).filter(s => s.frames);
+    const at = (data, name) => lines(data)[0].frames[0].locals.find(v => v.name === name)?.value.value;
+    // fib(20) makes 21,891 calls; starting after it records only the last line.
+    const late = await execute({ ...oneFile(fib), startAt: { file: 'Main.java', line: 14, condition: '', hit: 1 } });
+    assert.equal(reason(late), 'completed');
+    assert.equal(lines(late)[0].location.line, 14);
+    assert.equal(at(late, 'f'), '6765');
+    assert.equal(at(late, 'total'), '435');
+    assert.deepEqual(late.events.at(-1).start, { reached: true, file: 'Main.java', line: 14 });
+    const conditional = await execute({ ...oneFile(fib), maxSteps: 50, startAt: { file: 'Main.java', line: 12, condition: 'i == 25 && total > 100', hit: 1 } });
+    assert.deepEqual([lines(conditional)[0].location.line, at(conditional, 'i'), at(conditional, 'total')], [12, '25', '300']);
+    // The third time fib runs with n == 1: frames that were already running get their own identities.
+    const third = await execute({ ...oneFile(fib), maxSteps: 30, startAt: { file: 'Main.java', line: 3, condition: 'n == 1', hit: 3 } });
+    const frames = lines(third)[0].frames;
+    assert.equal(frames[0].locals.find(v => v.name === 'n').value.value, '1');
+    assert.equal(new Set(frames.map(f => f.id)).size, frames.length);
+    assert.ok(frames.every(f => /^f\d+$/.test(f.id)), frames.map(f => f.id).join());
+    // A closing brace starts at the method's next line with code; nothing after the method's end does.
+    const brace = await execute({ ...oneFile(fib), maxSteps: 20, startAt: { file: 'Main.java', line: 13, condition: '', hit: 1 } });
+    assert.equal(lines(brace)[0].location.line, 14);
+    const never = await execute({ ...oneFile(fib), startAt: { file: 'Main.java', line: 12, condition: 'i == 99', hit: 1 } });
+    assert.equal(lines(never).length, 0);
+    assert.match(never.events.at(-1).start.message, /reached line 12 of Main\.java 30 times, but i == 99 was never true/);
+    const unknown = await execute({ ...oneFile(fib), startAt: { file: 'Main.java', line: 12, condition: 'j > 2', hit: 1 } });
+    assert.match(unknown.events.at(-1).start.message, /`j` isn’t a variable or field on that line/);
+    const empty = await execute({ ...oneFile(fib), startAt: { file: 'Main.java', line: 7, condition: '', hit: 1 } });
+    assert.match(empty.events.at(-1).start.message, /no code that runs on line 7/);
+    const bad = await execute({ ...oneFile(fib), startAt: { file: 'Main.java', line: 12, condition: 'i == == 2', hit: 1 } });
+    assert.equal(reason(bad), 'bad-start');
+    const missing = await fetch(base + '/api/runs', { method: 'POST', headers, body: JSON.stringify({ ...oneFile(fib), startAt: { file: 'Other.java', line: 1 } }) });
+    assert.equal(missing.status, 400);
+    // Plain runs ignore the start point.
+    assert.equal(reason(await execute({ ...oneFile(fib), mode: 'run', startAt: { file: 'Main.java', line: 12, condition: 'i == 99' } })), 'completed');
+    // The editor checks the same grammar as the worker, and start lines follow edits.
+    assert.equal(checkCondition('visited[node] && dist[next] + 1 >= 3 || name == "ada" && list.size() > 0'), null);
+    assert.match(checkCondition('i == == 2'), /Unexpected “==”/);
+    assert.match(checkCondition('list.get(0) == 1'), /Only \.size\(\)/);
+    assert.equal(describeStart({ file: 'Main.java', line: 4, condition: 'i == 2', hit: 3 }), 'line 4 of Main.java when i == 2, the 3rd time');
+    assert.equal(shiftLine(10, [{ range: { startLineNumber: 2, startColumn: 1, endLineNumber: 2 }, text: 'a\nb\n' }]), 12);
+    assert.equal(shiftLine(10, [{ range: { startLineNumber: 3, startColumn: 1, endLineNumber: 5 }, text: '' }]), 8);
+    assert.equal(shiftLine(10, [{ range: { startLineNumber: 10, startColumn: 9, endLineNumber: 10 }, text: '\n' }]), 10);
+    assert.equal(shiftLine(10, [{ range: { startLineNumber: 10, startColumn: 1, endLineNumber: 10 }, text: '\n' }]), 11);
+    assert.equal(validateProject({ ...examples[0], startAt: { file: 'ArraySum.java', line: 6, condition: 'i == 2' } }), true);
+    assert.equal(validateProject({ ...examples[0], startAt: { file: 'Nope.java', line: 6 } }), false);
+  });
+  await test('capture: long linked structures, compact primitive arrays, and views of more JDK types', async () => {
+    const data = await execute(oneFile(`import java.util.*;
+import java.time.*;
+import java.math.BigInteger;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+public class Main {
+    static class Node { int value; Node next; Node(int value, Node next) { this.value = value; this.next = next; } }
+    enum Color { RED, GREEN, BLUE }
+    public static void main(String[] args) {
+        Node head = null;
+        for (int i = 0; i < 40; i++) {
+            head = new Node(i, head);
+        }
+        int[] numbers = new int[50];
+        Map<String, Integer> ages = new HashMap<>(Map.of("ann", 30, "bob", 25));
+        Set<String> names = ages.keySet();
+        Collection<Integer> years = ages.values();
+        Set<Map.Entry<String, Integer>> entries = ages.entrySet();
+        List<Integer> list = new ArrayList<>(List.of(4, 5, 6));
+        Iterator<Integer> it = list.iterator();
+        it.next();
+        Optional<String> some = Optional.of("x");
+        Optional<String> none = Optional.empty();
+        BitSet bits = new BitSet();
+        bits.set(1); bits.set(70);
+        LocalDate date = LocalDate.of(2026, 10, 24);
+        Duration span = Duration.ofMinutes(90);
+        AtomicInteger counter = new AtomicInteger(42);
+        BigInteger big = BigInteger.TWO.pow(70);
+        TimeUnit unit = TimeUnit.SECONDS;
+        EnumMap<Color, Integer> scores = new EnumMap<>(Color.class);
+        scores.put(Color.BLUE, 3);
+        System.out.println(head.value + numbers.length + names.size() + years.size() + entries.size() + it.next() + some.get() + none.isPresent() + bits + date + span + counter + big + unit + scores);
+    }
+}`));
+    assert.equal(reason(data), 'completed');
+    const last = snapshots(data).filter(s => s.frames).at(-1);
+    const heap = new Map(last.heap.map(o => [o.id, o]));
+    const local = name => heap.get(last.frames[0].locals.find(v => v.name === name).value.ref);
+    const show = v => v.kind === 'reference' ? (heap.get(v.ref)?.text ?? heap.get(v.ref)?.fields?.[0]?.value.value) : v.value;
+    assert.equal(last.heap.filter(o => o.type === 'Main$Node').length, 40, 'all 40 nodes are captured');
+    assert.equal(local('numbers').elements.length, 50);
+    assert.deepEqual(local('numbers').elements[0], { kind: 'primitive', type: 'int', value: '0' });
+    const raw = await api(`/api/runs/${data.id}`);
+    assert.ok(raw.events.some(e => e.heap?.some(o => o.elementType === 'int' && Array.isArray(o.values))), 'primitive arrays travel in compact form');
+    assert.deepEqual([local('names').kind, local('names').elements.map(show).sort()], ['set', ['ann', 'bob']]);
+    assert.deepEqual(local('years').elements.map(show).sort(), ['25', '30']);
+    assert.equal(local('entries').entries.length, 2);
+    const it = local('it');
+    assert.deepEqual(it.fields.map(f => f.name.split('.').at(-1)), ['over', 'next', 'nextIndex']);
+    assert.deepEqual([show(it.fields[1].value), it.fields[2].value.value], ['6', '2']);
+    assert.equal(show(local('some').fields[0].value), 'x');
+    assert.match(local('none').message, /Optional\.empty/);
+    assert.deepEqual([local('bits').kind, local('bits').elements.map(show)], ['set', ['1', '70']]);
+    assert.deepEqual(['date', 'span', 'counter', 'big', 'unit'].map(n => [local(n).kind, local(n).text]),
+      [['value', '2026-10-24'], ['value', 'PT1H30M'], ['value', '42'], ['value', '1180591620717411303424'], ['value', 'SECONDS']]);
+    assert.equal(local('scores').entries.length, 1);
+    const deep = await execute(oneFile('public class Main {\n static int depth(int n) { if (n == 0) { return 0; } return 1 + depth(n - 1); }\n public static void main(String[] args) {\n  System.out.println(depth(40));\n }\n}'));
+    assert.equal(Math.max(...snapshots(deep).filter(s => s.frames).map(s => s.frames.length)), 42, 'forty nested calls keep all their frames');
+    assert.ok(!snapshots(deep).some(s => s.framesTruncated));
+    // Returns are kept while many calls unwind between two stops.
+    assert.equal(deep.events.flatMap(e => e.returns ?? []).filter(r => r.method === 'Main.depth').length, 41);
+  });
+  await test('structure views: graphs colored by the search, recursion trees, grids and linked lists', async () => {
+    const bfs = await execute(request(example('bfs')));
+    const states = snapshots(bfs);
+    const during = states.find(s => s.location?.line === 28 && s.frames[0].locals.find(v => v.name === 'node')?.value.value === '1');
+    const graphs = graphViews(during);
+    assert.equal(graphs.length, 1, 'the edge list and the adjacency list built from it are drawn once');
+    const [g] = graphs;
+    assert.deepEqual([g.name, g.kind, g.directed, g.nodes.length, g.edges.length], ['neighbors', 'adjacency list', false, 5, 5]);
+    const node = key => g.nodes.find(n => n.key === key);
+    assert.deepEqual([node('0').x, node('1').x, node('2').x, node('3').x, node('4').x], [0, 1, 1, 2, 3], 'columns are distances from node 0');
+    assert.equal(node('1').current, true);
+    assert.deepEqual([node('2').queued, node('2').visited, node('1').badge, g.sources.badge, g.sources.queue], [1, true, '1', 'dist', 'queue']);
+    assert.equal(node('4').visited, false);
+    const dfs = await execute(request(example('dfs')));
+    const dfsStates = snapshots(dfs);
+    const deepest = dfsStates.find(s => s.frames?.filter(f => f.method === 'Main.visit').length === 3);
+    const [d] = graphViews(deepest);
+    assert.equal(d.directed, true);
+    assert.deepEqual(d.nodes.filter(n => n.onPath || n.current).map(n => n.key).sort(), ['0', '1', '3']);
+    assert.deepEqual(d.edges.filter(e => e.path).map(e => `${e.from}-${e.to}`), ['0-1', '1-3']);
+    assert.equal(d.sources.visited, 'visited');
+    const tree = recursionTree(dfsStates, dfsStates.length - 1);
+    assert.deepEqual([tree.method, tree.calls, tree.nodes.find(n => n.depth === 0).label], ['Main.visit', 5, 'visit(0)']);
+    assert.ok(tree.nodes.every(n => n.state === 'done'));
+    const fibRun = await execute(oneFile('public class Main {\n static int fib(int n) {\n  if (n < 2) {\n   return n;\n  }\n  return fib(n - 1) + fib(n - 2);\n }\n public static void main(String[] args) {\n  System.out.println(fib(5));\n }\n}'));
+    const fibTree = recursionTree(snapshots(fibRun), snapshots(fibRun).length - 1);
+    assert.deepEqual([fibTree.calls, fibTree.columns, fibTree.rows], [15, 8, 5]);
+    assert.equal(fibTree.nodes.find(n => n.depth === 0).result, '5');
+    const mid = recursionTree(snapshots(fibRun), 6);
+    assert.ok(mid.nodes.length < 15 && mid.nodes.some(n => n.state === 'current'), 'the tree grows as you step');
+    const grid = await execute(oneFile(`public class Main {
+    public static void main(String[] args) {
+        char[][] maze = { "..#".toCharArray(), ".#.".toCharArray() };
+        boolean[][] seen = new boolean[2][3];
+        for (int r = 0; r < 2; r++) {
+            for (int c = 0; c < 3; c++) {
+                if (maze[r][c] == '.') {
+                    seen[r][c] = true;
+                }
+            }
+        }
+        System.out.println(seen[1][2]);
+    }
+}`));
+    const gridStates = snapshots(grid);
+    const inside = gridStates.findIndex(s => s.location?.line === 7 && s.frames[0].locals.find(v => v.name === 'r')?.value.value === '1' && s.frames[0].locals.find(v => v.name === 'c')?.value.value === '2');
+    const views = gridViews(gridStates[inside], gridStates[inside - 1], cursorsByObject(cursorsFor(grid, gridStates, inside)));
+    const mazeView = views.find(v => v.name === 'maze');
+    assert.deepEqual([mazeView.rows, mazeView.cols, mazeView.overlay], [2, 3, 'seen']);
+    assert.deepEqual(mazeView.cells.map(row => row.map(c => c.tone || c.text)), [['visited', 'visited', 'wall'], ['visited', 'wall', '.']]);
+    assert.deepEqual(mazeView.cells[1][2].marks, ['c'], 'maze[r][c] marks the cell in use');
+    assert.deepEqual(mazeView.rowMarks[1], ['r']);
+    const nodes = await execute(request(example('nodes')));
+    const listState = snapshots(nodes).findLast(s => s.heap?.length > 3);
+    const [chain] = chainViews(listState);
+    assert.ok(chain.chains[0].nodes.length >= 2 && chain.chains[0].nodes[0].refs.length >= 1, JSON.stringify(chain));
+    assert.equal(treeViews(listState).length, 0, 'a linked list is not a tree');
+  });
+  await test('Tutor questions about algorithms: queues, call counts, which call returns first, and depth-first order', async () => {
+    const bfs = await execute(request(example('bfs')));
+    const removal = questionsFor(bfs).find(q => q.id.startsWith('removal-'));
+    assert.ok(removal, questionsFor(bfs).map(q => q.id).join());
+    assert.deepEqual([removal.concept, removal.options[removal.correct]], ['bfs', '1']);
+    assert.match(removal.context, /holding \[1, 2\], first to last/);
+    const dfs = await execute(request(example('dfs')));
+    assert.equal(answerOf(dfs, 'call-count'), '5');
+    assert.equal(answerOf(dfs, 'first-return'), 'visit(4)');
+    assert.equal(answerOf(dfs, 'next-call'), 'visit(3)');
+    assert.equal(questionsFor(dfs).find(q => q.id === 'next-call').concept, 'dfs');
+    const stack = await execute(oneFile('import java.util.*;\npublic class Main {\n public static void main(String[] args) {\n  Deque<Integer> stack = new ArrayDeque<>();\n  stack.push(1);\n  stack.push(2);\n  stack.push(3);\n  int top = stack.pop();\n  int next = stack.pop();\n  System.out.println(top + next);\n }\n}'));
+    const popped = questionsFor(stack).find(q => q.id.startsWith('removal-'));
+    assert.deepEqual([popped.concept, popped.options[popped.correct]], ['dfs', '3']);
   });
   await test('Reset returns a project to how it was created', () => {
     const store = new Map();

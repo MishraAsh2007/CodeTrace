@@ -64,21 +64,27 @@ Agreed on October 24, 2026. Each phase ships with integration tests and a browse
 | “Practice” after a question | Randomized problems for 16 concepts; the answer is what the JVM did, distractors are common misconceptions; can be opened as a project and traced |
 | AI when the deterministic tools can’t help, “Ask assistant” | Optional and off by default: any OpenAI-compatible endpoint (Ollama locally, Gemini free tier, Groq, OpenRouter, LM Studio). Context is the code, the recording, the current step and the open question (answer withheld). A Kiro key can’t serve this: Kiro API keys only authenticate its CLI and need a paid plan |
 
-Still open from this request: AI-written practice problems (their answers would still come from running them), and tested AI fix suggestions.
+Still open from this request: tested AI fix suggestions. (AI-written practice shipped in the data structures phase below.)
 
 Follow-up (October 24): **Reset** for examples and projects; a tree view for binary trees; views for `Stack`/`Vector`, `List.of`/`Set.of`/`Map.of` and unmodifiable wrappers (previously opaque); tours for a binary search tree, BFS and DFS; Groq (`openai/gpt-oss-120b`) as the tested hosted assistant.
 
-### Data structures and algorithms: what’s next
+### Phase 1.7 — Data structures and algorithms ✅ done
 
-Checked with BST insert/in-order, BFS on an adjacency list, recursive grid flood fill, DFS with a `HashMap` graph and a `Stack`, merge sort, Dijkstra with a `PriorityQueue<int[]>`, records and enums, a generic linked list with interfaces, and `fib(15)`: all record correctly. Gaps, in priority order:
+Checked first with BST insert/in-order, BFS on an adjacency list, recursive grid flood fill, DFS with a `HashMap` graph and a `Stack`, merge sort, Dijkstra with a `PriorityQueue<int[]>`, records and enums, a generic linked list with interfaces, and `fib(15)`. The seven gaps found, and what shipped:
 
-1. **Longer runs.** The step budget tops out at 2,000 (`fib(15)` needs 1,983). Start recording at a breakpoint or condition, or skip into library-heavy stretches, instead of recording from the first line.
-2. **More objects per step.** Capture stops at 64 objects, 32 elements and 24 frames, so an 80-node tree or a deep recursion is cut off. Raise the limits for trees, or capture only what the current frame can reach.
-3. **Graph view.** Adjacency lists (`List<List<Integer>>`, `int[][]`, `Map<String, List<String>>`) show as nested lists; draw them as a graph, with visited/queued nodes colored from the recorded arrays and queues.
-4. **Recursion tree in the debugger**, not only in Need help: calls as a tree with arguments and returns, the current call highlighted.
-5. **Algorithm-aware Tutor questions** (BFS order, which node is dequeued next, what the queue holds after an iteration, the base case that ended a call) and practice for trees, BFS, DFS and sorting.
-6. **Grid view** for 2D arrays with row/column markers (`grid[r][c]` is marked today, but shown as nested arrays).
-7. Views for `HashMap` keys/values views and iterators, `Optional`, `BitSet`, and `java.time` values.
+| Gap | Shipped |
+| --- | --- |
+| 1. Longer runs: the 2,000-step budget ran out early (`fib(15)` needs 1,983) | **Start recording here** (editor right-click, settings): run untraced until a line is about to run, optionally with a condition (`i == 50 && total > 100`) and a hit count, then record. Only the trigger line is watched until then: `fib(20)` (21,891 calls) runs before the start point in about a second. Clear messages when the point never fires |
+| 2. More objects per step (64 objects, 32 elements, 24 frames, 12 levels) | 160 objects, 64 elements, 48 frames, 48 levels, 64 returns between stops; 15 s runs and a 40 MiB trace. Primitive arrays travel compactly, boxed values are read once. Building the runner's dependencies optimized removed a JSON-parsing bottleneck: 1,206 steps with 60–70 objects each now record in about 6 s instead of 18 s |
+| 3. Graph view | Adjacency lists (`List<List<Integer>>`, `List<Integer>[]`, jagged `int[][]`), adjacency matrices and edge lists (by name), `Map<K, List<K>>` / `Map<K, Map<K, W>>`, and node objects with neighbor lists. Layered left to right by distance from the start; visited from `boolean[]`/`dist`/`parent`/`color` arrays, sets and maps; queue or stack contents numbered in removal order; the current node, the neighbor being checked, and the path of recursive DFS calls |
+| 4. Recursion tree in the debugger | A call tree for any recursive method (and helpers it calls), with arguments, results and the running call, growing as you step; long chains lay out sideways; click a call to jump to it |
+| 5. Algorithm-aware questions and practice | Tutor: which value `poll`/`remove`/`pop` returns (FIFO, LIFO, priority), how many calls a recursion makes, which call returns first, which call starts next (depth first). Practice: BFS order and distances, recursive and stack DFS, BST traversals and height, binary search probes and steps, bubble/selection/insertion sort passes. Plus AI-written practice: the model writes the program and wrong answers, an API allowlist screens it, and the JVM gives the answer |
+| 6. Grid view | 2D arrays as grids with `grid[r][c]` row/column markers, a same-size `visited[][]` shown as colors, walls, and `{r, c}` cells in a queue numbered |
+| 7. More JDK views | Map `keySet`/`values`/`entrySet` and entries, iterators, `Optional`, `BitSet`, `java.time`, atomics, `BigInteger`/`BigDecimal`, `UUID`, `EnumMap`/`EnumSet`, empty/singleton collections, `subList`, JDK enum constants |
+
+All structure views grow sideways and scroll, keep their scroll position across steps, bring the current node into view, fold, and open larger over the debugger with step buttons (Esc closes). Linked lists are drawn as chains.
+
+Next for this area: capture only what the current frame can reach when a heap is very large, Dijkstra-style weighted priority queues of `int[]` pairs on graphs, a “what does the queue hold after this iteration” question, and AI-written practice with a tracing step before it is shown.
 
 ### Phase 2 — General Tutor questions and tested fixes
 

@@ -3,10 +3,10 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import 'monaco-editor/esm/vs/editor/edcore.main';
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles, GitFork } from 'lucide';
+import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles, GitFork, Maximize2, Minimize2, Network, Grid3x3, ListTree, Link, FlagTriangleRight } from 'lucide';
 import { categories, copyExample, demoFor, demos, exampleIndex, examples } from './examples';
 import type { DemoCategory } from './examples';
-import { exceptionMessage, failingCheck, normalizeOutput, output, questionsFor, sameSource, snapshots, validateProject, valueText } from './learning';
+import { exceptionMessage, expandEvents, failingCheck, normalizeOutput, output, questionsFor, sameSource, snapshots, validateProject, valueText } from './learning';
 import { Library, StorageFullError } from './library';
 import type { DocRef } from './library';
 import { droppedFiles, importFiles, limitProblem, projectFromSources, projectToZip, validFileName } from './importer';
@@ -26,9 +26,11 @@ import type { CompileFix, CompileIssue, LineEdit } from './compilehelp';
 import { JavaLanguageClient } from './lsp';
 import { lintHelp } from './linthelp';
 import { buildHelp } from './help';
-import { treeViews } from './structures';
+import { chainViews, graphViews, gridViews, recursionTree, treeViews } from './structures';
+import { checkCondition, describeStart, shiftLine, usableStart } from './startat';
+import type { CallTree, GraphView, GridView } from './structures';
 import type { HelpVisual } from './help';
-import { hasPractice, practiceFor, practiceOptions, practiceOutcome } from './practice';
+import { aiPracticeMessages, hasPractice, parseAiPractice, practiceFor, practiceOptions, practiceOutcome } from './practice';
 import type { PracticeItem } from './practice';
 import { buildMessages, contextMessage, PROVIDERS, renderMarkdown } from './assistant';
 import type { AssistStatus, ChatMessage } from './assistant';
@@ -48,7 +50,7 @@ import './tokens.css';
 import './style.css';
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
-const iconSet = { Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles, GitFork };
+const iconSet = { Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles, GitFork, Maximize2, Minimize2, Network, Grid3x3, ListTree, Link, FlagTriangleRight };
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 /** Escapes text and renders `backtick` spans as inline code. */
@@ -220,7 +222,7 @@ $('#app').innerHTML = `
         <div class="splitter vertical" id="split-columns" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Resize editor and debugger" aria-controls="workbench" aria-valuemin="25" aria-valuemax="75" title="Drag to resize · double-click to reset"></div>
         <section class="visual-panel panel" aria-label="Debugger">
           <div class="panel-tabs debugger-header"><span class="panel-title">${icon('bug')}Debugger</span><div class="trace-summary" id="trace-summary"></div><span class="status-chip" id="run-status">Idle</span></div>
-          <div class="trace-toolbar"><label class="watch-search">${icon('search')}<input id="watch-filter" placeholder="Filter variables and objects" aria-label="Filter variables and objects" /></label><button id="toggle-arrows" class="icon-btn toggle" aria-pressed="${ui.arrows}" title="Reference arrows" aria-label="Show reference arrows">${icon('spline')}</button><button id="toggle-inline" class="icon-btn toggle" aria-pressed="${ui.inline}" title="Show strings and boxed numbers inline" aria-label="Show strings and boxed numbers inline">${icon('type')}</button><button id="history" class="icon-btn" title="Switch to the previous run" aria-label="Switch to the previous run" disabled>${icon('rotate-ccw')}</button></div>
+          <div class="trace-toolbar"><label class="watch-search">${icon('search')}<input id="watch-filter" placeholder="Filter variables and objects" aria-label="Filter variables and objects" /></label><span class="start-chip" id="start-chip" hidden></span><button id="toggle-arrows" class="icon-btn toggle" aria-pressed="${ui.arrows}" title="Reference arrows" aria-label="Show reference arrows">${icon('spline')}</button><button id="toggle-inline" class="icon-btn toggle" aria-pressed="${ui.inline}" title="Show strings and boxed numbers inline" aria-label="Show strings and boxed numbers inline">${icon('type')}</button><button id="history" class="icon-btn" title="Switch to the previous run" aria-label="Switch to the previous run" disabled>${icon('rotate-ccw')}</button></div>
           <div class="memory-canvas" id="memory-canvas"></div>
           <div class="timeline">
             <div class="timeline-top"><span id="step-label">No recording</span><input id="scrubber" type="range" min="0" max="0" value="0" aria-label="Recorded step" disabled /><select id="speed" aria-label="Playback speed"><option value="1200">0.5×</option><option value="700" selected>1×</option><option value="250">2×</option></select></div>
@@ -499,9 +501,11 @@ function getModel(file: string, historical: boolean) {
     model = monaco.editor.createModel(source.content, 'java', monaco.Uri.parse(`inmemory://tracelab/${key}`));
     models.set(key, model);
     if (!historical) { monaco.editor.setModelMarkers(model, 'java-ls', toMarkers(monaco, lsp.diagnosticsFor(source.name), lintHelp)); scheduleSpelling(source.name, 1500); }
-    if (!historical) model.onDidChangeContent(() => {
+    if (!historical) model.onDidChangeContent(event => {
       if (changingModel) return;
       scheduleSpelling(source.name);
+      // The recording start point follows its line as lines are added or removed above it.
+      if (project.startAt?.file === source.name) project.startAt.line = Math.min(shiftLine(project.startAt.line, event.changes), model!.getLineCount());
       const target = project.files.find(f => f.name === source.name);
       if (target) { target.content = model!.getValue(); monaco.editor.setModelMarkers(model!, 'java-compiler', []); save(true); renderSourceBanner(); renderCheckResults(); renderStages(); updateDecorations(); scheduleLint(); }
     });
@@ -644,7 +648,7 @@ function moveFile(from: string, to: string): boolean {
     if (match.length === 1) check.target = match[0].qualified;
   }
   const key = `workspace/${from}`; models.get(key)?.dispose(); models.delete(key);
-  const marks = breakpoints.get(from); breakpoints.delete(from); if (marks) breakpoints.set(to, marks);
+  const marks = breakpoints.get(from); breakpoints.delete(from); if (marks) breakpoints.set(to, marks); if (project.startAt?.file === from) project.startAt.file = to;
   if (activeFile === from) activeFile = to;
   save(); selectFile(activeFile, false);
   return true;
@@ -672,6 +676,8 @@ function updateDecorations() {
     marks.push({ range: new monaco.Range(focus.line, 1, focus.line, 1), options: { isWholeLine: true, className: 'question-line', linesDecorationsClassName: 'question-line-marker', hoverMessage: { value: 'The current Tutor question is about this line' } } });
   }
   for (const line of breakpoints.get(activeFile) ?? []) marks.push({ range: new monaco.Range(line, 1, line, 1), options: { glyphMarginClassName: 'bookmark-glyph', glyphMarginHoverMessage: { value: 'Replay bookmark: jump here with the Bookmark button. Execution is not paused.' } } });
+  const start = usableStart(project.startAt, project.files);
+  if (start && start.file === activeFile && !traceSource) marks.push({ range: new monaco.Range(start.line, 1, start.line, 1), options: { isWholeLine: true, className: 'start-at-line', linesDecorationsClassName: 'start-at-marker', hoverMessage: { value: `Recording starts at ${describeStart(start)}. Lines before it run without being recorded. Right-click to change or remove it.` } } });
   decorations.set(marks);
 }
 
@@ -684,14 +690,21 @@ editor.onMouseDown(event => {
   breakpoints.set(activeFile, set); updateDecorations();
 });
 editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => startRun());
+// Recording start points, from the editor's right-click menu.
+editor.addAction({ id: 'tracelab.start-here', label: 'Start recording here', contextMenuGroupId: '0_tracelab', contextMenuOrder: 1,
+  run: ed => { if (traceSource) { toast('Switch back to your code to set a start point.'); return; } setStartAt({ file: activeFile, line: ed.getPosition()?.lineNumber ?? 1 }); } });
+editor.addAction({ id: 'tracelab.start-here-when', label: 'Start recording here when…', contextMenuGroupId: '0_tracelab', contextMenuOrder: 2,
+  run: ed => { if (traceSource) { toast('Switch back to your code to set a start point.'); return; } startAtDialog(activeFile, ed.getPosition()?.lineNumber ?? 1); } });
+editor.addAction({ id: 'tracelab.start-clear', label: 'Record from the start of main', contextMenuGroupId: '0_tracelab', contextMenuOrder: 3, run: () => clearStartAt() });
 // Monaco binds Shift+F10 to its context menu; in TraceLab it steps back over, as everywhere else on the page.
 editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F10, () => navigate('back-over'));
 
 // ---------- Memory rendering ----------
 
-type RenderContext = { heap: Map<string, HeapObject>; previousHeap: Map<string, HeapObject>; cursors: Map<string, Cursor[]>; targets: Map<string, Cursor>; topFrame?: string };
+/** `grids` are 2D arrays drawn as grids above the heap (with a note for their cards); their row arrays get no cards of their own. */
+type RenderContext = { heap: Map<string, HeapObject>; previousHeap: Map<string, HeapObject>; cursors: Map<string, Cursor[]>; targets: Map<string, Cursor>; topFrame?: string; grids?: Map<string, string>; gridRows?: Set<string> };
 function refColor(id = '') { return ['green', 'blue', 'orange', 'violet'][Number(id.replace(/\D/g, '')) % 4]; }
-function inlineText(object: HeapObject): string { return object.kind === 'string' ? `“${object.text ?? ''}”${object.truncated ? '…' : ''}` : boxedValue(object) ?? ''; }
+function inlineText(object: HeapObject): string { return object.kind === 'string' ? `“${object.text ?? ''}”${object.truncated ? '…' : ''}` : object.kind === 'value' ? object.text ?? '' : boxedValue(object) ?? ''; }
 
 function renderValue(value: TraceValue, previous: TraceValue | undefined, ctx: RenderContext) {
   const object = value.kind === 'reference' ? ctx.heap.get(value.ref!) : undefined;
@@ -750,9 +763,14 @@ function renderHeap(object: HeapObject, previous: HeapObject | undefined, isNew:
   if (ui.inline && isInlineValue(object) && !indexed) return '';
   if (watchFilter && !JSON.stringify(object).toLowerCase().includes(watchFilter)) return '';
   const refs = snapshot.frames?.flatMap(f => f.locals.filter(v => v.value.ref === object.id).map(v => v.name)) ?? [];
+  // Rows of a grid are drawn in the grid, unless a variable such as `row` holds one.
+  if (ctx.gridRows?.has(object.id) && !refs.length) return '';
+  const grid = ctx.grids?.get(object.id);
   let body = '';
-  if (object.kind === 'string' && indexed && (object.text?.length ?? 0) <= 64) body = renderCells(object, previous, ctx);
+  if (grid) body = `<p class="object-note">${esc(grid)}</p>`;
+  else if (object.kind === 'string' && indexed && (object.text?.length ?? 0) <= 64) body = renderCells(object, previous, ctx);
   else if (object.kind === 'string') body = `<div class="string-value ${previous && previous.text !== object.text ? 'changed' : ''}">“${esc(object.text)}”</div>`;
+  else if (object.kind === 'value') body = `<div class="string-value ${previous && previous.text !== object.text ? 'changed' : ''}">${esc(object.text)}</div>`;
   else if (object.kind === 'map') body = `<div class="map-entries">${object.entries?.map(e => {
     const before = previous?.entries?.find(p => JSON.stringify(p.key) === JSON.stringify(e.key));
     return `<div class="map-entry ${previous && !before ? 'fresh' : ''}">${renderValue(e.key, undefined, ctx)}<span class="map-arrow">→</span>${renderValue(e.value, before?.value, ctx)}</div>`;
@@ -761,7 +779,7 @@ function renderHeap(object: HeapObject, previous: HeapObject | undefined, isNew:
   else if (object.fields) body = `<div class="object-fields">${renderVariables(object.fields, previous?.fields, ctx)}</div>`;
   else body = `<p class="object-note">${esc(object.message ?? 'No visible fields.')}</p>`;
   const note = object.message && object.kind !== 'opaque' && object.kind !== 'unavailable' ? `<p class="object-note">${esc(object.message)}</p>` : '';
-  const caption = object.length !== undefined ? `<div class="array-caption">${object.kind === 'string' || object.kind === 'array' ? 'length' : 'size'} ${object.length}${object.truncated ? ` · first ${object.elements?.length ?? object.entries?.length ?? 0} shown` : ''}</div>` : object.truncated ? '<div class="array-caption">Preview truncated</div>' : '';
+  const caption = grid ? '' : object.length !== undefined ? `<div class="array-caption">${object.kind === 'string' || object.kind === 'array' ? 'length' : 'size'} ${object.length}${object.truncated ? ` · first ${object.elements?.length ?? object.entries?.length ?? 0} shown` : ''}</div>` : object.truncated ? '<div class="array-caption">Preview truncated</div>' : '';
   // Empty arrays (such as main's args) stay collapsed so they do not crowd the objects that matter.
   const empty = object.kind === 'array' && object.length === 0;
   return `<details class="heap-object ${refColor(object.id)} ${isNew ? 'new-object' : ''}" id="heap-${esc(object.id)}" ${object.kind === 'opaque' || empty ? '' : 'open'}><summary><span class="object-type">${esc(simpleType(object.type))}${empty ? ' <span class="empty-tag">empty</span>' : ''}</span>${isNew ? '<span class="new-badge">New</span>' : ''}<span class="object-id">@${esc(object.id)}</span></summary>${refs.length ? `<div class="object-references">Referenced by ${refs.map(esc).join(', ')}</div>` : ''}${body}${note}${caption}</details>`;
@@ -791,16 +809,131 @@ function renderFrame(frame: Frame, index: number, previous: TraceEvent | undefin
   return `<details class="frame ${index === 0 ? 'current' : ''} ${isNew ? 'new-frame' : ''}" open><summary><span class="frame-name">${index === 0 ? '<span class="frame-active-dot"></span>' : ''}${esc(displayMethod(frame.method))}<span class="method-parens">()</span></span><span class="frame-location">${esc(frame.file)}:${frame.line}</span></summary><div class="frame-variables">${returnNotes}${renderVariables(frame.locals, prior?.locals, ctx, false, frame.id) || '<div class="no-vars">No local variables in scope</div>'}${frame.truncated ? '<div class="array-caption">Locals truncated</div>' : ''}</div></details>`;
 }
 
-/** Binary trees (and other classes with two or more fields of their own type) drawn as trees above the heap. */
-function renderTrees(snapshot: TraceEvent, previous: TraceEvent | undefined): string {
-  const X = 46, Y = 58, PAD = 14;
-  return treeViews(snapshot, previous).map(view => {
+// ---------- Structure views: recursion, graphs, grids, trees and linked lists ----------
+
+/** Views the user folded, and the one shown large over the debugger. Kept across steps. */
+const collapsedViews = new Set<string>();
+let expandedView: string | null = null;
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const clipLabel = (text: string, max: number) => text.length > max ? `${text.slice(0, max - 1)}…` : text;
+const swatch = (cls: string, label: string) => `<span><i class="swatch ${cls}"></i>${esc(label)}</span>`;
+
+/** A foldable, horizontally scrolling view with a button to show it larger. */
+function structureView(key: string, iconName: string, title: string, caption: string, body: string, legend = ''): string {
+  const expanded = expandedView === key;
+  const states = currentStates();
+  const bar = expanded ? `<div class="structure-stepbar"><button type="button" class="icon-btn" data-step-go="-1" aria-label="Previous step" ${step === 0 ? 'disabled' : ''}>${icon('chevron-left')}</button><span>Step <strong>${step + 1}</strong> of ${states.length}</span><button type="button" class="icon-btn" data-step-go="1" aria-label="Next step" ${step >= states.length - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button><span class="muted">F10 steps over, F11 steps into</span></div>` : '';
+  return `<details class="structure-view ${expanded ? 'expanded' : ''}" data-structure="${esc(key)}" ${collapsedViews.has(key) && !expanded ? '' : 'open'}><summary>${icon(iconName)}<strong>${esc(title)}</strong><span class="structure-caption" title="${esc(caption.replace(/<[^>]+>/g, ''))}">${caption}</span><button type="button" class="icon-btn structure-expand" data-expand="${esc(key)}" title="${expanded ? 'Back to the debugger (Esc)' : 'Show larger'}" aria-label="${expanded ? 'Close the large view' : `Show ${esc(title)} larger`}">${icon(expanded ? 'minimize-2' : 'maximize-2')}</button></summary>${bar}<div class="structure-scroll" data-scroll="${esc(key)}">${body}</div>${legend ? `<div class="structure-legend">${legend}</div>` : ''}</details>`;
+}
+
+/** Recursive calls as a tree: top-down, or left to right when the calls form a long chain. */
+function renderCallTree(t: CallTree): string {
+  const width = Math.min(150, Math.max(58, ...t.nodes.map(n => Math.max(n.label.length, (n.result?.length ?? 0) + 2) * 7.4 + 20)));
+  const sideways = t.rows > 4 && t.rows > t.columns * 1.5;
+  const PAD = 16, H = 40, X = sideways ? width + 26 : width + 12, Y = sideways ? H + 12 : H + 30;
+  const at = (n: CallTree['nodes'][number]) => sideways ? { left: PAD + n.depth * X, top: PAD + n.x * Y } : { left: PAD + n.x * X, top: PAD + n.depth * Y };
+  const position = new Map(t.nodes.map(n => [n.id, at(n)]));
+  const w = PAD * 2 + (sideways ? (t.rows - 1) * X : (t.columns - 1) * X) + width, h = PAD * 2 + (sideways ? (t.columns - 1) * Y : (t.rows - 1) * Y) + H;
+  const lines = t.nodes.filter(n => n.parent && position.has(n.parent)).map(n => {
+    const a = position.get(n.parent!)!, b = position.get(n.id)!;
+    return sideways ? `<line x1="${a.left + width}" y1="${a.top + H / 2}" x2="${b.left}" y2="${b.top + H / 2}"/>` : `<line x1="${a.left + width / 2}" y1="${a.top + H}" x2="${b.left + width / 2}" y2="${b.top}"/>`;
+  }).join('');
+  const label = { current: 'running now', active: 'waiting for a call it made', done: 'returned' };
+  const nodes = t.nodes.map(n => {
+    const p = position.get(n.id)!;
+    return `<button class="call-node ${n.state} ${n.state === 'current' ? 'is-current' : ''}" data-goto-step="${n.step}" style="left:${p.left}px;top:${p.top}px;width:${width}px;height:${H}px" title="${esc(`${n.label}: ${label[n.state]}${n.result ? `, result ${n.result}` : ''}. Click to go to the step where this call starts.`)}"><span>${esc(clipLabel(n.label, 22))}</span>${n.state === 'done' && n.result !== undefined ? `<small>${n.result ? `→ ${esc(clipLabel(n.result, 16))}` : 'done'}</small>` : ''}</button>`;
+  }).join('');
+  return `<div class="tree-canvas" style="width:${w}px;height:${h}px"><svg class="tree-lines" width="${w}" height="${h}" aria-hidden="true">${lines}</svg>${nodes}</div>`;
+}
+
+/** A graph in layers, one column per distance from the start, with edges bent around nodes they would cross. */
+function renderGraph(g: GraphView): string {
+  const R = 18, X = 96, Y = 64, PAD = 28;
+  const center = new Map(g.nodes.map(n => [n.key, { x: PAD + R + n.x * X, y: PAD + 14 + R + n.y * Y }]));
+  const layer = new Map(g.nodes.map(n => [n.key, n.x]));
+  const width = PAD * 2 + R * 2 + (g.columns - 1) * X, height = PAD * 2 + 14 + R * 2 + (g.rows - 1) * Y + 14;
+  const unit = (x: number, y: number) => { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; };
+  const lines = g.edges.map(e => {
+    const a = center.get(e.from), b = center.get(e.to);
+    if (!a || !b) return '';
+    const cls = [e.tree ? 'tree' : '', e.path ? 'path' : '', e.active ? 'active' : ''].join(' ');
+    const label = e.label !== undefined ? e.label : '';
+    if (e.from === e.to) return `<path class="${cls}" d="M ${a.x - 7} ${a.y - R + 2} C ${a.x - 26} ${a.y - R - 34}, ${a.x + 26} ${a.y - R - 34}, ${a.x + 7} ${a.y - R + 2}" ${g.directed ? 'marker-end="url(#graph-arrow)"' : ''}/>`;
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+    // Edges between neighboring columns are straight; longer ones bend so they don't run through other nodes.
+    const bend = Math.abs((layer.get(e.from) ?? 0) - (layer.get(e.to) ?? 0)) === 1 ? 0 : Math.min(46, len * 0.22);
+    const cx = (a.x + b.x) / 2 - (dy / (len || 1)) * bend, cy = (a.y + b.y) / 2 + (dx / (len || 1)) * bend;
+    const [ux, uy] = unit(cx - a.x, cy - a.y), [vx, vy] = unit(b.x - cx, b.y - cy);
+    const start = [a.x + ux * R, a.y + uy * R], end = [b.x - vx * (R + (g.directed ? 3 : 0)), b.y - vy * (R + (g.directed ? 3 : 0))];
+    const mid = [(start[0] + 2 * cx + end[0]) / 4, (start[1] + 2 * cy + end[1]) / 4];
+    return `<path class="${cls}" d="M ${start[0].toFixed(1)} ${start[1].toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${end[0].toFixed(1)} ${end[1].toFixed(1)}" ${g.directed ? 'marker-end="url(#graph-arrow)"' : ''}><title>${esc(`${g.nodes.find(n => n.key === e.from)?.label} ${g.directed ? '→' : '–'} ${g.nodes.find(n => n.key === e.to)?.label}${label ? ` (${label})` : ''}`)}</title></path>${label ? `<text x="${mid[0].toFixed(1)}" y="${(mid[1] - 4).toFixed(1)}">${esc(clipLabel(label, 6))}</text>` : ''}`;
+  }).join('');
+  const queueWord = g.sources.queueKind ?? 'queue';
+  const nodes = g.nodes.map(n => {
+    const c = center.get(n.key)!;
+    const state = [n.current ? 'current node' : '', n.visited ? 'visited' : 'not visited yet', n.queued ? (n.queued === 1 ? `next out of ${g.sources.queue}` : `waiting in ${g.sources.queue}`) : '', n.onPath ? 'on the path of calls' : '', n.badge !== undefined ? `${g.sources.badge} = ${n.badge}` : ''].filter(Boolean).join(', ');
+    const tag = n.ref ? 'button' : 'div';
+    return `<${tag} class="graph-node ${n.visited ? 'visited' : ''} ${n.queued ? 'queued' : ''} ${n.current ? 'current is-current' : ''} ${n.onPath ? 'on-path' : ''}" style="left:${c.x - R}px;top:${c.y - R}px" ${n.ref ? `data-ref="${esc(n.ref)}"` : 'role="img"'} ${n.ref ? 'title' : 'aria-label'}="${esc(`Node ${n.label}: ${state}`)}" ${n.ref ? '' : `title="${esc(`Node ${n.label}: ${state}`)}"`}>${esc(clipLabel(n.label, 5))}${n.names.length ? `<span class="node-names">${esc(n.names.join(', '))}</span>` : ''}${n.queued && n.queued < 99 ? `<span class="node-order" title="${esc(`${n.queued === 1 ? 'Leaves' : 'Position in'} the ${queueWord}`)}">${n.queued}</span>` : ''}${n.badge !== undefined ? `<span class="node-badge">${esc(clipLabel(n.badge, 6))}</span>` : ''}</${tag}>`;
+  }).join('');
+  const marker = g.directed ? '<defs><marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>' : '';
+  return `<div class="tree-canvas graph-canvas" style="width:${width}px;height:${height}px"><svg class="tree-lines graph-lines" width="${width}" height="${height}" aria-hidden="true">${marker}${lines}</svg>${nodes}</div>`;
+}
+
+function renderGrid(g: GridView): string {
+  const tags = (marks: string[]) => marks.length ? `<span class="grid-tag">${esc(marks.join(', '))}</span>` : '';
+  const head = `<tr><th scope="col"><span class="sr-only">Row</span></th>${g.colMarks.map((m, x) => `<th scope="col" class="${m.length ? 'marked' : ''}">${x}${tags(m)}</th>`).join('')}</tr>`;
+  const body = g.cells.map((row, y) => `<tr class="${g.rowMarks[y].length ? 'in-row' : ''}"><th scope="row" class="${g.rowMarks[y].length ? 'marked' : ''}">${y}${tags(g.rowMarks[y])}</th>${row.map((c, x) => `<td class="${c.tone} ${c.changed ? 'changed' : ''} ${g.colMarks[x].length ? 'in-col' : ''} ${c.marks.length ? 'pointed is-current' : ''}" title="${esc(`${g.name}[${y}][${x}] = ${c.full}${c.order ? ` · ${c.order === 1 ? 'next out of' : 'waiting in'} ${g.queue}` : ''}`)}">${esc(c.text)}${c.order ? `<span class="grid-order">${c.order}</span>` : ''}</td>`).join('')}</tr>`).join('');
+  return `<table class="grid-view"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+/** Every structure view for a step, above the stack and heap. */
+function renderStructures(snapshot: TraceEvent, previous: TraceEvent | undefined, grids: GridView[]): string {
+  const parts: string[] = [];
+  const calls = run ? recursionTree(currentStates(), step) : null;
+  if (calls) {
+    const name = displayMethod(calls.method).split('.').at(-1)!;
+    const done = calls.nodes.filter(n => n.state === 'done').length;
+    parts.push(structureView('calls', 'list-tree', `Calls to ${name}`, `${plural(calls.calls, 'call')} so far, ${done} returned${calls.hidden ? ` · ${calls.hidden} older calls hidden` : ''}`, renderCallTree(calls),
+      `${swatch('call-current', 'Running now')}${swatch('call-active', 'Waiting for a call it made')}${swatch('call-done', 'Returned, with its result')}<span>Click a call to go to its first step.</span>`));
+  }
+  for (const g of graphViews(snapshot, previous)) {
+    const start = g.nodes.find(n => n.x === 0);
+    const s = g.sources;
+    const legend = [s.visited ? swatch('graph-visited', `Visited (${s.visited})`) : '', s.queue ? swatch('graph-queued', g.nodes.some(n => n.queued) ? `Waiting in ${s.queue}${s.queue === s.queueKind ? '' : ` (${s.queueKind})`}; 1 leaves next` : `${s.queue} is empty`) : '', g.nodes.some(n => n.current) ? swatch('graph-current', 'Current node') : '',
+      s.path ? swatch('graph-path', `Path of ${s.path} calls`) : '', s.tree ? swatch('graph-tree', `Parent links (${s.tree})`) : '', g.edges.some(e => e.active) ? swatch('graph-active', 'Edge being checked') : '', s.badge ? `<span><b class="node-badge static">n</b>${esc(s.badge)}</span>` : ''].join('');
+    parts.push(structureView(g.key, 'network', `Graph ${g.name}`, `${plural(g.nodes.length, 'node')}, ${plural(g.edges.length, 'edge')}${g.directed ? ', directed' : ''} · ${g.kind} · columns by distance from ${esc(start?.label ?? '?')}`, renderGraph(g), legend));
+  }
+  for (const g of grids) {
+    parts.push(structureView(g.key, 'grid-3x3', `Grid ${g.name}`, `${simpleType(g.type)} · ${g.rows} rows × ${g.cols} columns${g.overlay ? ` · colored by ${esc(g.overlay)}` : ''}${g.queue ? ` · cells in ${esc(g.queue)} numbered` : ''}${g.truncated ? ' · part not captured' : ''}`, renderGrid(g)));
+  }
+  const X = 52, Y = 60, PAD = 16;
+  for (const view of treeViews(snapshot, previous)) {
     const position = new Map(view.nodes.map(n => [n.id, { left: PAD + n.x * X, top: PAD + 14 + n.depth * Y }]));
     const width = PAD * 2 + Math.max(1, view.columns) * X, height = PAD * 2 + 14 + view.rows * Y;
     const lines = view.edges.map(e => { const a = position.get(e.from)!, b = position.get(e.to)!; return `<line x1="${a.left + 17}" y1="${a.top + 17}" x2="${b.left + 17}" y2="${b.top + 17}"><title>${esc(e.label)}</title></line>`; }).join('');
-    const nodes = view.nodes.map(n => { const p = position.get(n.id)!; return `<button class="tree-node ${refColor(n.id)} ${n.isNew ? 'new' : ''} ${n.changed ? 'changed' : ''}" style="left:${p.left}px;top:${p.top}px" data-ref="${esc(n.id)}" title="${esc(view.type)} @${esc(n.id)}${n.refs.length ? ` · ${n.refs.join(', ')}` : ''}. Click to show its fields.">${esc(n.label.length > 5 ? `${n.label.slice(0, 4)}…` : n.label)}${n.refs.length ? `<span class="tree-ref">${esc(n.refs.join(', '))}</span>` : ''}</button>`; }).join('');
-    return `<details class="structure-view" open><summary>${icon('git-fork')}Tree of ${esc(view.type)}<span>${view.nodes.length} node${view.nodes.length === 1 ? '' : 's'}, left to right in order${view.missing ? ` · ${view.missing} not captured` : ''}</span></summary><div class="tree-scroll"><div class="tree-canvas" style="width:${width}px;height:${height}px"><svg class="tree-lines" width="${width}" height="${height}" aria-hidden="true">${lines}</svg>${nodes}</div></div></details>`;
-  }).join('');
+    const nodes = view.nodes.map(n => { const p = position.get(n.id)!; return `<button class="tree-node ${refColor(n.id)} ${n.isNew ? 'new' : ''} ${n.changed ? 'changed' : ''} ${n.refs.length ? 'is-current' : ''}" style="left:${p.left}px;top:${p.top}px" data-ref="${esc(n.id)}" title="${esc(view.type)} @${esc(n.id)}${n.refs.length ? ` · ${n.refs.join(', ')}` : ''}. Click to show its fields.">${esc(clipLabel(n.label, 5))}${n.refs.length ? `<span class="tree-ref">${esc(n.refs.join(', '))}</span>` : ''}</button>`; }).join('');
+    parts.push(structureView(`tree:${view.type}`, 'git-fork', `Tree of ${view.type}`, `${plural(view.nodes.length, 'node')}, left to right in order${view.missing ? ` · ${view.missing} not captured` : ''}`, `<div class="tree-canvas" style="width:${width}px;height:${height}px"><svg class="tree-lines" width="${width}" height="${height}" aria-hidden="true">${lines}</svg>${nodes}</div>`));
+  }
+  for (const view of chainViews(snapshot, previous)) {
+    const rows = view.chains.map(chain => `<div class="chain-row">${chain.nodes.map((n, i) => `${i ? `<span class="chain-link" aria-hidden="true">${view.doubly ? '⇄' : '→'}</span>` : ''}<button class="chain-node ${refColor(n.id)} ${n.isNew ? 'new' : ''} ${n.changed ? 'changed' : ''} ${n.refs.length ? 'is-current' : ''}" data-ref="${esc(n.id)}" title="${esc(`${view.type} @${n.id}${n.refs.length ? ` · ${n.refs.join(', ')}` : ''}. Click to show its fields.`)}">${esc(clipLabel(n.label, 8))}${n.refs.length ? `<span class="chain-ref">${esc(n.refs.join(', '))}</span>` : ''}</button>`).join('')}<span class="chain-link" aria-hidden="true">→</span><span class="chain-end">${chain.cycleTo ? `↺ back to @${esc(chain.cycleTo)}` : chain.more ? '… not captured' : 'null'}</span></div>`).join('');
+    const count = view.chains.reduce((n, c) => n + c.nodes.length, 0);
+    parts.push(structureView(view.key, 'link', `Linked ${view.type}s`, `${plural(count, 'node')}${view.chains.length > 1 ? ` in ${view.chains.length} chains` : ''}${view.doubly ? ', linked both ways' : ''}`, rows));
+  }
+  if (expandedView && !parts.some(p => p.includes(`data-structure="${esc(expandedView!)}"`))) expandedView = null;
+  return `${expandedView ? '<div class="structure-backdrop" data-expand-close></div>' : ''}${parts.join('')}`;
+}
+
+/** Keeps each view's scroll position across steps, then brings the current node into view. */
+function restoreStructureScroll(saved: Map<string, [number, number]>) {
+  for (const box of document.querySelectorAll<HTMLElement>('#memory-canvas [data-scroll]')) {
+    const [left, top] = saved.get(box.dataset.scroll!) ?? [0, 0];
+    box.scrollLeft = left; box.scrollTop = top;
+    const item = box.querySelector<HTMLElement>('.is-current');
+    if (!item) continue;
+    const b = box.getBoundingClientRect(), r = item.getBoundingClientRect();
+    if (r.left < b.left + 8 || r.right > b.right - 8) box.scrollLeft += r.left + r.width / 2 - (b.left + b.width / 2);
+    if (r.top < b.top + 8 || r.bottom > b.bottom - 8) box.scrollTop += r.top + r.height / 2 - (b.top + b.height / 2);
+  }
 }
 
 let arrowFrame = 0;
@@ -813,10 +946,15 @@ const STOP_LABELS: Record<string, [string, string]> = {
   completed: ['Finished', 'ok'], exception: ['Exception', 'error'], 'compile-error': ['Compile error', 'error'], 'runtime-error': ['Exited with error', 'error'],
   'step-limit': ['Step limit reached', 'warning'], timeout: ['Time limit reached', 'warning'], cancelled: ['Stopped', 'warning'],
   'unsupported-concurrency': ['Multiple threads', 'warning'], 'trace-limit': ['Trace too large', 'warning'], 'worker-error': ['Runner error', 'error'],
+  'bad-start': ['Start condition error', 'error'],
 };
 
 function renderEmptyDebugger(reason: string | undefined) {
-  if (running) return `<div class="empty-state"><span class="empty-icon spin">${icon('loader-circle')}</span><h3>Recording your program…</h3><p>TraceLab compiles your code with javac, runs it on a real JVM, and records every line it executes.</p></div>`;
+  const start = run?.request.startAt;
+  if (running) return `<div class="empty-state"><span class="empty-icon spin">${icon('loader-circle')}</span><h3>${start ? 'Running until the start point…' : 'Recording your program…'}</h3><p>${start ? `The program runs without recording until ${esc(describeStart(start))}, then TraceLab records every line from there.` : 'TraceLab compiles your code with javac, runs it on a real JVM, and records every line it executes.'}</p></div>`;
+  const end = run?.events.findLast(e => e.kind === 'terminated');
+  if (reason === 'bad-start') return `<div class="empty-state"><span class="empty-icon error">${icon('flag-triangle-right')}</span><h3>The start condition can’t be read</h3><p>${esc(end?.message ?? '')}</p><div class="empty-actions"><button class="btn btn-primary" data-action="start-at">${icon('pencil')}Edit the start point</button><button class="btn btn-secondary" data-action="clear-start">Record from the start</button></div></div>`;
+  if (end?.start && !end.start.reached) return `<div class="empty-state"><span class="empty-icon">${icon('flag-triangle-right')}</span><h3>Recording never started</h3><p>${esc(end.start.message ?? '')} The program ran to the end; see its output below.</p><div class="empty-actions"><button class="btn btn-primary" data-action="start-at">${icon('pencil')}Edit the start point</button><button class="btn btn-secondary" data-action="clear-start">Record from the start</button></div></div>`;
   if (reason === 'compile-error') return `<div class="empty-state"><span class="empty-icon error">${icon('circle-x')}</span><h3>The program didn’t compile</h3><p>The Tutor explains each error in plain language and suggests fixes that TraceLab has checked with javac. You can also press Ctrl+. on a red underline.</p><div class="empty-actions"><button class="btn btn-primary" data-action="show-tutor">${icon('wrench')}Show fixes</button><button class="btn btn-secondary" data-console-open="diagnostics">Show problems</button></div></div>`;
   return `<div class="empty-state"><span class="empty-icon">${icon('bug')}</span><h3>Run your program to start debugging</h3><p>TraceLab records the execution, so you can step forward and back through every line and inspect the call stack and heap at each step.</p><button class="btn btn-primary" data-run>${icon('play')}Run <kbd>Ctrl ↵</kbd></button><div class="empty-hints"><span><kbd class="key">F10</kbd> Step over</span><span><kbd class="key">F11</kbd> Step into</span><span><kbd class="key">⇧F11</kbd> Step out</span></div></div>`;
 }
@@ -842,11 +980,17 @@ function renderTrace(followLine = false) {
     // Index markers use the recorded source, so they pause while the code differs from the recording.
     const cursors = run && (!dirtyTrace() || traceSource) ? cursorsFor(run, states, step) : [];
     const ctx: RenderContext = { heap: heapIndex(snapshot), previousHeap: heapIndex(previous), cursors: cursorsByObject(cursors), targets: variableTargets(cursors, snapshot.frames?.[0]), topFrame: snapshot.frames?.[0]?.id };
+    // A boolean grid that colors another grid (visited[][] over maze[][]) isn't drawn twice.
+    const allGrids = gridViews(snapshot, previous, ctx.cursors);
+    const grids = allGrids.filter(g => !allGrids.some(other => other.overlay === g.name));
+    ctx.grids = new Map(allGrids.map(g => [g.id, grids.includes(g) ? `Drawn as the grid “${g.name}” above, with ${g.rows} rows.` : `Shown as the colors of the grid “${allGrids.find(o => o.overlay === g.name)!.name}” above.`]));
+    ctx.gridRows = new Set(allGrids.flatMap(g => ctx.heap.get(g.id)?.elements?.map(e => e.ref!) ?? []));
     const heapCards = snapshot.heap?.map(o => renderHeap(o, previous?.heap?.find(p => p.id === o.id), !!previous && !ctx.previousHeap.has(o.id), ctx, snapshot)).join('') ?? '';
     const message = event?.exception ? exceptionMessage(run!, event) : '';
+    const scrolled = new Map([...canvas.querySelectorAll<HTMLElement>('[data-scroll]')].map(el => [el.dataset.scroll!, [el.scrollLeft, el.scrollTop] as [number, number]]));
     canvas.innerHTML = `${event?.exception ? `<div class="exception-card">${icon('bug')}<div><strong>${esc(event.exception.type.split('.').at(-1))}</strong>${message ? `<p>${esc(message)}</p>` : ''}</div></div>` : ''}
       ${renderStory(states)}
-      ${renderTrees(snapshot, previous)}
+      ${renderStructures(snapshot, previous, grids)}
       <div class="memory-columns" id="memory-columns"><svg class="arrow-layer" aria-hidden="true"></svg>
         <div class="stack-column"><div class="section-label">Call stack <span>${snapshot.frames?.length ?? 0} frame${snapshot.frames?.length === 1 ? '' : 's'}</span></div>
           <div class="frames">${snapshot.frames?.map((frame, i) => renderFrame(frame, i, previous, event, ctx)).join('')}
@@ -855,8 +999,10 @@ function renderTrace(followLine = false) {
           <div class="heap">${heapCards || '<div class="no-vars">No reachable objects at this step.</div>'}</div></div>
       </div>
       ${snapshot.heapTruncated || snapshot.framesTruncated ? '<div class="trace-notice">Capture limits reached at this step. Some frames or objects are not shown.</div>' : ''}
+      ${run?.request.startAt && step === 0 && !event?.exception ? `<div class="trace-notice info">${icon('flag-triangle-right')}Recording started here, at ${esc(describeStart({ ...run.request.startAt, line: run.events.at(-1)?.start?.line ?? run.request.startAt.line }))}. The lines before it ran without being recorded.</div>` : ''}
       <div class="memory-legend"><span><i class="swatch changed"></i>Changed</span><span><i class="swatch new"></i>New</span><span>${icon('arrow-up-right')}Reference</span></div>`;
     canvas.scrollTop = scroll;
+    restoreStructureScroll(scrolled);
   }
   const scrubber = $<HTMLInputElement>('#scrubber');
   scrubber.max = String(Math.max(0, states.length - 1)); scrubber.value = String(step); scrubber.disabled = states.length === 0;
@@ -985,13 +1131,16 @@ function renderCoach() {
 let helpOpen = false;
 /** The concept to practice for a question, or for what the run did when there is no question. */
 function practiceConcept(q?: Question): string | null {
-  if (q && hasPractice(q.concept)) return q.concept;
+  if (q && (hasPractice(q.concept) || assist.configured)) return q.concept;
   if (!run) return null;
   const thrown = currentStates().find(e => e.exception && !e.exception.caught)?.exception?.type ?? '';
   const byType: [RegExp, string][] = [[/ArrayIndexOutOfBounds/, 'array-bounds'], [/StringIndexOutOfBounds/, 'string-bounds'], [/NullPointer/, 'null-reference'], [/Arithmetic/, 'division-by-zero'], [/NumberFormat|InputMismatch/, 'parsing-input'], [/ConcurrentModification/, 'concurrent-modification'], [/IndexOutOfBounds/, 'array-bounds']];
   const reason = run.events.at(-1)?.stopReason;
-  return byType.find(([re]) => re.test(thrown))?.[1] ?? (reason === 'step-limit' ? 'loop-termination' : reason === 'compile-error' ? 'compile-errors' : null);
+  const known = byType.find(([re]) => re.test(thrown))?.[1] ?? (reason === 'step-limit' ? 'loop-termination' : reason === 'compile-error' ? 'compile-errors' : null);
+  // Other exceptions have no built-in problems; the assistant can write one.
+  return known ?? (thrown && assist.configured ? `exception:${thrown.split('.').at(-1)}` : null);
 }
+const conceptLabel = (concept: string) => CONCEPTS[concept] ?? (concept.startsWith('exception:') ? `${concept.slice(10)}: when Java throws it` : concept);
 /** Need help, Practice and Ask, under a question or after a run that went wrong. */
 function supportActions(q?: Question): string {
   if (!run || running) return '';
@@ -1018,22 +1167,57 @@ function renderHelpPanel(): string {
     <button class="btn btn-secondary btn-compact" data-ask="${esc('Explain step by step why this happened, using the recorded values. Then tell me what to check, without giving me the full fix.')}">${icon('messages-square')}Still stuck? Ask the assistant</button></section>`;
 }
 
-type PracticeState = { concept: string; seed: number; status: 'loading' | 'ready' | 'error'; item?: PracticeItem; html?: string; options: string[]; correct: number; answer?: number; attempts: number; recorded: boolean; error?: string };
+type PracticeState = { concept: string; seed: number; source: 'generator' | 'ai'; status: 'loading' | 'ready' | 'error'; item?: PracticeItem; html?: string; options: string[]; correct: number; answer?: number; attempts: number; recorded: boolean; error?: string };
 let practice: PracticeState | null = null;
-async function startPractice(concept: string) {
+const runPractice = (code: string) => quietRun({ files: [{ name: 'Main.java', content: code }], mainClass: 'Main', stdin: '', maxSteps: 100, timeoutMs: 3000, mode: 'run' });
+
+/** One completion from the assistant, without streaming it into the chat. */
+async function aiComplete(messages: ChatMessage[], maxTokens: number): Promise<string> {
+  const { id } = await api<{ id: string }>('/assist/chat', { method: 'POST', body: JSON.stringify({ messages, maxTokens }) });
+  for (let i = 0; i < 480; i++) {
+    await new Promise(r => setTimeout(r, 250));
+    const page = await api<{ status: string; text: string; error: string }>(`/assist/chat/${id}`);
+    if (page.status === 'done') return page.text;
+    if (page.status !== 'running') throw new Error(page.error || 'The assistant failed.');
+  }
+  await api(`/assist/chat/${id}`, { method: 'DELETE' }).catch(() => {});
+  throw new Error('The assistant took too long.');
+}
+/**
+ * A problem written by the assistant. The model's answer is never used: the program is checked against an
+ * allowlist of APIs, run on the JVM, and the options are built around what Java actually printed.
+ */
+async function aiPractice(concept: string, seed: number) {
+  let problem: string | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const reply = await aiComplete(aiPracticeMessages(concept, conceptLabel(concept), seed + attempt, problem) as ChatMessage[], 2048);
+    const item = parseAiPractice(reply, concept);
+    if (typeof item === 'string') { problem = item; continue; }
+    const outcome = practiceOutcome(await runPractice(item.code));
+    if (outcome.kind === 'other') { problem = outcome.reason === 'timeout' ? 'It didn’t finish within 3 seconds.' : `It stopped early (${outcome.reason}).`; continue; }
+    if (outcome.kind === 'compile-error' && !['compile-errors', 'types'].includes(concept)) { problem = `javac rejected it at line ${outcome.line}: ${outcome.message}`; continue; }
+    const { options, correct } = practiceOptions(item, outcome, seed);
+    if (options.length < 3) { problem = 'Its wrong answers were the same as the real output.'; continue; }
+    return { item, options, correct };
+  }
+  throw new Error(`The assistant couldn’t write a problem that runs (${problem ?? 'no reply'}). Try again.`);
+}
+async function startPractice(concept: string, useAi = false) {
   if (running || checking || genTask) { toast('Wait for the current run to finish, then try again.'); return; }
   if (!runnerOnline) { toast('The Java runner isn’t connected. Start it with npm start, then try again.', 'error'); return; }
+  const source = useAi || !hasPractice(concept) ? 'ai' : 'generator';
+  if (source === 'ai' && !assist.configured) { assistantSetupDialog(); return; }
   const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
-  practice = { concept, seed, status: 'loading', options: [], correct: -1, attempts: 0, recorded: false };
+  practice = { concept, seed, source, status: 'loading', options: [], correct: -1, attempts: 0, recorded: false };
   if (!layout.coach) setLayout({ coach: true });
   renderCoach();
   const task = (async () => {
     await settleFixChecks();
+    if (source === 'ai') { const made = await aiPractice(concept, seed); return { ...made, html: await monaco.editor.colorize(made.item.code, 'java', { tabSize: 4 }) }; }
     // The answer is whatever the JVM does with the program; a problem that doesn't finish is replaced.
     for (let attempt = 0; attempt < 4; attempt++) {
       const item = practiceFor(concept, seed + attempt * 7919);
-      const events = await quietRun({ files: [{ name: 'Main.java', content: item.code }], mainClass: 'Main', stdin: '', maxSteps: 100, timeoutMs: 3000, mode: 'run' });
-      const outcome = practiceOutcome(events);
+      const outcome = practiceOutcome(await runPractice(item.code));
       if (outcome.kind === 'other') continue;
       const { options, correct } = practiceOptions(item, outcome, seed + attempt);
       return { item, options, correct, html: await monaco.editor.colorize(item.code, 'java', { tabSize: 4 }) };
@@ -1053,7 +1237,7 @@ async function startPractice(concept: string) {
 function answerPractice(index: number) {
   if (!practice || practice.status !== 'ready' || practice.answer === practice.correct) return;
   practice.answer = index; practice.attempts++;
-  if (index === practice.correct && !practice.recorded) { practice.recorded = true; progress = recordSolved(progress, practice.concept, practice.attempts === 1); renderProgress(); }
+  if (index === practice.correct && !practice.recorded) { practice.recorded = true; if (practice.concept in CONCEPTS) { progress = recordSolved(progress, practice.concept, practice.attempts === 1); renderProgress(); } }
   renderCoach();
 }
 // ---------- AI assistant (optional) ----------
@@ -1185,15 +1369,18 @@ function assistantSetupDialog(then?: string) {
 
 function renderPracticeCard(): string {
   const p = practice!;
-  const label = CONCEPTS[p.concept] ?? 'Practice';
+  const label = conceptLabel(p.concept);
+  const ai = p.source === 'ai';
   const head = `<header class="question-top"><span class="question-type practice">Practice</span><button class="link-btn" id="practice-close">${icon('arrow-left')}Back</button></header>`;
-  if (p.status === 'loading') return `<article class="question-card practice-card">${head}<p class="gen-progress">${icon('loader-circle', 'spin')}<span>Writing a ${esc(label.toLowerCase())} problem and running it on the JVM…</span></p></article>`;
-  if (p.status === 'error') return `<article class="question-card practice-card">${head}<div class="callout warning">${icon('triangle-alert')}<span>${esc(p.error)}</span></div><button class="btn btn-secondary" data-practice="${esc(p.concept)}">${icon('rotate-ccw')}Try again</button></article>`;
+  const source = ai ? `<p class="practice-source">${icon('sparkles')}Written by AI · answer checked on the JVM</p>` : '';
+  const again = (text: string) => `<button class="${text ? 'link-btn' : 'btn btn-secondary'}" data-practice="${esc(p.concept)}" ${ai ? `data-practice-ai="1"` : ''}>${icon('rotate-ccw')}${text || 'Try again'}</button>`;
+  if (p.status === 'loading') return `<article class="question-card practice-card">${head}<p class="gen-progress">${icon('loader-circle', 'spin')}<span>${ai ? `Asking the assistant for a ${esc(label.toLowerCase())} problem, then running it on the JVM to find the real answer…` : `Writing a ${esc(label.toLowerCase())} problem and running it on the JVM…`}</span></p></article>`;
+  if (p.status === 'error') return `<article class="question-card practice-card">${head}<div class="callout warning">${icon('triangle-alert')}<span>${esc(p.error)}</span></div>${again('')}</article>`;
   const item = p.item!;
   const solved = p.answer === p.correct;
   const revealed = solved || p.attempts >= 2;
   const option = (text: string) => text.includes('\n') ? `<code class="multi">${esc(text)}</code>` : /^It /.test(text) ? esc(text) : `<code>${esc(text)}</code>`;
-  return `<article class="question-card practice-card"><span class="sr-only" aria-live="polite">${solved ? 'Correct' : ''}</span>${head}<h3>${esc(item.title)} <small class="muted">· ${esc(label)}</small></h3>
+  return `<article class="question-card practice-card"><span class="sr-only" aria-live="polite">${solved ? 'Correct' : ''}</span>${head}<h3>${esc(item.title)} <small class="muted">· ${esc(label)}</small></h3>${source}
     <pre class="practice-code">${p.html}</pre><h4>${esc(item.prompt)}</h4>
     <div class="answer-options" role="group" aria-label="Answers">${p.options.map((o, i) => {
       const state = p.answer === i ? (i === p.correct ? 'correct' : 'incorrect') : revealed && i === p.correct ? 'correct' : '';
@@ -1201,7 +1388,7 @@ function renderPracticeCard(): string {
     }).join('')}</div>
     ${p.answer !== undefined ? `<div class="answer-feedback ${solved ? 'correct' : ''}" role="status"><strong>${solved ? 'Correct.' : revealed ? 'Here’s what Java did.' : 'Not quite. Try again.'}</strong><p>${esc(item.why)}</p><p class="muted">${icon('shield-check')}The answer comes from running this program on the JVM.</p></div>` : ''}
     ${revealed ? `<button class="link-btn" data-ask="${esc(`This practice program's real result (from running it) is ${JSON.stringify(p.options[p.correct])}. Explain why, step by step:\n\n\`\`\`java\n${item.code}\`\`\``)}">${icon('messages-square')}Ask the assistant why</button>` : ''}
-    <footer class="question-footer"><button class="link-btn" data-practice="${esc(p.concept)}">${icon('rotate-ccw')}Another one</button><button class="link-btn" id="practice-open">${icon('external-link')}Open as a project to trace it</button></footer></article>`;
+    <footer class="question-footer">${again('Another one')}${!ai && assist.configured ? `<button class="link-btn" data-practice="${esc(p.concept)}" data-practice-ai="1" title="The assistant writes the program; TraceLab runs it to get the real answer">${icon('sparkles')}Ask AI for a different one</button>` : ''}${ai && hasPractice(p.concept) ? `<button class="link-btn" data-practice="${esc(p.concept)}">${icon('dumbbell')}A built-in one</button>` : ''}<button class="link-btn" id="practice-open">${icon('external-link')}Open as a project to trace it</button></footer></article>`;
 }
 
 function answerQuestion(index: number) {
@@ -1298,7 +1485,7 @@ async function quietRun(request: RunRequest, stoppable = false): Promise<TraceEv
     while (Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 120));
       const page = await api<Run & { total: number }>(`/runs/${created.id}`);
-      if (page.status === 'finished') return page.events;
+      if (page.status === 'finished') return expandEvents(page.events);
     }
     await api(`/runs/${created.id}`, { method: 'DELETE' }).catch(() => {});
     throw new Error('The runner did not finish in time.');
@@ -1409,7 +1596,12 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   return response.json() as Promise<T>;
 }
-function requestFor(stdin = project.stdin): RunRequest { return { files: structuredClone(project.files), mainClass: project.mainClass, stdin, maxSteps: project.maxSteps, timeoutMs: 8000 }; }
+function requestFor(stdin = project.stdin): RunRequest { return { files: structuredClone(project.files), mainClass: project.mainClass, stdin, maxSteps: project.maxSteps, timeoutMs: 15000 }; }
+/** The request for Run: like requestFor, plus the recording start point if one is set. */
+function traceRequest(): RunRequest {
+  const start = usableStart(project.startAt, project.files);
+  return start ? { ...requestFor(), startAt: { file: start.file, line: start.line, condition: start.condition ?? '', hit: start.hit ?? 1 } } : requestFor();
+}
 function setBusy() {
   for (const id of ['#run', '#verify', '#verify-top']) $<HTMLButtonElement>(id).disabled = running || checking || (id !== '#run' && project.checks.length === 0);
   $('#stop').hidden = !running && !checking;
@@ -1424,7 +1616,7 @@ async function collect(request: RunRequest, onUpdate?: (value: Run) => void): Pr
   const deadline = Date.now() + 40000;
   while (Date.now() < deadline) {
     const page = await api<Run & { total: number }>(`/runs/${created.id}?since=${events.length}`);
-    events.push(...page.events);
+    events.push(...expandEvents(page.events));
     const value: Run = { id: page.id, status: page.status, request: page.request, events };
     onUpdate?.(value);
     if (page.status === 'finished' && events.length >= page.total) { currentRunId = null; return value; }
@@ -1466,7 +1658,7 @@ async function startRun(override?: RunRequest) {
   running = true; stopRequested = false; setBusy(); renderTrace(); renderCoach();
   try {
     let lastRender = 0;
-    run = await collect(override ?? requestFor(), value => {
+    run = await collect(override ?? traceRequest(), value => {
       run = value;
       if (Date.now() - lastRender < 150) return;
       lastRender = Date.now(); step = Math.max(0, snapshots(value).length - 1); renderTrace();
@@ -1635,7 +1827,8 @@ function showDoc(ref: DocRef, next: Project) {
   for (const model of models.values()) model.dispose(); models.clear();
   try { library.setCurrent(ref); } catch { /* The open document is still usable. */ }
   activeFile = initialFile(project);
-  save(); selectFile(activeFile, false); renderTrace(); renderCoach(); renderCheckResults(); renderSaveRunTest(); setBusy();
+  expandedView = null; collapsedViews.clear();
+  save(); selectFile(activeFile, false); renderTrace(); renderCoach(); renderCheckResults(); renderSaveRunTest(); setBusy(); renderStartChip();
 }
 function openDoc(ref: DocRef): boolean {
   if (running || checking) { toast('Stop the current run before switching projects.'); return false; }
@@ -1685,7 +1878,7 @@ function startingPoint(): Project | null {
   if (originalCache?.key !== key) originalCache = { key, value: doc.kind === 'example' ? examples[exampleIndex(doc.id)] ?? null : library.original(doc.id) };
   return originalCache.value;
 }
-const codeKey = (p: Project) => JSON.stringify([p.files, p.mainClass, p.stdin, p.checks, p.maxSteps]);
+const codeKey = (p: Project) => JSON.stringify([p.files, p.mainClass, p.stdin, p.checks, p.maxSteps, p.startAt ?? null]);
 /** Whether the open document differs from its starting point. */
 function canReset(): boolean { const start = startingPoint(); return !!start && codeKey(start) !== codeKey(project); }
 async function resetDoc() {
@@ -1836,7 +2029,7 @@ function renameFile(oldName: string) {
     }
     const key = `workspace/${oldName}`; models.get(key)?.dispose(); models.delete(key);
     file.name = name;
-    const marks = breakpoints.get(oldName); breakpoints.delete(oldName); if (marks) breakpoints.set(name, marks);
+    const marks = breakpoints.get(oldName); breakpoints.delete(oldName); if (marks) breakpoints.set(name, marks); if (project.startAt?.file === oldName) project.startAt.file = name;
     save(); selectFile(name, false);
   }, 'Rename');
   setTimeout(() => { const input = $<HTMLInputElement>('#rename-name'); input.focus(); input.setSelectionRange(input.value.lastIndexOf('/') + 1, input.value.lastIndexOf('.java')); });
@@ -1847,6 +2040,7 @@ async function deleteFile(name: string) {
   if (project.files.length === 1) { toast('A project needs at least one Java file.'); return; }
   if (!(await confirmDialog(`Delete ${name}?`, 'The file is removed from this project. This cannot be undone unless you exported the project.', 'Delete', true))) return;
   project.files = project.files.filter(f => f.name !== name);
+  if (project.startAt?.file === name) { delete project.startAt; renderStartChip(); }
   const key = `workspace/${name}`; models.get(key)?.dispose(); models.delete(key);
   save(); selectFile(project.files[0].name, false);
 }
@@ -1882,13 +2076,62 @@ function newFile(folder = '') {
 function settingsDialog() {
   const mains = mainClasses(project.files);
   const options = [...new Set([...mains, project.mainClass])];
-  openDialog('Project settings', `<label class="dialog-label">Project name<input id="setting-name" value="${esc(project.name)}" maxlength="120" /></label><label class="dialog-label">Main class<select id="setting-main">${options.map(m => `<option value="${esc(m)}" ${m === project.mainClass ? 'selected' : ''}>${esc(m)}${mains.includes(m) ? '' : ' (no main method found)'}</option>`).join('')}</select><small>${mains.length ? `Run starts in this class’s <code>main</code> method. ${mains.length} class${mains.length === 1 ? ' has' : 'es have'} one.` : 'No class has a <code>public static void main(String[] args)</code> method yet.'}</small></label><label class="dialog-label">Step limit<input id="setting-steps" type="number" min="10" max="2000" value="${project.maxSteps}" /><small>Recording stops after this many line steps (10–2,000). The steps recorded so far stay available.</small></label><p class="dialog-note">Runs use Java 21 with an 8-second time limit. Each step captures up to 24 frames, 64 objects and 32 elements per array or collection.</p>`, () => {
+  openDialog('Project settings', `<label class="dialog-label">Project name<input id="setting-name" value="${esc(project.name)}" maxlength="120" /></label><label class="dialog-label">Main class<select id="setting-main">${options.map(m => `<option value="${esc(m)}" ${m === project.mainClass ? 'selected' : ''}>${esc(m)}${mains.includes(m) ? '' : ' (no main method found)'}</option>`).join('')}</select><small>${mains.length ? `Run starts in this class’s <code>main</code> method. ${mains.length} class${mains.length === 1 ? ' has' : 'es have'} one.` : 'No class has a <code>public static void main(String[] args)</code> method yet.'}</small></label><label class="dialog-label">Step limit<input id="setting-steps" type="number" min="10" max="2000" value="${project.maxSteps}" /><small>Recording stops after this many line steps (10–2,000). The steps recorded so far stay available.</small></label><div class="dialog-label">Recording start<span class="dialog-inline">${project.startAt ? `From ${esc(describeStart(project.startAt))}` : 'From the start of main'}<button type="button" class="btn btn-secondary btn-compact" data-action="start-at">${icon('flag-triangle-right')}Change…</button></span><small>To record a long program from the interesting part, start recording at a line, optionally when a condition is true. You can also right-click a line in the editor.</small></div><p class="dialog-note">Runs use Java 21 with a 15-second time limit. Each step captures up to 48 frames, 160 objects and 64 elements per array or collection.</p>`, () => {
     const mainClass = $<HTMLSelectElement>('#setting-main').value;
     const maxSteps = Number($<HTMLInputElement>('#setting-steps').value);
     if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(mainClass)) throw new Error('Choose a main class.');
     if (!Number.isInteger(maxSteps) || maxSteps < 10 || maxSteps > 2000) throw new Error('Choose a step limit from 10 to 2,000.');
     project.mainClass = mainClass; project.maxSteps = maxSteps; project.name = $<HTMLInputElement>('#setting-name').value.trim() || 'Untitled project';
     save(); renderFiles(); renderSourceBanner(); renderCheckResults();
+  });
+}
+
+// ---------- Recording start point ----------
+
+function setStartAt(start: NonNullable<Project['startAt']>) {
+  project.startAt = { file: start.file, line: start.line, ...(start.condition ? { condition: start.condition } : {}), ...(start.hit && start.hit > 1 ? { hit: start.hit } : {}) };
+  save(); updateDecorations(); renderStartChip();
+  toast(`The next run records from ${describeStart(project.startAt)}. Earlier lines run without being recorded.`, 'success');
+}
+function clearStartAt() {
+  if (!project.startAt) { toast('Runs already record from the start of main.'); return; }
+  delete project.startAt;
+  save(); updateDecorations(); renderStartChip();
+  toast('Runs record from the start of main again.');
+}
+function renderStartChip() {
+  const chip = $('#start-chip');
+  const start = usableStart(project.startAt, project.files);
+  chip.hidden = !start;
+  chip.innerHTML = start ? `<button type="button" class="start-chip-main" data-action="start-at" title="Recording starts at ${esc(describeStart(start))}. Click to change it.">${icon('flag-triangle-right')}<span>From ${esc(start.file.split('/').at(-1))}:${start.line}${start.condition ? ` when ${esc(clipLabel(start.condition, 24))}` : ''}${(start.hit ?? 1) > 1 ? ` · #${start.hit}` : ''}</span></button><button type="button" class="start-chip-clear" data-action="clear-start" title="Record from the start of main" aria-label="Remove the start point">${icon('x')}</button>` : '';
+  icons();
+}
+function startAtDialog(file = project.startAt?.file ?? activeFile, line = project.startAt?.file === file && project.startAt ? project.startAt.line : editor.getPosition()?.lineNumber ?? 1) {
+  const current = project.startAt?.file === file && project.startAt.line === line ? project.startAt : undefined;
+  openDialog('Start recording at a line', `<p class="dialog-note">A long program can use up the step budget before it reaches the part you care about. With a start point, the program runs normally until this line is about to run, and recording starts there. Variables and objects that exist at that moment are all shown.</p>
+    <div class="dialog-row"><label class="dialog-label">File<select id="start-file">${project.files.map(f => `<option value="${esc(f.name)}" ${f.name === file ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label>
+    <label class="dialog-label">Line<input id="start-line" type="number" min="1" value="${line}" /></label></div>
+    <label class="dialog-label">Only when (optional)<input id="start-condition" value="${esc(current?.condition ?? '')}" placeholder="i == 50 && total > 100" maxlength="200" spellcheck="false" autocomplete="off" /><small id="start-condition-help">Use variables visible on that line, fields, array elements, <code>.length</code>, <code>.size()</code>, numbers, <code>'c'</code>, <code>"text"</code>, <code>true</code>, <code>false</code> and <code>null</code>, with <code>== != &lt; &lt;= &gt; &gt;= && || !</code>. Strings compare by text.</small></label>
+    <label class="dialog-label">Start the<input id="start-hit" type="number" min="1" max="1000000" value="${current?.hit ?? 1}" /><small>…time the line runs with the condition true. 1 is the first time.</small></label>
+    ${project.startAt ? `<p class="dialog-note">Now: recording starts at ${esc(describeStart(project.startAt))}. <button type="button" class="link-btn" data-action="clear-start">Record from the start of main instead</button></p>` : ''}`, () => {
+    const chosen = $<HTMLSelectElement>('#start-file').value;
+    const lineNumber = Number($<HTMLInputElement>('#start-line').value);
+    const condition = $<HTMLInputElement>('#start-condition').value.trim();
+    const hit = Number($<HTMLInputElement>('#start-hit').value);
+    const lines = project.files.find(f => f.name === chosen)?.content.split('\n').length ?? 0;
+    if (!Number.isInteger(lineNumber) || lineNumber < 1 || lineNumber > lines) throw new Error(`Choose a line from 1 to ${lines}.`);
+    const problem = checkCondition(condition);
+    if (problem) throw new Error(`The condition can’t be read: ${problem}`);
+    if (!Number.isInteger(hit) || hit < 1 || hit > 1_000_000) throw new Error('Choose a number from 1 to 1,000,000.');
+    setStartAt({ file: chosen, line: lineNumber, condition, hit });
+    if (activeFile !== chosen) selectFile(chosen, false);
+    editor.revealLineInCenterIfOutsideViewport(lineNumber);
+  }, 'Save');
+  const input = $<HTMLInputElement>('#start-condition');
+  input.addEventListener('input', () => {
+    const problem = checkCondition(input.value);
+    input.setAttribute('aria-invalid', String(!!problem));
+    $('#dialog-error').textContent = problem ? `The condition can’t be read: ${problem}` : '';
   });
 }
 
@@ -2246,6 +2489,8 @@ async function runAction(action: string) {
   else if (action === 'language-server') languageServerDialog();
   else if (action === 'new-file') newFile();
   else if (action === 'show-tutor') { setLayout({ coach: true }); document.querySelector('.compile-help')?.scrollIntoView({ block: 'nearest' }); }
+  else if (action === 'start-at') startAtDialog();
+  else if (action === 'clear-start') { const d = $<HTMLDialogElement>('#dialog'); if (d.open) d.close(); clearStartAt(); }
 }
 
 // ---------- Wiring ----------
@@ -2349,6 +2594,21 @@ function gotoRecordedStep(index: number) {
   stopPlayback(); traceSource = dirtyTrace(); selectFile(activeFile, traceSource);
   goTo(index);
 }
+// Structure views: show one larger, step from inside it, and remember which ones are folded.
+$('#memory-canvas').addEventListener('click', e => {
+  const el = e.target as Element;
+  const expand = el.closest<HTMLElement>('[data-expand]');
+  if (expand) { e.preventDefault(); expandedView = expandedView === expand.dataset.expand ? null : expand.dataset.expand!; renderTrace(); return; }
+  if (el.closest('[data-expand-close]')) { expandedView = null; renderTrace(); return; }
+  const go = el.closest<HTMLElement>('[data-step-go]');
+  if (go) { stopPlayback(); goTo(step + Number(go.dataset.stepGo)); }
+});
+$('#memory-canvas').addEventListener('toggle', e => {
+  const view = e.target as HTMLDetailsElement;
+  const key = view.dataset?.structure;
+  if (!key || view.classList.contains('expanded')) return;
+  if (view.open) collapsedViews.delete(key); else collapsedViews.add(key);
+}, true);
 // Help-table rows are focusable rows, not buttons.
 $('#coach-content').addEventListener('click', e => {
   const row = (e.target as Element).closest<HTMLElement>('tr[data-goto-step]');
@@ -2394,7 +2654,7 @@ document.addEventListener('click', e => {
   if (target.dataset.applyFix) applyFix(target.dataset.applyFix);
   if (target.id === 'need-help') { helpOpen = !helpOpen; renderCoach(); if (helpOpen) document.querySelector('.help-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
   if (target.id === 'close-help') { helpOpen = false; renderCoach(); }
-  if (target.dataset.practice) startPractice(target.dataset.practice);
+  if (target.dataset.practice) startPractice(target.dataset.practice, !!target.dataset.practiceAi);
   if (target.dataset.assistPrompt) askAssistant(target.dataset.assistPrompt);
   if (target.dataset.ask) openAssistant(target.dataset.ask);
   if (target.dataset.practiceAnswer !== undefined) answerPractice(Number(target.dataset.practiceAnswer));
@@ -2423,7 +2683,7 @@ document.addEventListener('click', e => {
   if (target.id === 'reset-progress') confirmDialog('Reset practice history?', 'This clears the concepts you have practiced in this browser.', 'Reset', true).then(ok => { if (ok) { progress = resetProgress(); renderProgress(); } });
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeMenu(); closeProjectMenu(); }
+  if (e.key === 'Escape') { closeMenu(); closeProjectMenu(); if (expandedView && !(e.target as HTMLElement).closest?.('dialog')) { expandedView = null; renderTrace(); } }
   const openMenu = !menu().hidden ? menu() : !$('#project-menu').hidden ? $('#project-menu') : null;
   if (openMenu && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
     e.preventDefault();
@@ -2470,7 +2730,7 @@ function openRequestedDoc() {
 }
 
 renderTheme();
-selectFile(activeFile, false); renderTrace(); renderCoach(); renderCheckResults(); renderProgress(); setBusy(); save(); icons();
+selectFile(activeFile, false); renderTrace(); renderCoach(); renderCheckResults(); renderProgress(); setBusy(); renderStartChip(); save(); icons();
 checkHealth().then(() => { if (!runnerOnline) toast('The Java runner isn’t running. Start it with npm start to run programs.', 'error'); });
 setInterval(() => { if (!runnerOnline) checkHealth(); }, 5000);
 openRequestedDoc();

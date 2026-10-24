@@ -1,8 +1,22 @@
 import { exceptionGuide } from './exceptions.ts';
+import { recursionTree } from './structures.ts';
 import type { Check, HeapObject, Project, Question, Run, TraceEvent, TraceValue, Variable } from './types';
 
 export function snapshots(run: Run | null): TraceEvent[] {
   return run?.events.filter(e => e.kind === 'line' || e.kind === 'exception' || e.kind === 'terminated') ?? [];
+}
+
+/** Expands the compact wire form of primitive arrays (`elementType` + `values`) into ordinary elements, in place. */
+export function expandEvents(events: TraceEvent[]): TraceEvent[] {
+  for (const event of events) {
+    for (const object of event.heap ?? []) {
+      if (!object.values) continue;
+      const type = object.elementType;
+      object.elements = object.values.map(value => ({ kind: 'primitive' as const, type, value }));
+      delete object.values; delete object.elementType;
+    }
+  }
+  return events;
 }
 
 export function output(run: Run, stream: string, sequence = Infinity): string {
@@ -698,17 +712,149 @@ function statePrediction(states: TraceEvent[]): Question | null {
   return null;
 }
 
+/** A variable by name at a step: a local of the running method, a field of `this`, or a static field. */
+function visible(state: TraceEvent, name: string): Variable | undefined {
+  const top = state.frames?.[0];
+  const direct = top?.locals.find(v => v.name === name);
+  if (direct) return direct;
+  const self = top?.locals.find(v => v.name === 'this')?.value.ref;
+  const field = self ? heapOf(state).get(self)?.fields?.find(f => shortName(f.name) === name) : undefined;
+  return field ?? state.statics?.find(s => shortName(s.name) === name);
+}
+/** A primitive, String or boxed value as plain text. */
+function plain(value: TraceValue, heap: Map<string, HeapObject>): string | undefined {
+  if (value.kind === 'primitive') return value.value;
+  const o = value.kind === 'reference' ? heap.get(value.ref!) : undefined;
+  if (o?.kind === 'string' || o?.kind === 'value') return o.text;
+  return o?.kind === 'object' && /^java\.lang\.[A-Z]\w+$/.test(o.type) ? o.fields?.[0]?.value.value : undefined;
+}
+const REMOVE = /\b([A-Za-z_$][\w$]*)\s*\.\s*(poll|remove|pop|removeFirst|removeLast|pollFirst|pollLast)\s*\(\s*\)/;
+
+/** Which value leaves a queue or stack next, asked at a line that removes one and checked against the next step. */
+function removalQuestions(run: Run, states: TraceEvent[]): Question[] {
+  // Values that came out earlier make a good wrong answer: "it returns the one I just processed".
+  const removed: string[] = [];
+  for (let i = 0; i < states.length - 1; i++) {
+    const s = states[i];
+    if (s.kind !== 'line' || !s.frames?.length) continue;
+    const text = recordedLine(run, s.location!.file, s.location!.line);
+    const m = text?.match(REMOVE);
+    if (!m) continue;
+    const [, name, method] = m;
+    const heap = heapOf(s);
+    const object = heap.get(visible(s, name)?.value.ref ?? '');
+    const kind = object?.type.match(/^java\.util\.(ArrayDeque|LinkedList|PriorityQueue|Stack)$/)?.[1];
+    if (!object || !kind || object.kind !== 'list' || !object.elements || object.truncated || !object.elements.length) continue;
+    if (kind === 'Stack' && method !== 'pop') continue;
+    const values = object.elements.map(e => plain(e, heap));
+    if (values.some(v => v === undefined)) continue;
+    const fromEnd = kind === 'Stack' || method === 'removeLast' || method === 'pollLast';
+    const answer = fromEnd ? values.at(-1)! : values[0]!;
+    if (values.length < 2) { removed.push(answer); continue; }
+    // Confirm with the recording: at the method's next stop the collection has lost exactly that value.
+    const next = states.slice(i + 1).find(n => n.frames?.[0]?.id === s.frames![0].id);
+    const after = next ? heapOf(next).get(object.id) : undefined;
+    const rest = after?.elements?.map(e => plain(e, heapOf(next!)));
+    const expected = [...values]; expected.splice(fromEnd ? values.length - 1 : 0, 1);
+    const sorted = (xs: (string | undefined)[]) => [...xs].sort().join('\u0000');
+    if (!rest || (kind === 'PriorityQueue' ? sorted(rest) !== sorted(expected) : rest.slice(0, expected.length).join('\u0000') !== expected.join('\u0000'))) continue;
+    const numbers = values.map(Number);
+    const options = [...new Set([answer, fromEnd ? values[0]! : values.at(-1)!, values[1]!, ...removed.slice(-1), ...(numbers.every(Number.isFinite) ? [String(Math.max(...numbers)), String(Math.min(...numbers))] : [])])].slice(0, 4);
+    removed.push(answer);
+    if (options.length < 3) continue;
+    const call = `${name}.${method}()`;
+    const shown = kind === 'Stack' ? 'bottom to top' : kind === 'PriorityQueue' ? 'in its internal order' : 'first to last';
+    const queueLike = !fromEnd && method !== 'pop';
+    const why = kind === 'PriorityQueue'
+      ? `${code(call)} takes the smallest value by the queue’s ordering, wherever it was added. Shortest-path searches such as Dijkstra’s algorithm rely on this.`
+      : queueLike ? `${code(call)} takes the head: the value that has waited longest (first in, first out). Breadth-first search relies on this to visit nodes in order of distance from the start.`
+        : kind === 'Stack' ? `${code(call)} takes the top of the stack: the value pushed most recently (last in, first out). Depth-first search with an explicit stack relies on this.`
+          : method === 'pop' ? `On a deque, ${code('push')} and ${code('pop')} both use the front, so ${code(call)} returns the value pushed most recently (last in, first out). Depth-first search with a stack relies on this.`
+            : `${code(call)} takes from the back: the value added most recently.`;
+    return [make({ id: `removal-${s.sequence}`, kind: 'predict', concept: queueLike || kind === 'PriorityQueue' ? 'bfs' : 'dfs', title: 'Which value comes out next?',
+      context: `Paused before line ${s.location!.line}: ${code(text!.trim())}. ${code(name)} is ${article(kind)} ${kind} holding [${values.join(', ')}], ${shown}.`,
+      prompt: `Which value does ${code(call)} return?`,
+      explanation: `${why} In this run it returned ${answer}; step forward to see ${code(name)} without it.`,
+      hints: [`Which end of the ${kind === 'Stack' ? 'stack' : 'queue'} does ${code(method)} take from?`, 'Think about the order the values were added.'],
+      step: i, focus: { file: s.location!.file, line: s.location!.line }, code: text!.trim() }, options, 0)];
+  }
+  return [];
+}
+
+/** How many calls a recursion makes, which returns first, and which call starts next (depth first). */
+function recursionTreeQuestions(run: Run, states: TraceEvent[]): Question[] {
+  const end = run.events.at(-1);
+  if (end?.stopReason !== 'completed' || run.request.startAt || states.some(s => s.framesTruncated)) return [];
+  const tree = recursionTree(states, states.length - 1, 1000);
+  if (!tree) return [];
+  const method = tree.method, name = displayName(method);
+  const calls = tree.nodes.filter(n => n.method === method);
+  const out: Question[] = [];
+  const byId = new Map(tree.nodes.map(n => [n.id, n]));
+  // The outermost call with the most calls under it (main may start several separate recursions).
+  const under = (id: string): typeof calls => { const kids = calls.filter(c => c.parent === id); return [...kids, ...kids.flatMap(k => under(k.id))]; };
+  const roots = calls.filter(n => !n.parent || byId.get(n.parent)?.method !== method);
+  const root = roots.map(r => ({ r, size: under(r.id).length })).sort((a, b) => b.size - a.size)[0]?.r ?? calls[0];
+  const family = [root, ...under(root.id)];
+  const parameterTypes = states.flatMap(s => s.frames ?? []).find(f => f.method === method)?.locals.filter(v => v.argument).map(v => v.type) ?? [];
+  const graphLike = states.some(s => [...(s.statics ?? []), ...(s.frames?.[0]?.locals ?? [])].some(v => /visit|seen|mark/i.test(shortName(v.name))));
+  const concept = parameterTypes.some(t => !/^(int|long|short|byte|char|boolean|double|float)$|^java\./.test(t) && !t.endsWith('[]')) ? 'trees' : graphLike ? 'dfs' : 'recursion';
+  if (family.length >= 3 && family.length <= 60) {
+    const count = family.length;
+    const distinct = new Set(family.map(c => c.label)).size;
+    const options = [...new Set([String(count), String(count + 1), String(count - 1), String(distinct)])].filter(o => Number(o) > 0).slice(0, 4);
+    if (options.length >= 3) out.push(make({ id: 'call-count', kind: 'predict', concept, title: 'Count the calls',
+      context: `${code(root.label)} starts a recursion: ${code(name)} keeps calling itself until it reaches a base case.`,
+      prompt: `How many calls to ${code(name)} happen from the start of ${code(root.label)} until it returns, counting ${code(root.label)} itself?`,
+      explanation: `The recording has ${count} separate calls to ${code(name)} in that recursion, each with its own frame${distinct < count ? `, though only ${distinct} different argument lists: some calls repeat work another branch already did` : ''}. The Calls view above the stack draws every one of them.`,
+      hints: ['Draw each call as a box under the call that made it.', 'A call with the same arguments made from two places counts twice.'], step: root.step }, options, 0));
+  }
+  // The first call to return is the first one to reach a base case.
+  const familyIds = new Set(family.map(c => c.id));
+  const order: string[] = [];
+  for (const s of states) for (const r of s.returns ?? []) if (r.frameId && familyIds.has(r.frameId)) order.push(r.frameId);
+  const first = byId.get(order[0] ?? '');
+  const firstChild = family.find(c => c.parent === root.id);
+  if (first && first.id !== root.id) {
+    const options = [...new Set([first.label, root.label, firstChild?.label, family.find(c => c.id === order.at(-2))?.label].filter((x): x is string => !!x))].slice(0, 4);
+    if (options.length >= 3) out.push(make({ id: 'first-return', kind: 'predict', concept, title: 'Which call finishes first?',
+      context: `${code(root.label)} is the first call. Every call waits for the calls it makes before it can return.`,
+      prompt: `Which call to ${code(name)} returns first?`,
+      explanation: `A call can return only after the calls it made have returned, so the first to return is the first call that reaches a base case without recursing: ${code(first.label)}. ${code(root.label)}, the first call, returns last.`,
+      hints: ['Follow the first call down until a call stops recursing.', 'Which calls are still waiting on the stack at that moment?'], step: root.step }, options, 0));
+  }
+  // Depth first: a call's own calls run before the call after it at the same level.
+  for (const child of calls) {
+    const parent = child.parent ? byId.get(child.parent) : undefined;
+    const grand = parent?.parent ? byId.get(parent.parent) : undefined;
+    if (!parent || !grand || parent.method !== method || grand.method !== method) continue;
+    const siblings = calls.filter(c => c.parent === grand.id);
+    const later = siblings[siblings.indexOf(parent) + 1];
+    if (!later || child.step < 1 || states[child.step - 1]?.frames?.[0]?.id !== parent.id) continue;
+    if (calls.some(c => c.parent === parent.id && c.step < child.step)) continue;
+    const options = [child.label, later.label, `${parent.label} returns to ${grand.label} first`];
+    if (new Set(options).size < 3) continue;
+    out.push(make({ id: 'next-call', kind: 'predict', concept, title: 'Which call starts next?',
+      context: `${code(parent.label)} is running; it was called by ${code(grand.label)}, which will also call ${code(later.label)} later.`,
+      prompt: `Which call to ${code(name)} starts next?`,
+      explanation: `${code(parent.label)} makes its own call, ${code(child.label)}, before it returns, so the recursion goes deeper before it moves sideways to ${code(later.label)}. That is what depth first means: the call stack remembers the way back.`,
+      hints: [`Does ${code(parent.label)} call ${code(name)} itself before it finishes?`, 'Look at the call stack: which frame is on top?'], step: child.step - 1 }, options, 0));
+    break;
+  }
+  return out;
+}
+
 /** Questions are generated only from recorded values and the exact recorded source. */
 export function questionsFor(run: Run): Question[] {
   const states = snapshots(run);
   const questions = [...compileQuestions(run), ...exceptionQuestions(run, states), ...loopQuestions(run, states), ...recursionQuestions(run, states),
-    ...stringIdentityQuestions(run, states), ...integerDivisionQuestions(run, states), ...passByValueQuestions(states)];
+    ...stringIdentityQuestions(run, states), ...integerDivisionQuestions(run, states), ...passByValueQuestions(states), ...removalQuestions(run, states), ...recursionTreeQuestions(run, states)];
   if (questions.length < 3) {
     // The array alias questions explain the bug, so put them before the generic aliasing question.
     const alias = aliasQuestions(run, states);
     questions.push(...alias.filter(q => q.id !== 'alias'), ...alias.filter(q => q.id === 'alias'));
   }
-  const returned = questions.length < 4 && !questions.some(q => q.concept === 'recursion') ? returnQuestion(states) : null;
+  const returned = questions.length < 4 && !questions.some(q => q.id === 'runaway-recursion') ? returnQuestion(states) : null;
   if (returned) questions.push(returned);
   if (questions.length < 3) { const predicted = statePrediction(states); if (predicted) questions.push(predicted); }
   return questions.slice(0, 4);
@@ -724,5 +870,8 @@ export function validateProject(value: unknown): value is Project {
     && p.files.every(f => typeof f?.name === 'string' && /^(?:[A-Za-z_$][\w$]*\/)*[A-Za-z_$][\w$]*\.java$/.test(f.name) && typeof f.content === 'string' && f.content.length <= 65536)
     && new Set(p.files.map(f => f.name.toLowerCase())).size === p.files.length
     && Array.isArray(p.checks) && p.checks.length <= 20 && p.checks.every(c => c && typeof c.name === 'string' && c.name.length <= 120 && typeof c.stdin === 'string' && c.stdin.length <= 16384 && typeof c.expectedOutput === 'string' && c.expectedOutput.length <= 32768
-      && (c.kind === undefined || c.kind === 'output' || (c.kind === 'call' && typeof c.call === 'string' && c.call.length <= 500 && typeof c.target === 'string' && /^[\w$]+(?:\.[\w$]+)*$/.test(c.target))));
+      && (c.kind === undefined || c.kind === 'output' || (c.kind === 'call' && typeof c.call === 'string' && c.call.length <= 500 && typeof c.target === 'string' && /^[\w$]+(?:\.[\w$]+)*$/.test(c.target))))
+    && (p.startAt === undefined || (!!p.startAt && typeof p.startAt === 'object' && p.files.some(f => f.name === p.startAt!.file) && Number.isInteger(p.startAt.line) && p.startAt.line >= 1 && p.startAt.line <= 100000
+      && (p.startAt.condition === undefined || (typeof p.startAt.condition === 'string' && p.startAt.condition.length <= 200 && !/[\r\n]/.test(p.startAt.condition)))
+      && (p.startAt.hit === undefined || (Number.isInteger(p.startAt.hit) && p.startAt.hit >= 1 && p.startAt.hit <= 1000000))));
 }

@@ -15,7 +15,7 @@ use tower_http::services::{ServeDir, ServeFile};
 mod assist;
 mod lsp;
 
-const MAX_TRACE_BYTES: usize = 24 * 1024 * 1024;
+const MAX_TRACE_BYTES: usize = 40 * 1024 * 1024;
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -31,7 +31,17 @@ struct RunRequest {
     #[serde(default = "default_timeout")] timeout_ms: u64,
     /// "trace" records with JDI; "run" runs without recording; "compile" only compiles.
     #[serde(default = "default_mode")] mode: String,
+    /// Traced runs only: record nothing until this line runs with the condition true for the `hit`-th time.
+    #[serde(default, skip_serializing_if = "Option::is_none")] start_at: Option<StartAt>,
 }
+#[derive(Clone, Deserialize, Serialize)]
+struct StartAt {
+    file: String,
+    line: u32,
+    #[serde(default)] condition: String,
+    #[serde(default = "default_hit")] hit: u32,
+}
+fn default_hit() -> u32 { 1 }
 fn default_mode() -> String { "trace".into() }
 fn default_steps() -> usize { 500 }
 fn default_timeout() -> u64 { 8000 }
@@ -70,6 +80,12 @@ fn validate(request: &RunRequest) -> Result<(), &'static str> {
     if !(10..=2000).contains(&request.max_steps) { return Err("The trace budget must be between 10 and 2,000 steps."); }
     if !(500..=15000).contains(&request.timeout_ms) { return Err("The time budget must be between 500 and 15,000 ms."); }
     if !["trace", "run", "compile"].contains(&request.mode.as_str()) { return Err("The mode must be trace, run or compile."); }
+    if let Some(start) = &request.start_at {
+        if !request.files.iter().any(|f| f.name == start.file) { return Err("The recording start must be in one of the project's files."); }
+        if !(1..=100_000).contains(&start.line) { return Err("The recording start line must be between 1 and 100,000."); }
+        if !(1..=1_000_000).contains(&start.hit) { return Err("The recording start count must be between 1 and 1,000,000."); }
+        if start.condition.len() > 200 || start.condition.chars().any(|c| c.is_control()) { return Err("The start condition must be one line of at most 200 characters."); }
+    }
     check_files(&request.files)
 }
 
@@ -242,6 +258,11 @@ async fn execute(state: &AppState, request: &RunRequest, run: &SharedRun) -> Res
         tokio::fs::write(dest, &file.content).await.map_err(|e| e.to_string())?;
     }
     tokio::fs::write(dir.path().join("stdin.txt"), &request.stdin).await.map_err(|e| e.to_string())?;
+    if let (Some(start), "trace") = (&request.start_at, request.mode.as_str()) {
+        // One value per line; validate() has ruled out line breaks in the condition.
+        let text = format!("{}\n{}\n{}\n{}\n", start.file, start.line, start.hit, start.condition);
+        tokio::fs::write(dir.path().join("start.txt"), text).await.map_err(|e| e.to_string())?;
+    }
     let mut command = Command::new(&state.java);
     command.args(["-Xmx256m", "--add-modules", "jdk.jdi", "-cp"])
         .arg(state.root.join(".local/worker")).arg("TraceWorker")
@@ -351,7 +372,14 @@ async fn main() {
 mod tests {
     use super::*;
     fn request(name: &str) -> RunRequest {
-        RunRequest { files: vec![SourceFile { name: name.into(), content: "class Main {}".into() }], main_class: "Main".into(), stdin: String::new(), max_steps: 100, timeout_ms: 1000, mode: "trace".into() }
+        RunRequest { files: vec![SourceFile { name: name.into(), content: "class Main {}".into() }], main_class: "Main".into(), stdin: String::new(), max_steps: 100, timeout_ms: 1000, mode: "trace".into(), start_at: None }
+    }
+    #[test] fn start_points_must_name_a_project_file_and_one_line() {
+        let start = |file: &str, line: u32, condition: &str| { let mut req = request("Main.java"); req.start_at = Some(StartAt { file: file.into(), line, condition: condition.into(), hit: 1 }); req };
+        assert!(validate(&start("Main.java", 3, "i == 5")).is_ok());
+        assert!(validate(&start("Other.java", 3, "")).is_err());
+        assert!(validate(&start("Main.java", 0, "")).is_err());
+        assert!(validate(&start("Main.java", 3, "i == 5\nx")).is_err());
     }
     #[test] fn paths_cannot_escape_workspace() {
         for name in ["../Main.java", "/Main.java", "C:/Main.java", "a\\Main.java", "a/../Main.java", "CON.java", "Main.java.exe"] { assert!(validate(&request(name)).is_err(), "{name}"); }

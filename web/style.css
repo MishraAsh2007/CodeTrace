@@ -428,6 +428,19 @@ dialog::backdrop { background: rgb(5 10 15 / 45%); backdrop-filter: blur(2px); }
 .bookmark-glyph::after { content: ""; display: block; width: 9px; height: 9px; margin: 6px 0 0 4px; border-radius: 50%; background: var(--info); }
 .question-line { background: var(--line-question) !important; }
 .question-line-marker { border-left: 3px solid var(--warning); margin-left: 3px; }
+.start-at-line { background: color-mix(in srgb, var(--violet) 9%, transparent); }
+.start-at-marker { border-left: 3px solid var(--violet); margin-left: 3px; }
+.start-chip { display: inline-flex; align-items: center; height: 28px; border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--violet) 45%, var(--border)); background: var(--violet-soft); color: var(--text); font-size: 12px; min-width: 0; flex: 0 1 auto; }
+.start-chip[hidden] { display: none; }
+.start-chip button { display: inline-flex; align-items: center; gap: 5px; height: 100%; padding: 0 7px; color: inherit; min-width: 0; }
+.start-chip .start-chip-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); font-size: 11.5px; }
+.start-chip .start-chip-clear { padding: 0 6px; border-left: 1px solid color-mix(in srgb, var(--violet) 35%, var(--border)); color: var(--text-3); }
+.start-chip button:hover, .start-chip button:focus-visible { color: var(--text); background: color-mix(in srgb, var(--violet) 14%, transparent); outline: none; }
+.start-chip svg { width: 13px; height: 13px; color: var(--violet); flex: none; }
+.dialog-row { display: grid; grid-template-columns: 1fr 120px; gap: 12px; }
+.dialog-inline { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 450; }
+.trace-notice.info { display: flex; align-items: center; gap: 7px; background: var(--violet-soft); color: var(--text-2); }
+.trace-notice.info svg { width: 14px; height: 14px; color: var(--violet); flex: none; }
 
 /* ---------- Responsive ---------- */
 @media (min-width: 1600px) { .app-layout { grid-template-columns: 48px 260px minmax(0, 1fr) 380px; } .app-layout.sidebar-hidden { grid-template-columns: 48px minmax(0, 1fr) 380px; } .app-layout.coach-hidden { grid-template-columns: 48px 260px minmax(0, 1fr); } }
@@ -706,6 +719,8 @@ dialog.wide { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48
 .help-note { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--text-3); }
 .help-note svg { width: 13px; height: 13px; }
 .question-type.practice { background: var(--violet-soft); color: var(--violet-text); }
+.practice-source { display: flex; align-items: center; gap: 5px; margin: -4px 0 8px; font-size: 11.5px; color: var(--text-3); }
+.practice-source svg { width: 12px; height: 12px; color: var(--violet); }
 .practice-card h3 small { font-weight: 500; font-size: 12px; }
 .practice-code { margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--code-bg); border: 1px solid var(--border); font: 12px/1.55 var(--font-code); overflow-x: auto; white-space: pre; }
 .answer-option code.multi { white-space: pre; display: inline-block; }
@@ -758,11 +773,24 @@ button.concept-chip:hover { border-color: var(--accent); color: var(--accent-tex
 .assist-setup-status svg { width: 15px; height: 15px; flex-shrink: 0; }
 
 /* Tree view of node objects. */
-.structure-view { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); margin-bottom: 10px; }
-.structure-view summary { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; font-size: 12.5px; font-weight: 650; }
-.structure-view summary svg { width: 15px; height: 15px; color: var(--text-3); }
-.structure-view summary span { font-weight: 450; color: var(--text-3); font-size: 12px; }
-.tree-scroll { overflow-x: auto; border-top: 1px solid var(--border); }
+.structure-view { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); margin-bottom: 10px; min-width: 0; }
+.structure-view summary { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; cursor: pointer; font-size: 12.5px; font-weight: 650; min-width: 0; }
+.structure-view summary > svg { width: 15px; height: 15px; color: var(--text-3); flex: none; }
+.structure-view summary strong { font-weight: 650; white-space: nowrap; }
+.structure-caption { font-weight: 450; color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.structure-expand { margin-left: auto; flex: none; width: 26px; height: 26px; }
+.structure-expand svg { width: 14px; height: 14px; }
+/* Views grow sideways and scroll; height is capped so the stack and heap stay close. */
+.structure-scroll { overflow: auto; max-height: 340px; border-top: 1px solid var(--border); overscroll-behavior: contain; }
+.structure-legend { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 10px 8px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-3); }
+.structure-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.structure-view.expanded { position: fixed; z-index: 60; inset: 64px 3vw 3vh; margin: 0; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); }
+.structure-view.expanded .structure-scroll { flex: 1; max-height: none; display: grid; place-items: center; }
+/* Larger without changing the layout code: zoom scales the box it takes up, so scrolling still fits. */
+.structure-view.expanded .structure-scroll > * { zoom: 1.6; }
+.structure-backdrop { position: fixed; inset: 0; z-index: 59; background: rgb(10 14 20 / 45%); }
+.structure-stepbar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-top: 1px solid var(--border); font-size: 12.5px; }
+.structure-stepbar .muted { margin-left: 8px; font-size: 11.5px; }
 .tree-canvas { position: relative; margin: 0 auto; }
 .structure-view svg.tree-lines { position: absolute; inset: 0; width: 100%; height: 100%; color: inherit; }
 .tree-lines line { stroke: var(--border-strong); stroke-width: 1.5; }
@@ -772,3 +800,69 @@ button.concept-chip:hover { border-color: var(--accent); color: var(--accent-tex
 .tree-node.changed { background: color-mix(in srgb, var(--warning) 18%, var(--surface)); }
 .tree-ref { position: absolute; bottom: calc(100% + 1px); left: 50%; transform: translateX(-50%); font: 600 10px var(--font-code); color: var(--accent-text); white-space: nowrap; }
 .tree-node.green { --ref-color: var(--ref-green); } .tree-node.blue { --ref-color: var(--ref-blue); } .tree-node.orange { --ref-color: var(--ref-orange); } .tree-node.violet { --ref-color: var(--ref-violet); }
+
+/* Recursion: one box per call. */
+.call-node { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 2px 6px; border-radius: 8px; border: 1.5px solid var(--border-strong); background: var(--surface-2); color: var(--text-2); font: 600 11.5px var(--font-code); line-height: 1.2; white-space: nowrap; overflow: hidden; }
+.call-node span { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.call-node small { font-weight: 650; color: var(--accent-text); font-size: 11px; }
+.call-node.done { border-style: solid; background: var(--surface); color: var(--text-3); }
+.call-node.active { border-color: var(--info); color: var(--text); background: var(--info-soft); }
+.call-node.current { border: 2px solid var(--info); color: var(--text); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 30%, transparent); }
+.call-node:hover, .call-node:focus-visible { border-color: var(--accent); outline: none; }
+.swatch.call-current { background: var(--surface); box-shadow: inset 0 0 0 2px var(--info); }
+.swatch.call-active { background: var(--info-soft); box-shadow: inset 0 0 0 1px var(--info); }
+.swatch.call-done { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); }
+
+/* Graphs: columns by distance from the start. */
+.graph-lines path { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+.graph-lines path.tree { stroke: var(--accent); stroke-width: 2.5; }
+.graph-lines path.path { stroke: var(--info); stroke-width: 3; }
+.graph-lines path.active { stroke: var(--warning); stroke-width: 2.5; stroke-dasharray: 5 4; }
+.graph-lines marker path { fill: var(--text-3); stroke: none; }
+.graph-lines text { font: 600 10px var(--font-code); fill: var(--text-2); text-anchor: middle; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.graph-node { position: absolute; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font: 650 12px var(--font-code); background: var(--surface); border: 2px solid var(--border-strong); color: var(--text-2); }
+.graph-node.visited { background: color-mix(in srgb, var(--accent) 24%, var(--surface)); border-color: var(--accent); color: var(--text); }
+.graph-node.queued { border-color: var(--warning); border-style: dashed; }
+.graph-node.visited.queued { border-style: dashed; }
+.graph-node.on-path { border-color: var(--info); border-width: 3px; }
+.graph-node.current { border: 3px solid var(--info); box-shadow: 0 0 0 4px color-mix(in srgb, var(--info) 30%, transparent); color: var(--text); }
+button.graph-node:hover, button.graph-node:focus-visible { background: var(--surface-3); outline: none; }
+.node-names { position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); font: 650 10px var(--font-code); color: var(--info-text); white-space: nowrap; }
+.node-order { position: absolute; top: -7px; right: -9px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; display: grid; place-items: center; background: var(--warning); color: var(--surface); font: 700 9.5px var(--font-ui, inherit); }
+.node-badge { position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%); padding: 0 4px; border-radius: 4px; background: var(--surface-3); color: var(--text-2); font: 600 10px var(--font-code); white-space: nowrap; }
+.node-badge.static { position: static; transform: none; display: inline-block; }
+.swatch.graph-visited { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); border-radius: 50%; }
+.swatch.graph-queued { box-shadow: inset 0 0 0 2px var(--warning); border-radius: 50%; }
+.swatch.graph-current { box-shadow: inset 0 0 0 3px var(--info); border-radius: 50%; }
+.swatch.graph-path { height: 3px; background: var(--info); border-radius: 2px; }
+.swatch.graph-tree { height: 3px; background: var(--accent); border-radius: 2px; }
+.swatch.graph-active { height: 0; border-top: 2.5px dashed var(--warning); border-radius: 0; }
+
+/* Grids for 2D arrays. */
+.grid-view { border-collapse: separate; border-spacing: 2px; margin: 8px 10px; font: 600 12px var(--font-code); }
+.grid-view th { min-width: 22px; padding: 0 3px; color: var(--text-3); font-weight: 600; font-size: 10.5px; text-align: center; vertical-align: bottom; }
+.grid-view tbody th { text-align: right; padding-right: 6px; }
+.grid-view th.marked { color: var(--accent-text); }
+.grid-tag { display: block; color: var(--accent-text); font-size: 10px; font-weight: 700; }
+.grid-view tbody th .grid-tag { display: inline; margin-left: 4px; }
+.grid-view td { position: relative; min-width: 26px; height: 26px; padding: 0 4px; text-align: center; border-radius: 4px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); color: var(--text); }
+.grid-view tr.in-row td, .grid-view tr td.in-col { background: color-mix(in srgb, var(--accent) 7%, var(--surface-2)); }
+/* Cell states outrank the row and column tint. */
+.grid-view tr td.true { background: var(--accent-soft); color: var(--accent-text); }
+.grid-view tr td.visited { background: color-mix(in srgb, var(--accent) 24%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.grid-view tr td.queued { box-shadow: inset 0 0 0 2px var(--warning); }
+.grid-view tr td.wall { background: var(--text-2); color: var(--surface); }
+.grid-view tr td.changed { background: var(--warning-soft); color: var(--text); }
+.grid-view tr td.pointed { box-shadow: inset 0 0 0 2px var(--info); }
+.grid-order { position: absolute; top: -4px; right: -4px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 7px; background: var(--warning); color: var(--surface); font-size: 8.5px; line-height: 13px; }
+
+/* Linked lists as chains. */
+.chain-row { display: flex; align-items: center; gap: 4px; padding: 22px 12px 10px; width: max-content; }
+.chain-node { position: relative; min-width: 40px; height: 32px; padding: 0 10px; border-radius: 8px; border: 2px solid var(--ref-color, var(--info)); background: var(--surface); font: 600 12px var(--font-code); color: var(--text); }
+.chain-node.green { --ref-color: var(--ref-green); } .chain-node.blue { --ref-color: var(--ref-blue); } .chain-node.orange { --ref-color: var(--ref-orange); } .chain-node.violet { --ref-color: var(--ref-violet); }
+.chain-node.new { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.chain-node.changed { background: color-mix(in srgb, var(--warning) 18%, var(--surface)); }
+.chain-node:hover, .chain-node:focus-visible { background: var(--surface-3); outline: none; }
+.chain-ref { position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); font: 650 10px var(--font-code); color: var(--accent-text); white-space: nowrap; }
+.chain-link { color: var(--text-3); font-size: 15px; }
+.chain-end { color: var(--text-3); font: 600 11.5px var(--font-code); white-space: nowrap; }

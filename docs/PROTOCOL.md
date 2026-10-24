@@ -16,10 +16,15 @@ The Rust service listens only on `127.0.0.1:4317`. API calls except health requi
   "mainClass": "Main",
   "stdin": "",
   "maxSteps": 500,
-  "timeoutMs": 8000,
-  "mode": "trace"
+  "timeoutMs": 15000,
+  "mode": "trace",
+  "startAt": {"file": "Main.java", "line": 12, "condition": "i == 25 && total > 100", "hit": 1}
 }
 ```
+
+`startAt` is optional and applies to `trace` mode only (other modes ignore it). `file` must be one of the request's files, `line` is 1–100,000, `hit` (default 1) is 1–1,000,000, and `condition` (default empty) is one line of at most 200 characters. The runner passes it to the worker as `start.txt` in the job directory (file, line, hit and condition on four lines). Until the start point fires, only breakpoints on that line are enabled (method entry/exit and the other line breakpoints are created but stay off), so the program runs at nearly full speed; nothing before it counts against `maxSteps`. It fires the `hit`-th time the line is about to run with the condition true; the frames already on the stack then get fresh activation IDs, and recording continues as usual. A line with no code moves to the next line with code in the same method (or, on a method's signature line, its first statement). An uncaught exception before the start point is recorded where it happens. A condition that can't be parsed ends the run with stop reason `bad-start` before compiling.
+
+Condition grammar: `||`, `&&`, `!`, comparisons (`== != < <= > >=`), `+ - * / %`, unary minus, parentheses, numbers, `'c'`, `"text"`, `true`, `false`, `null`, names, `.field`, `.length` (arrays), `[index]`, and `.size()`, `.isEmpty()`, `.length()` (strings and the collections with views below). Names resolve to the paused frame's locals, then fields of `this`, then static fields of the frame's class, then user class names (for `Main.count`). Strings compare by text and boxed numbers by value. Evaluation reads values only. A name that isn't visible or an index out of range makes the condition false, and the first such problem is reported.
 
 `mode` is optional:
 
@@ -43,9 +48,9 @@ Every event has `schemaVersion: 1`, `runId`, `sequence`, and `kind`.
 - `returns` (on `line`/`exception`): user methods that completed normally since the previous stop, oldest first: `{method, frameId, value}` or `{method, frameId, void: true}`. `frameId` matches the activation's frame `id`. Constructors and static initializers are omitted; methods exited by an exception produce no entry (JDWP does not report those exits).
 - `exception`: the same captured state, plus `exception: {type,message,caught}`. For a library exception, location is the nearest user-source frame; do not present it as the exact internal library throw location.
 - `output`: `stream` (`stdout` or `stderr`) and a text chunk. Receipt order is preserved, not exact source-line synchronization.
-- `terminated`: `stopReason`, `message`, and, when available, `steps`, `exitCode`, `outputTruncated`, `recorded` (false in `run` mode) and `exception` (`run` mode only).
+- `terminated`: `stopReason`, `message`, and, when available, `steps`, `exitCode`, `outputTruncated`, `recorded` (false in `run` mode), `exception` (`run` mode only) and `start` (when the request had `startAt`): `{reached, file, line, message?}`. `line` is the line where recording started (after moving off a line without code); when `reached` is false, `message` says why: the file's classes never loaded, the line has no code, the line never ran, or it ran N times without the condition being true (with the first evaluation problem, such as a name that isn't visible).
 
-Stop reasons: `completed`, `compile-error`, `exception`, `runtime-error`, `step-limit`, `timeout`, `cancelled`, `unsupported-concurrency`, `trace-limit`, `worker-error`, and, outside `trace` mode, `output-limit` (`run`) and `compiled` (`compile`).
+Stop reasons: `completed`, `compile-error`, `exception`, `runtime-error`, `step-limit`, `timeout`, `cancelled`, `unsupported-concurrency`, `trace-limit`, `worker-error`, `bad-start`, and, outside `trace` mode, `output-limit` (`run`) and `compiled` (`compile`).
 
 Frames contain `id`, `method`, source `file`/`line`, typed `locals` (parameters carry `argument: true`), and an optional `truncated` flag. IDs are derived from method entry/exit activation tracking; after a caught exception unwinds frames, the worker realigns its activation stack with the real user frames at the next stop, so surviving frames keep their IDs. Objects use JDI identity, scoped to the run, so two references to the same object point to the same heap node. Objects are not pinned alive across stops (returned objects are pinned only until the next stop describes them). Trace data does not invoke methods on target objects. Exceptions that are thrown and caught entirely inside library code are not recorded.
 
@@ -57,12 +62,14 @@ Values are tagged:
 {"kind":"reference","type":"int[]","ref":"o453"}
 ```
 
-A reference with `omitted: true` was not traversed because of a capture budget. Objects have `id`, `type`, `kind`, and `elements`, `entries`, `fields`, `text`, or an explanatory `message`. Capture kinds:
+A reference with `omitted: true` was not traversed because of a capture budget. Objects have `id`, `type`, `kind`, and `elements`, `entries`, `fields`, `text`, or an explanatory `message`. Budgets per step: 48 frames, 32 locals per frame, 160 objects, 48 traversal levels, 64 elements or entries per collection, 24 fields per object, 32 statics, 64 pending returns, 512 characters of text; the runner stops a trace at 40 MiB. Capture kinds:
 
-- `array`, `list` (`ArrayList`, `LinkedList`, `ArrayDeque` head→tail, `PriorityQueue` in internal heap order, `Arrays.asList`) and `set` (`HashSet`, `LinkedHashSet`, `TreeSet`): `length` plus up to 32 `elements`.
-- `map` (`HashMap`, `LinkedHashMap` in insertion order, `TreeMap` in key order): `length` plus up to 32 `entries: [{key, value}]`.
+- `array`, `list` (`ArrayList`, `LinkedList`, `ArrayDeque` head→tail, `PriorityQueue` in internal heap order, `Stack`/`Vector`, `Arrays.asList`, `List.of`, `subList`, `Collections.emptyList`/`singletonList`, a map's `values()`) and `set` (`HashSet`, `LinkedHashSet`, `TreeSet`, `Set.of`, `EnumSet`, a map's `keySet()`, and `BitSet` as the indexes of its set bits): `length` plus up to 64 `elements`.
+- Primitive arrays travel in a compact form: `elementType` (such as `int`) and `values` (the elements as text) instead of `elements`. Clients expand them into `{kind: "primitive", type, value}` elements on receipt (`expandEvents` in `web/learning.ts`).
+- `map` (`HashMap`, `LinkedHashMap` in insertion order, `TreeMap` in key order, `Map.of`, `EnumMap`, a map's `entrySet()`): `length` plus up to 64 `entries: [{key, value}]`. A single `Map.Entry` (from iterating `entrySet()`) is a `map` with one entry and no `length`.
 - `string`: `java.lang.String`, plus `StringBuilder`/`StringBuffer` decoded from their internal buffer (`length` is the logical length).
-- `object` (user classes and boxed primitives), `opaque` (other library types), and `unavailable`.
+- `value`: an immutable library value shown as `text`: `java.time` types (`LocalDate`, `LocalTime`, `LocalDateTime`, `Instant`, `Duration`, `Period`, `YearMonth`, `Year`, `ZonedDateTime`, `OffsetDateTime`, zones) as their `toString()`, `AtomicInteger`/`AtomicLong`/`AtomicBoolean`, `BigInteger`, `BigDecimal`, `UUID`, `OptionalInt`/`OptionalLong`/`OptionalDouble`, and constants of JDK enums by name. The text is rebuilt from fields with the worker's own JDK classes, not by calling methods on the target.
+- `object` (user classes and boxed primitives), `opaque` (other library types), and `unavailable`. Iterators of `ArrayList`, `LinkedList`, `ArrayDeque`, `HashMap`, `LinkedHashMap` and `TreeMap` are `object`s with synthetic fields `iterator.over` (the collection), `iterator.next` (what `next()` returns, if anything) and, for lists, `iterator.nextIndex`. `Optional` is an `object` with one `java.util.Optional.value` field, or none and a message when empty.
 
 Collection views are read from JDK fields, never by calling `size()`, `iterator()` or `toString()`. If a JDK's internal layout differs from what the worker expects, the object falls back to `opaque` instead of failing the trace.
 
