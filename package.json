@@ -1,0 +1,23 @@
+{
+  "name": "tracelab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/build.mjs",
+    "build:web": "tsc --noEmit && vite build",
+    "start": "node scripts/start.mjs",
+    "test": "node scripts/test.mjs",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lucide": "^0.468.0",
+    "monaco-editor": "^0.52.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "@types/node": "^22.10.5"
+  }
+}

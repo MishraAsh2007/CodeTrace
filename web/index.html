@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#0b6b52" />
+    <title>TraceLab — See exactly what your Java code does</title>
+    <meta name="description" content="TraceLab is a Java IDE in the browser with a recording debugger and a built-in tutor. Run real code, step forward and back through the stack and heap, and learn to fix bugs with questions drawn from your own program." />
+    <meta property="og:title" content="TraceLab — See exactly what your Java code does" />
+    <meta property="og:description" content="A Java IDE with a recording debugger and a tutor that asks about your own program." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      try { const t = localStorage.getItem('tracelab.theme.v1'); document.documentElement.dataset.theme = t === 'light' || t === 'dark' ? t : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch { }
+    </script>
+  </head>
+  <body>
+    <div id="site"></div>
+    <script type="module" src="/landing.ts"></script>
+  </body>
+</html>

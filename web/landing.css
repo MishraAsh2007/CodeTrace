@@ -1,0 +1,111 @@
+/* TraceLab marketing site. Tokens and shared controls come from tokens.css. */
+:root { font-size: 15px; }
+body { background: var(--bg); }
+.container { width: min(1180px, calc(100% - 48px)); margin: 0 auto; }
+.icon-btn { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; color: var(--text-2); }
+.icon-btn:hover { background: var(--surface-3); color: var(--text); }
+.eyebrow { display: inline-block; font-size: 13px; font-weight: 650; color: var(--accent-text); letter-spacing: .2px; }
+
+.nav { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: saturate(160%) blur(12px); border-bottom: 1px solid var(--border); }
+.nav-inner { display: flex; align-items: center; gap: 28px; height: 60px; }
+.nav .logo span { font-size: 16px; }
+.nav-links { display: flex; gap: 22px; margin-left: 12px; }
+.nav-links a { font-size: 14px; color: var(--text-2); font-weight: 500; }
+.nav-links a:hover { color: var(--text); }
+.nav-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.nav-actions .btn { height: 36px; font-size: 14px; }
+
+.hero { padding: 72px 0 40px; overflow: hidden; background: radial-gradient(900px 420px at 70% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%); }
+.hero-copy { max-width: 760px; margin: 0 auto; text-align: center; }
+.hero h1 { font-family: var(--font-display); font-size: clamp(38px, 5.6vw, 64px); line-height: 1.05; letter-spacing: -1.8px; font-weight: 750; margin: 14px 0 18px; }
+.lead { font-size: 18px; line-height: 1.6; color: var(--text-2); max-width: 680px; margin: 0 auto; }
+.hero-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+.hero-note { display: inline-flex; align-items: center; gap: 7px; margin-top: 16px; font-size: 13px; color: var(--text-3); }
+.hero-note svg { width: 15px; height: 15px; color: var(--accent); }
+.hero-shot { margin: 52px 0 0; }
+.window { border-radius: 14px; border: 1px solid var(--border-strong); background: var(--surface); overflow: hidden; box-shadow: var(--shadow-lg), 0 0 0 8px color-mix(in srgb, var(--text) 3%, transparent); }
+.window-bar { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.window-bar span { width: 11px; height: 11px; border-radius: 50%; background: var(--border-strong); }
+.window-bar em { margin: 0 auto; transform: translateX(-24px); font-style: normal; font-size: 12px; color: var(--text-3); }
+.window img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; background: var(--surface-2); }
+
+.strip { padding: 28px 0; border-block: 1px solid var(--border); background: var(--surface); }
+.strip-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px 34px; color: var(--text-3); font-size: 14px; }
+.strip-inner > span { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; font-weight: 650; }
+.strip-inner b { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-2); }
+.strip-inner svg { width: 17px; height: 17px; }
+
+.section { padding: 88px 0; }
+.section.alt { background: var(--surface); border-block: 1px solid var(--border); }
+.section-head { max-width: 680px; margin: 0 auto 40px; text-align: center; }
+.section-head.left { text-align: left; margin: 0 0 28px; }
+.section-head h2 { font-family: var(--font-display); font-size: clamp(28px, 3.4vw, 38px); line-height: 1.15; letter-spacing: -.9px; font-weight: 720; margin: 8px 0 12px; }
+.section-head p { font-size: 16px; color: var(--text-2); line-height: 1.6; }
+
+.feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.feature { padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
+.feature-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-text); margin-bottom: 16px; }
+.feature-icon svg { width: 20px; height: 20px; }
+.feature h3 { font-size: 16px; font-weight: 650; margin-bottom: 8px; letter-spacing: -.2px; }
+.feature p { font-size: 14.5px; line-height: 1.6; color: var(--text-2); }
+
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; list-style: none; padding: 0; margin: 0; counter-reset: step; }
+.steps li { position: relative; padding: 22px; border-radius: var(--radius-xl); background: var(--bg); border: 1px solid var(--border); }
+.step-number { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--text); color: var(--surface); font-weight: 700; font-size: 14px; margin-bottom: 14px; }
+.steps h3 { font-size: 16px; font-weight: 650; margin-bottom: 6px; }
+.steps p { font-size: 14.5px; line-height: 1.6; color: var(--text-2); }
+
+#examples .filter-bar { justify-content: center; margin-bottom: 22px; }
+#examples .demo-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+#examples .demo-card p, #examples .demo-card h3 { font-size: inherit; }
+#examples .demo-card h3 { font-size: 16px; }
+#examples .demo-card p { font-size: 14px; }
+
+.principles { display: grid; grid-template-columns: 1fr 2fr; gap: 40px; align-items: start; }
+.principle-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.principle-list svg { width: 22px; height: 22px; color: var(--accent); margin-bottom: 12px; }
+.principle-list h3 { font-size: 16px; font-weight: 650; margin-bottom: 6px; }
+.principle-list p { font-size: 14.5px; line-height: 1.6; color: var(--text-2); }
+
+.faq-wrap { display: grid; grid-template-columns: 1fr 2fr; gap: 40px; align-items: start; }
+.faq details { border-bottom: 1px solid var(--border); }
+.faq summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; font-size: 16px; font-weight: 600; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; font-size: 22px; font-weight: 400; color: var(--text-3); transition: transform .15s; }
+.faq details[open] summary::after { transform: rotate(45deg); }
+.faq p { padding: 0 0 18px; font-size: 15px; line-height: 1.65; color: var(--text-2); max-width: 700px; }
+
+.cta { padding: 0 0 88px; }
+.cta-inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 40px; border-radius: 20px; background: linear-gradient(135deg, #0b3d31, #0b6b52); color: #fff; }
+.cta h2 { font-family: var(--font-display); font-size: 30px; letter-spacing: -.7px; font-weight: 720; margin-bottom: 6px; }
+.cta p { color: rgb(255 255 255 / 80%); font-size: 16px; }
+.cta-actions { display: flex; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
+.cta .btn-primary { background: #fff; color: #0b3d31; }
+.cta .btn-primary:hover { background: #e7f5ef; }
+.cta .btn-secondary { background: transparent; color: #fff; border-color: rgb(255 255 255 / 40%); }
+.cta .btn-secondary:hover { background: rgb(255 255 255 / 10%); }
+
+.footer { border-top: 1px solid var(--border); padding: 28px 0; background: var(--surface); }
+.footer-inner { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+.footer nav { display: flex; gap: 20px; }
+.footer nav a { font-size: 14px; color: var(--text-2); }
+.footer nav a:hover { color: var(--text); }
+.footer p { margin-left: auto; font-size: 13px; color: var(--text-3); }
+
+@media (max-width: 980px) {
+  .feature-grid { grid-template-columns: repeat(2, 1fr); }
+  .steps { grid-template-columns: repeat(2, 1fr); }
+  .principles, .faq-wrap { grid-template-columns: 1fr; gap: 8px; }
+  .principle-list { grid-template-columns: 1fr; }
+  .cta-inner { flex-direction: column; align-items: flex-start; }
+}
+@media (max-width: 680px) {
+  .nav-links { display: none; }
+  .hero { padding-top: 44px; }
+  .lead { font-size: 16px; }
+  .feature-grid, .steps { grid-template-columns: 1fr; }
+  .section { padding: 64px 0; }
+  .cta-inner { padding: 28px; }
+  .footer p { margin-left: 0; }
+  .window-bar em { display: none; }
+}
