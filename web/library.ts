@@ -9,6 +9,8 @@ type Index = { version: 1; projects: ProjectSummary[]; current: DocRef | null };
 const INDEX_KEY = 'tracelab.library.v1';
 const LEGACY_KEY = 'tracelab.project.v1';
 const projectKey = (id: string) => `tracelab.p.${id}`;
+/** The project as it was created, for Reset. */
+const originalKey = (id: string) => `tracelab.o.${id}`;
 const exampleKey = (id: string) => `tracelab.ex.${id}`;
 export const MAX_PROJECTS = 100;
 
@@ -87,7 +89,25 @@ export class Library {
     this.index.projects.push({ id, name: project.name, createdAt: time, updatedAt: time, fileCount: project.files.length, ...(origin ? { origin } : {}) });
     try { this.writeIndex(); }
     catch (error) { this.storage.removeItem(projectKey(id)); this.index.projects.pop(); throw error; }
+    // The starting point is a convenience: a full browser storage keeps the project and skips it.
+    try { this.write(originalKey(id), project); } catch { /* Reset won't be available for this project. */ }
     return id;
+  }
+
+  /** The project as it was created, or null for projects created before Reset existed. */
+  original(id: string): Project | null {
+    const value = this.read(originalKey(id));
+    return this.validate(value) ? value : null;
+  }
+
+  /** Puts a project back to how it was created (keeping its current name) and returns it. */
+  resetProject(id: string): Project | null {
+    const start = this.original(id);
+    const current = this.load({ kind: 'project', id });
+    if (!start) return null;
+    const reset = { ...structuredClone(start), name: current?.name ?? start.name };
+    this.save({ kind: 'project', id }, reset);
+    return reset;
   }
 
   duplicate(id: string): string | null {
@@ -107,6 +127,7 @@ export class Library {
     this.index.projects = this.index.projects.filter(p => p.id !== id);
     if (this.index.current?.kind === 'project' && this.index.current.id === id) this.index.current = null;
     this.storage.removeItem(projectKey(id));
+    this.storage.removeItem(originalKey(id));
     this.writeIndex();
   }
 

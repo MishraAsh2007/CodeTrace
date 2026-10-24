@@ -3,7 +3,7 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import 'monaco-editor/esm/vs/editor/edcore.main';
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles } from 'lucide';
+import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles, GitFork } from 'lucide';
 import { categories, copyExample, demoFor, demos, exampleIndex, examples } from './examples';
 import type { DemoCategory } from './examples';
 import { exceptionMessage, failingCheck, normalizeOutput, output, questionsFor, sameSource, snapshots, validateProject, valueText } from './learning';
@@ -26,6 +26,7 @@ import type { CompileFix, CompileIssue, LineEdit } from './compilehelp';
 import { JavaLanguageClient } from './lsp';
 import { lintHelp } from './linthelp';
 import { buildHelp } from './help';
+import { treeViews } from './structures';
 import type { HelpVisual } from './help';
 import { hasPractice, practiceFor, practiceOptions, practiceOutcome } from './practice';
 import type { PracticeItem } from './practice';
@@ -47,7 +48,7 @@ import './tokens.css';
 import './style.css';
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
-const iconSet = { Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles };
+const iconSet = { Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles, GitFork };
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 /** Escapes text and renders `backtick` spans as inline code. */
@@ -145,6 +146,7 @@ $('#app').innerHTML = `
     </div>
     <button id="new-project-top" class="btn btn-ghost btn-compact" data-action="new-project" title="Start a new project from a template, pasted code or files" aria-label="New project">${icon('plus')}<span class="label">New project</span></button>
     <button id="save-copy" class="btn btn-secondary btn-compact" hidden title="Copy this example into your projects">${icon('save')}Save as my project</button>
+    <button id="reset-doc" class="btn btn-ghost btn-compact" data-action="reset-doc" hidden title="Go back to the starting code, input and tests">${icon('rotate-ccw')}<span class="label">Reset</span></button>
     <span class="save-state" id="save-state">Saved</span>
     <div class="topbar-run">
       <button id="run" class="btn btn-primary" title="Compile, run and record (Ctrl+Enter)">${icon('play')}Run<kbd>Ctrl ↵</kbd></button>
@@ -170,6 +172,7 @@ $('#app').innerHTML = `
           <button role="menuitem" data-action="export">${icon('file-json')}Export as TraceLab file</button>
           <button role="menuitem" data-action="export-trace">${icon('history')}Export recorded trace</button>
           <div class="menu-separator" role="separator"></div>
+          <button role="menuitem" data-action="reset-doc">${icon('rotate-ccw')}Reset to the starting code…</button>
           <button role="menuitem" data-action="settings">${icon('settings-2')}Project settings…</button>
           <button role="menuitem" data-action="language-server">${icon('type')}Editor settings…</button>
           <button role="menuitem" data-action="shortcuts">${icon('keyboard')}Keyboard shortcuts</button>
@@ -574,6 +577,8 @@ function renderDocChrome() {
   const example = doc.kind === 'example';
   $('#doc-kind').hidden = !example;
   $('#save-copy').hidden = !example;
+  $('#reset-doc').hidden = !canReset();
+  $('#reset-doc').title = example ? 'Reset this example to its original code, input and tests' : 'Reset this project to how it was when you created it';
   $('#side-footer').innerHTML = example
     ? `${icon('flask-conical')} Example · <button class="link-btn" data-action="save-copy">Save as my project</button>`
     : `${icon('shield-check')} Saved in this browser`;
@@ -786,6 +791,18 @@ function renderFrame(frame: Frame, index: number, previous: TraceEvent | undefin
   return `<details class="frame ${index === 0 ? 'current' : ''} ${isNew ? 'new-frame' : ''}" open><summary><span class="frame-name">${index === 0 ? '<span class="frame-active-dot"></span>' : ''}${esc(displayMethod(frame.method))}<span class="method-parens">()</span></span><span class="frame-location">${esc(frame.file)}:${frame.line}</span></summary><div class="frame-variables">${returnNotes}${renderVariables(frame.locals, prior?.locals, ctx, false, frame.id) || '<div class="no-vars">No local variables in scope</div>'}${frame.truncated ? '<div class="array-caption">Locals truncated</div>' : ''}</div></details>`;
 }
 
+/** Binary trees (and other classes with two or more fields of their own type) drawn as trees above the heap. */
+function renderTrees(snapshot: TraceEvent, previous: TraceEvent | undefined): string {
+  const X = 46, Y = 58, PAD = 14;
+  return treeViews(snapshot, previous).map(view => {
+    const position = new Map(view.nodes.map(n => [n.id, { left: PAD + n.x * X, top: PAD + 14 + n.depth * Y }]));
+    const width = PAD * 2 + Math.max(1, view.columns) * X, height = PAD * 2 + 14 + view.rows * Y;
+    const lines = view.edges.map(e => { const a = position.get(e.from)!, b = position.get(e.to)!; return `<line x1="${a.left + 17}" y1="${a.top + 17}" x2="${b.left + 17}" y2="${b.top + 17}"><title>${esc(e.label)}</title></line>`; }).join('');
+    const nodes = view.nodes.map(n => { const p = position.get(n.id)!; return `<button class="tree-node ${refColor(n.id)} ${n.isNew ? 'new' : ''} ${n.changed ? 'changed' : ''}" style="left:${p.left}px;top:${p.top}px" data-ref="${esc(n.id)}" title="${esc(view.type)} @${esc(n.id)}${n.refs.length ? ` · ${n.refs.join(', ')}` : ''}. Click to show its fields.">${esc(n.label.length > 5 ? `${n.label.slice(0, 4)}…` : n.label)}${n.refs.length ? `<span class="tree-ref">${esc(n.refs.join(', '))}</span>` : ''}</button>`; }).join('');
+    return `<details class="structure-view" open><summary>${icon('git-fork')}Tree of ${esc(view.type)}<span>${view.nodes.length} node${view.nodes.length === 1 ? '' : 's'}, left to right in order${view.missing ? ` · ${view.missing} not captured` : ''}</span></summary><div class="tree-scroll"><div class="tree-canvas" style="width:${width}px;height:${height}px"><svg class="tree-lines" width="${width}" height="${height}" aria-hidden="true">${lines}</svg>${nodes}</div></div></details>`;
+  }).join('');
+}
+
 let arrowFrame = 0;
 function scheduleArrows() {
   cancelAnimationFrame(arrowFrame);
@@ -829,6 +846,7 @@ function renderTrace(followLine = false) {
     const message = event?.exception ? exceptionMessage(run!, event) : '';
     canvas.innerHTML = `${event?.exception ? `<div class="exception-card">${icon('bug')}<div><strong>${esc(event.exception.type.split('.').at(-1))}</strong>${message ? `<p>${esc(message)}</p>` : ''}</div></div>` : ''}
       ${renderStory(states)}
+      ${renderTrees(snapshot, previous)}
       <div class="memory-columns" id="memory-columns"><svg class="arrow-layer" aria-hidden="true"></svg>
         <div class="stack-column"><div class="section-label">Call stack <span>${snapshot.frames?.length ?? 0} frame${snapshot.frames?.length === 1 ? '' : 's'}</span></div>
           <div class="frames">${snapshot.frames?.map((frame, i) => renderFrame(frame, i, previous, event, ctx)).join('')}
@@ -1660,6 +1678,28 @@ function openDemo(id: string) {
   closeGallery();
   if (!already) toast(library.hasExampleEdits(id) ? `Opened “${examples[index].name}” with your earlier changes.` : `Opened “${examples[index].name}”. Press Run to start.`);
 }
+/** What Reset goes back to: the example's original, or the project as it was created (null if unknown). */
+let originalCache: { key: string; value: Project | null } | null = null;
+function startingPoint(): Project | null {
+  const key = `${doc.kind}:${doc.id}`;
+  if (originalCache?.key !== key) originalCache = { key, value: doc.kind === 'example' ? examples[exampleIndex(doc.id)] ?? null : library.original(doc.id) };
+  return originalCache.value;
+}
+const codeKey = (p: Project) => JSON.stringify([p.files, p.mainClass, p.stdin, p.checks, p.maxSteps]);
+/** Whether the open document differs from its starting point. */
+function canReset(): boolean { const start = startingPoint(); return !!start && codeKey(start) !== codeKey(project); }
+async function resetDoc() {
+  if (running || checking) { toast('Stop the current run before resetting.'); return; }
+  if (doc.kind === 'example') { await resetExample(doc.id); return; }
+  if (!startingPoint()) { toast('This project was created before Reset was available, so there is no starting version to go back to.', 'error'); return; }
+  if (!(await confirmDialog(`Reset “${project.name}”?`, 'The code, input and tests go back to how they were when you created this project. Your changes are discarded. Export the project first if you might want them.', 'Reset project', true))) return;
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = undefined; }
+  const reset = library.resetProject(doc.id);
+  if (!reset) { toast('Couldn’t reset this project.', 'error'); return; }
+  showDoc(doc, reset);
+  toast(`“${project.name}” is back to its starting code. Ctrl+Z won’t undo this.`);
+}
+
 async function resetExample(id: string) {
   const name = examples[exampleIndex(id)]?.name ?? 'this example';
   if (!(await confirmDialog(`Reset “${name}”?`, 'Your changes to this example are discarded and the original code and tests come back. Save it as your own project first to keep them.', 'Reset example', true))) return;
@@ -2199,6 +2239,10 @@ async function runAction(action: string) {
   else if (action === 'shortcuts') shortcutsDialog();
   else if (action === 'about') aboutDialog();
   else if (action === 'generate-tests') generateTestsDialog();
+  else if (action === 'reset-doc') {
+    if (!canReset()) toast(startingPoint() ? 'Nothing to reset: this is already the starting code.' : 'This project was created before Reset was available, so there is no starting version to go back to.');
+    else resetDoc();
+  }
   else if (action === 'language-server') languageServerDialog();
   else if (action === 'new-file') newFile();
   else if (action === 'show-tutor') { setLayout({ coach: true }); document.querySelector('.compile-help')?.scrollIntoView({ block: 'nearest' }); }

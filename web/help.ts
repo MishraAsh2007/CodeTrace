@@ -162,9 +162,10 @@ export function buildHelp(run: Run, options: { question?: Question; step: number
   for (const [i, s] of states.entries()) {
     const heapAt = heapIndex(s);
     s.frames?.forEach((f, depthFromTop) => {
-      if (activations.has(f.id) || f.method.endsWith('.main')) return;
+      // main and static initializers are where calls start, not calls to show.
+      if (activations.has(f.id) || f.method.endsWith('.main') || f.method.endsWith('.<clinit>')) return;
       const args = f.locals.filter(v => v.argument).map(v => shortValue(v.value, heapAt)).join(', ');
-      activations.set(f.id, { depth: (s.frames!.length - 1 - depthFromTop) - 1, label: `${displayMethod(f.method)}(${args})`, result: '…', step: i, failed: false });
+      activations.set(f.id, { depth: Math.max(0, (s.frames!.length - 1 - depthFromTop) - 1), label: `${displayMethod(f.method)}(${args})`, result: '…', step: i, failed: false });
     });
     for (const r of s.returns ?? []) { const a = r.frameId ? activations.get(r.frameId) : undefined; if (a) a.result = r.void ? 'returned' : `returned ${shortValue(r.value, heapAt)}`; }
   }

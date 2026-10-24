@@ -27,7 +27,7 @@ This workspace has a local Rust toolchain under `.tools/`; the launch scripts us
 
 ## Examples
 
-The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse examples**) has 18 programs. Every buggy example has tests that fail until it is fixed, and the Tutor offers an explain question and a repair question grounded in the recorded run. `npm test` checks that each buggy example fails a test, that applying the Tutor's correct repair makes every test pass, and that each concept tour passes.
+The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse examples**) has 21 programs. Every buggy example has tests that fail until it is fixed, and the Tutor offers an explain question and a repair question grounded in the recorded run. `npm test` checks that each buggy example fails a test, that applying the Tutor's correct repair makes every test pass, and that each concept tour passes.
 
 | Category | Examples |
 | --- | --- |
@@ -35,7 +35,7 @@ The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse exa
 | Wrong output | `==` on strings, integer division into a double, a swap method that changes copies, sorting an array “copy” that is an alias |
 | Never finishes | A loop whose condition never changes, recursion without a base case |
 | Compile errors | Storing a double in an int |
-| Concept tours | Aliasing, recursion, `ArrayList`, a linked chain of nodes |
+| Concept tours | Aliasing, recursion, `ArrayList`, a linked chain of nodes, a binary search tree, breadth-first search, depth-first search |
 
 ## Your own projects
 
@@ -44,7 +44,8 @@ The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse exa
 - **Start from:** a template (blank program, reads input, class + Main, packages), pasted code, or files. Pasted code with several public classes is split into one file per class.
 - **Import:** choose or drop `.java` files, a folder, a `.zip`, or a TraceLab `.json` export. Files are placed by their `package` declaration and public class name, not by the folder they came from, so `src/main/java/com/x/App.java` becomes `com/x/App.java`. The class with a `main` method becomes the main class (preferring one named `Main`). Dropping files onto the Explorer adds them to the open project; dropping anywhere else creates a new one.
 - **Explorer:** packages show as folders, the main class has a ▶ badge, and any class with `main` can be made the entry point. If a file's path doesn't match its package or class name, the Explorer and editor show a warning with a one-click **Move**, because TraceLab only records classes whose paths match. Rename/move can also update the class name and package declaration.
-- **Examples are templates:** edits to an example are kept with that example, never mixed into your projects. **Save as my project** copies it into your projects and resets the example; **Reset** discards the changes.
+- **Examples are templates:** edits to an example are kept with that example, never mixed into your projects. **Save as my project** copies it into your projects and resets the example.
+- **Reset:** the **Reset** button in the top bar (also **⋯ → Reset to the starting code**) appears once you change something. For an example it restores the original; for a project it restores the code, input and tests from when you created it (projects created before this feature have no starting copy).
 - **Export:** a zip with `src/…` and `tracelab.json` (name, main class, input and tests), which imports back with its tests, or a single TraceLab `.json` file.
 
 ## Writing tests
@@ -85,7 +86,8 @@ TraceLab doesn't include a model. Choose one in the setup dialog; anything with 
 | --- | --- |
 | [Ollama](https://ollama.com) on this computer (`http://127.0.0.1:11434/v1`) | Free, private, no key. `ollama pull qwen2.5-coder:7b` (about 4.7 GB); a 3B model is faster on a laptop CPU. |
 | Google Gemini (`https://generativelanguage.googleapis.com/v1beta/openai`) | Free tier with a key from Google AI Studio; code is sent to Google, and free-tier prompts may be used to improve its products. |
-| Groq, OpenRouter, LM Studio, others | Free tiers or local servers; use **List models** to pick one. |
+| Groq (`https://api.groq.com/openai/v1`, model `openai/gpt-oss-120b`) | Free tier of about 30 requests a minute, 1,000 a day and 8,000 tokens a minute; code is sent to Groq. |
+| OpenRouter, LM Studio, others | Free tiers or local servers; use **List models** to pick one. |
 
 A Kiro subscription can't be used here: its API keys only authenticate the Kiro CLI, need a paid plan, and its terms don't cover routing requests from other apps. The runner relays requests through a small Java helper (so the Rust server needs no TLS stack) and keeps the configuration, including the key, in `.local/ai.json` on this computer. The key is never sent back to the browser. Plain `http://` is accepted only for servers on this computer.
 
@@ -100,7 +102,7 @@ A Kiro subscription can't be used here: its API keys only authenticate the Kiro 
 ## Features
 
 - **IDE:** Monaco editor (with its find, command palette, hovers and quick fixes), semantic Java features through Eclipse JDT LS (see [Editor](#editor)), spelling, a project library, multiple files and packages with a package-tree Explorer, rename/move/delete, compiler diagnostics with explanations and checked fixes in the editor and Problems panel, snippets such as `sout`/`fori`, keyboard shortcuts, light/dark/system themes, resizable editor/debugger and bottom-panel splits, collapsible sidebar and Tutor, autosave, import/export, share links (the project travels in the URL fragment, which is not sent to the server), and trace export.
-- **Debugger:** real JDK 21 compilation and JDI capture; frames with stable activation IDs, parameters, return values, statics and exceptions; stack and heap columns with reference arrows; renderers for arrays, strings, boxed values, `ArrayList`, `LinkedList`, `ArrayDeque`, `PriorityQueue`, `HashMap`/`LinkedHashMap`/`TreeMap`, `HashSet`/`LinkedHashSet`/`TreeSet` and `StringBuilder`; changed/new highlighting; index markers that show where the code is in an array, list, string or 2D array (`values[i]`, `list.get(j)`, `word.charAt(word.length() - 1 - i)`, `grid[r][c]`, and the current element of a for-each loop), with an out-of-range index drawn as a dashed cell past the end and a hint such as `→ values[2] = 2` next to the index variable; a “Changes” strip narrating each step; step into/back, frame-aware **Over**, **Out** and **Back** (F10, Shift+F11, Shift+F10); scrubber, autoplay, filter and replay bookmarks.
+- **Debugger:** real JDK 21 compilation and JDI capture; frames with stable activation IDs, parameters, return values, statics and exceptions; stack and heap columns with reference arrows; renderers for arrays (including 2D and `char[]`), strings, boxed values, records and enums (as objects), `ArrayList`, `LinkedList`, `ArrayDeque`, `PriorityQueue`, `Stack`/`Vector`, `HashMap`/`LinkedHashMap`/`TreeMap`, `HashSet`/`LinkedHashSet`/`TreeSet`, `List.of`/`Set.of`/`Map.of`, `Arrays.asList`, `Collections.unmodifiable…` views and `StringBuilder`; a tree view for classes with two or more fields of their own type (binary trees: nodes laid out in order, with the variables that point at them); changed/new highlighting; index markers that show where the code is in an array, list, string or 2D array (`values[i]`, `list.get(j)`, `word.charAt(word.length() - 1 - i)`, `grid[r][c]`, and the current element of a for-each loop), with an out-of-range index drawn as a dashed cell past the end and a hint such as `→ values[2] = 2` next to the index variable; a “Changes” strip narrating each step; step into/back, frame-aware **Over**, **Out** and **Back** (F10, Shift+F11, Shift+F10); scrubber, autoplay, filter and replay bookmarks.
 - **Tutor:** predict/explain/fix questions for array and string bounds, null fields and `Map.get` misses, division by zero, `NumberFormatException`, `ConcurrentModificationException`, non-terminating loops, runaway recursion, string identity, integer division, pass-by-value, aliasing (objects and arrays), return values, state changes and compiler errors (lossy conversion, missing symbols). A question is shown only when the recorded run supports its premise. Repair questions highlight the line and jump to it for editing. Tests run in fresh JVMs; a failing test can be debugged directly; concepts practiced are tallied per browser.
 - **Runner:** step/time/output/trace limits, partial traces on limits, cancellation, one job at a time, incremental polling, job cleanup, and host/origin checks.
 
@@ -120,7 +122,7 @@ TraceLab never calls student methods such as `toString()` to display objects. Li
 npm test
 ```
 
-Builds the worker and runner, runs the Rust unit tests, then runs 54 integration checks against real JVM programs over HTTP: tracing semantics, collections, frame identity, limits, cancellation, API rejection, every gallery example and its repair, share links, source analysis, import/zip round trips, the project library, method-call tests (values, arrays, collections, exceptions, void and instance-method errors), every new-project template, plain-run and compile-only modes, index markers, compile help (each suggested fix for 28 javac errors must compile), test generation, spelling and warning explanations, the Java language server (completion, live problems, quick fixes, rename across files; skipped when none is installed), Need help visualizations, explain questions for other exception types, practice problems for every concept, the AI assistant against a mock server, and the website/IDE/404 routes. Port 4317 must be free.
+Builds the worker and runner, runs the Rust unit tests, then runs 56 integration checks against real JVM programs over HTTP: tracing semantics, collections, frame identity, limits, cancellation, API rejection, every gallery example and its repair, share links, source analysis, import/zip round trips, the project library, method-call tests (values, arrays, collections, exceptions, void and instance-method errors), every new-project template, plain-run and compile-only modes, index markers, compile help (each suggested fix for 28 javac errors must compile), test generation, spelling and warning explanations, the Java language server (completion, live problems, quick fixes, rename across files; skipped when none is installed), Need help visualizations, explain questions for other exception types, practice problems for every concept, the AI assistant against a mock server, the new collection views and tree layout, Reset, and the website/IDE/404 routes. Port 4317 must be free.
 
 ## Structure
 

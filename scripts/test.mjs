@@ -13,6 +13,7 @@ import { batchOutcome, batchRequest, batchResults, evaluateTest, harnessErrorDet
 import { caseToCheck, planTests, sampleCalls } from '../web/testgen.ts';
 import { applyEdits, compileIssues } from '../web/compilehelp.ts';
 import { cursorsFor } from '../web/cursors.ts';
+import { treeViews } from '../web/structures.ts';
 import { JavaLanguageClient } from '../web/lsp.ts';
 import { lintHelp } from '../web/linthelp.ts';
 import { buildHelp, enclosingLoop } from '../web/help.ts';
@@ -804,6 +805,56 @@ public class Main {
       mock.close();
       await api('/api/assist/config', { method: 'DELETE' });
     }
+  });
+  await test('data structures: List.of/Set.of/Map.of, Stack and unmodifiable views, and binary trees drawn as trees', async () => {
+    const data = await execute(oneFile(`import java.util.*;
+public class Main {
+    public static void main(String[] args) {
+        List<String> one = List.of("x");
+        List<Integer> many = List.of(1, 2, 3);
+        Set<Integer> set = Set.of(5, 6, 7);
+        Map<String, Integer> map = Map.of("a", 1, "b", 2);
+        List<Integer> view = Collections.unmodifiableList(new ArrayList<>(List.of(9, 8)));
+        Stack<Integer> stack = new Stack<>();
+        stack.push(1); stack.push(2);
+        System.out.println(one.size() + many.size() + set.size() + map.size() + view.size() + stack.peek());
+    }
+}`));
+    const last = snapshots(data).filter(s => s.frames).at(-1);
+    const heap = new Map(last.heap.map(o => [o.id, o]));
+    const local = name => heap.get(last.frames[0].locals.find(v => v.name === name).value.ref);
+    const items = o => (o.elements ?? []).map(e => e.kind === 'reference' ? heap.get(e.ref)?.text ?? heap.get(e.ref)?.fields?.[0]?.value.value : e.value);
+    assert.deepEqual([local('one').kind, items(local('one'))], ['list', ['x']]);
+    assert.deepEqual(items(local('many')), ['1', '2', '3']);
+    assert.deepEqual([local('set').kind, items(local('set')).sort()], ['set', ['5', '6', '7']]);
+    assert.equal(local('map').kind, 'map'); assert.equal(local('map').entries.length, 2);
+    assert.deepEqual(items(local('view')), ['9', '8']);
+    assert.match(local('view').message, /Unmodifiable view of an ArrayList/);
+    assert.deepEqual([local('stack').kind, items(local('stack'))], ['list', ['1', '2']]);
+    const bst = await execute(request(example('bst')));
+    const states = snapshots(bst);
+    const built = states.find(s => s.location?.file === 'Main.java' && s.location.line === 9);
+    const [tree] = treeViews(built);
+    assert.equal(tree.type, 'Node');
+    assert.equal(tree.nodes.length, 7); assert.equal(tree.edges.length, 6);
+    assert.deepEqual([...tree.nodes].sort((a, b) => a.x - b.x).map(n => n.label), ['20', '30', '40', '50', '60', '70', '80'], 'in-order layout reads sorted');
+    assert.deepEqual(tree.nodes.find(n => n.label === '50'), { ...tree.nodes.find(n => n.label === '50'), depth: 0, refs: ['root'] });
+    assert.equal(treeViews(snapshots(await execute(request(example('nodes')))).find(s => s.heap?.length > 3)).length, 0, 'a linked list (one self field) is not a tree');
+  });
+  await test('Reset returns a project to how it was created', () => {
+    const store = new Map();
+    const kv = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: k => store.delete(k) };
+    const library = new Library(kv, validateProject);
+    const start = structuredClone(templates[0].create('Start'));
+    const id = library.create(start);
+    const edited = { ...structuredClone(start), name: 'Renamed', files: [{ name: 'Main.java', content: 'public class Main {}' }] };
+    library.save({ kind: 'project', id }, edited);
+    const reset = library.resetProject(id);
+    assert.equal(reset.name, 'Renamed', 'the name stays');
+    assert.deepEqual(reset.files, start.files);
+    assert.deepEqual(library.load({ kind: 'project', id }).files, start.files);
+    library.remove(id);
+    assert.equal(library.original(id), null);
   });
   await test('project import rejects malformed nested values without throwing', () => {
     assert.equal(validateProject({ ...examples[0], files: [null] }), false);

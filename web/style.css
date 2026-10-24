@@ -649,7 +649,8 @@ dialog.wide { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48
 .editor-tabs .tab-actions { display: inline-flex; gap: 2px; margin-left: auto; padding-right: 4px; }
 .editor-tabs .tab-actions svg { color: var(--text-3); }
 .side-empty p + p { margin-top: 8px; }
-@media (max-width: 1280px) { #new-project-top .label { display: none; } #new-project-top { padding: 0 7px; } }
+@media (max-width: 1280px) { #new-project-top .label, #reset-doc .label { display: none; } #new-project-top, #reset-doc { padding: 0 7px; } }
+#reset-doc { color: var(--text-2); }
 
 /* Java language server status and as-you-type problems. */
 #lsp-status .status-dot { background: var(--text-3); }
@@ -755,3 +756,19 @@ button.concept-chip:hover { border-color: var(--accent); color: var(--accent-tex
 .assist-setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
 .assist-setup-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); }
 .assist-setup-status svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+/* Tree view of node objects. */
+.structure-view { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); margin-bottom: 10px; }
+.structure-view summary { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; font-size: 12.5px; font-weight: 650; }
+.structure-view summary svg { width: 15px; height: 15px; color: var(--text-3); }
+.structure-view summary span { font-weight: 450; color: var(--text-3); font-size: 12px; }
+.tree-scroll { overflow-x: auto; border-top: 1px solid var(--border); }
+.tree-canvas { position: relative; margin: 0 auto; }
+.structure-view svg.tree-lines { position: absolute; inset: 0; width: 100%; height: 100%; color: inherit; }
+.tree-lines line { stroke: var(--border-strong); stroke-width: 1.5; }
+.tree-node { position: absolute; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font: 600 12px var(--font-code); background: var(--surface); border: 2px solid var(--ref-color, var(--info)); color: var(--text); box-shadow: var(--shadow-sm); }
+.tree-node:hover, .tree-node:focus-visible { background: var(--surface-3); outline: none; }
+.tree-node.new { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.tree-node.changed { background: color-mix(in srgb, var(--warning) 18%, var(--surface)); }
+.tree-ref { position: absolute; bottom: calc(100% + 1px); left: 50%; transform: translateX(-50%); font: 600 10px var(--font-code); color: var(--accent-text); white-space: nowrap; }
+.tree-node.green { --ref-color: var(--ref-green); } .tree-node.blue { --ref-color: var(--ref-blue); } .tree-node.orange { --ref-color: var(--ref-orange); } .tree-node.violet { --ref-color: var(--ref-violet); }

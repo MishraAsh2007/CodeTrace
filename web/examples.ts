@@ -402,6 +402,148 @@ public class Library {
   },
 );
 
+// Algorithm tours: data structures drawn from the recording (the tree view, queues, visited arrays, the call stack).
+examples.push(
+  {
+    version: 1, name: 'Binary search tree', example: 'bst', mainClass: 'Main', stdin: '', maxSteps: 500,
+    files: [
+      { name: 'Main.java', content: `public class Main {
+    public static void main(String[] args) {
+        Node root = null;
+        int[] values = {50, 30, 70, 20, 40, 60, 80};
+        for (int value : values) {
+            root = Node.insert(root, value);
+        }
+
+        StringBuilder sorted = new StringBuilder();
+        Node.inOrder(root, sorted);
+        System.out.println(sorted.toString().trim());
+        System.out.println(Node.contains(root, 60) + " " + Node.contains(root, 65));
+    }
+}
+` },
+      { name: 'Node.java', content: `public class Node {
+    int value;
+    Node left;
+    Node right;
+
+    Node(int value) {
+        this.value = value;
+    }
+
+    /** Smaller values go left, larger or equal values go right. */
+    static Node insert(Node node, int value) {
+        if (node == null) {
+            return new Node(value);
+        }
+        if (value < node.value) {
+            node.left = insert(node.left, value);
+        } else {
+            node.right = insert(node.right, value);
+        }
+        return node;
+    }
+
+    /** Left subtree, then the node, then the right subtree: values come out sorted. */
+    static void inOrder(Node node, StringBuilder out) {
+        if (node == null) {
+            return;
+        }
+        inOrder(node.left, out);
+        out.append(node.value).append(' ');
+        inOrder(node.right, out);
+    }
+
+    static boolean contains(Node node, int value) {
+        while (node != null) {
+            if (value == node.value) {
+                return true;
+            }
+            node = value < node.value ? node.left : node.right;
+        }
+        return false;
+    }
+}
+` },
+    ],
+    checks: [{ name: 'Sorted and searched', stdin: '', expectedOutput: '20 30 40 50 60 70 80\ntrue false' }],
+  },
+  {
+    version: 1, name: 'Breadth-first search', example: 'bfs', mainClass: 'Main', stdin: '', maxSteps: 500,
+    files: [{ name: 'Main.java', content: `import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Queue;
+
+public class Main {
+    public static void main(String[] args) {
+        // An undirected graph: 0-1, 0-2, 1-3, 2-3, 3-4.
+        int[][] edges = {{0, 1}, {0, 2}, {1, 3}, {2, 3}, {3, 4}};
+        List<List<Integer>> neighbors = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            neighbors.add(new ArrayList<>());
+        }
+        for (int[] edge : edges) {
+            neighbors.get(edge[0]).add(edge[1]);
+            neighbors.get(edge[1]).add(edge[0]);
+        }
+
+        // Visit nodes in rings around the start; dist[n] is the number of edges from 0.
+        int[] dist = new int[5];
+        Arrays.fill(dist, -1);
+        Queue<Integer> queue = new ArrayDeque<>();
+        dist[0] = 0;
+        queue.add(0);
+        while (!queue.isEmpty()) {
+            int node = queue.remove();
+            for (int next : neighbors.get(node)) {
+                if (dist[next] == -1) {
+                    dist[next] = dist[node] + 1;
+                    queue.add(next);
+                }
+            }
+        }
+        System.out.println(Arrays.toString(dist));
+    }
+}
+` }],
+    checks: [{ name: 'Distances from node 0', stdin: '', expectedOutput: '[0, 1, 1, 2, 3]' }],
+  },
+  {
+    version: 1, name: 'Depth-first search', example: 'dfs', mainClass: 'Main', stdin: '', maxSteps: 500,
+    files: [{ name: 'Main.java', content: `public class Main {
+    static int[][] graph = {
+        {1, 2},  // 0
+        {3},     // 1
+        {3},     // 2
+        {4},     // 3
+        {},      // 4
+    };
+    static boolean[] visited = new boolean[graph.length];
+    static StringBuilder order = new StringBuilder();
+
+    /** Goes as deep as possible before backing up; the call stack remembers the way back. */
+    static void visit(int node) {
+        visited[node] = true;
+        order.append(node).append(' ');
+        for (int next : graph[node]) {
+            if (!visited[next]) {
+                visit(next);
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        visit(0);
+        System.out.println(order.toString().trim());
+    }
+}
+` }],
+    checks: [{ name: 'Visit order from node 0', stdin: '', expectedOutput: '0 1 3 4 2' }],
+  },
+);
+
 export type DemoCategory = 'runtime' | 'output' | 'hang' | 'compile' | 'tour';
 export type Demo = {
   id: string; category: DemoCategory;
@@ -442,6 +584,9 @@ export const demos: Demo[] = [
   { id: 'recursion', category: 'tour', symptom: 'Working program', summary: 'Watch factorial’s frames stack up, then return in reverse order.', snippet: 'int smaller = factorial(n - 1);', concepts: ['Recursion', 'Call stack'], level: 'Beginner' },
   { id: 'nodes', category: 'tour', symptom: 'Working program', summary: 'Follow a linked chain of nodes with reference arrows.', snippet: 'current = current.next;', concepts: ['Linked lists', 'References'], level: 'Intermediate' },
   { id: 'collections', category: 'tour', symptom: 'Working program', summary: 'An ArrayList grows and changes in place.', snippet: 'names.set(0, "Linus");', concepts: ['ArrayList'], level: 'Beginner' },
+  { id: 'bst', category: 'tour', symptom: 'Working program', summary: 'Build a binary search tree, drawn as a tree, then read it back in sorted order.', snippet: 'node.left = insert(node.left, value);', concepts: ['Binary trees', 'Recursion'], level: 'Intermediate' },
+  { id: 'bfs', category: 'tour', symptom: 'Working program', summary: 'Breadth-first search with a queue finds how many edges each node is from the start.', snippet: 'int node = queue.remove();', concepts: ['Graphs', 'Queues', 'BFS'], level: 'Intermediate' },
+  { id: 'dfs', category: 'tour', symptom: 'Working program', summary: 'Depth-first search follows one path as far as it goes; the call stack remembers the way back.', snippet: 'visit(next);', concepts: ['Graphs', 'Recursion', 'DFS'], level: 'Intermediate' },
 ];
 
 /** Examples that intentionally contain a bug for the learning loop. */

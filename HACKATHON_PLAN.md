@@ -12,7 +12,7 @@ Avoid a full VS Code fork during the hackathon. Monaco provides its editor compo
 
 ## Status — October 24, 2026
 
-The prototype meets the definition of done below and runs locally (`npm run build`, `npm start`). `npm test` runs 54 checks against real JVM runs. The code is on the `Java` branch of [MishraAsh2007/Hackachusetts_CodeTutor](https://github.com/MishraAsh2007/Hackachusetts_CodeTutor/tree/Java). Details are in [README.md](README.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md).
+The prototype meets the definition of done below and runs locally (`npm run build`, `npm start`). `npm test` runs 56 checks against real JVM runs. The code is on the `Java` branch of [MishraAsh2007/Hackachusetts_CodeTutor](https://github.com/MishraAsh2007/Hackachusetts_CodeTutor/tree/Java). Details are in [README.md](README.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 | Opportunity | Status |
 | --- | --- |
@@ -25,7 +25,7 @@ The prototype meets the definition of done below and runs locally (`npm run buil
 
 Debugger controls include step into/back, frame-aware over/out/back over (F10, Shift+F11, Shift+F10), replay bookmarks and run history.
 
-The product now has a landing page (`/`) with a feature overview, FAQ and an 18-example gallery, and a VS Code-style IDE (`/app/`) with an activity bar, Explorer and Examples views, light/dark themes, a Tutor panel and a status bar. Fourteen examples contain bugs across runtime errors, wrong output, non-termination and compile errors; each has failing tests, an explain question and a repair question, and the test suite verifies that the Tutor's repair makes every test pass.
+The product now has a landing page (`/`) with a feature overview, FAQ and a 21-example gallery, and a VS Code-style IDE (`/app/`) with an activity bar, Explorer and Examples views, light/dark themes, a Tutor panel and a status bar. Fourteen examples contain bugs across runtime errors, wrong output, non-termination and compile errors; each has failing tests, an explain question and a repair question, and the test suite verifies that the Tutor's repair makes every test pass.
 
 ## Roadmap after the first release
 
@@ -65,6 +65,20 @@ Agreed on October 24, 2026. Each phase ships with integration tests and a browse
 | AI when the deterministic tools can’t help, “Ask assistant” | Optional and off by default: any OpenAI-compatible endpoint (Ollama locally, Gemini free tier, Groq, OpenRouter, LM Studio). Context is the code, the recording, the current step and the open question (answer withheld). A Kiro key can’t serve this: Kiro API keys only authenticate its CLI and need a paid plan |
 
 Still open from this request: AI-written practice problems (their answers would still come from running them), and tested AI fix suggestions.
+
+Follow-up (October 24): **Reset** for examples and projects; a tree view for binary trees; views for `Stack`/`Vector`, `List.of`/`Set.of`/`Map.of` and unmodifiable wrappers (previously opaque); tours for a binary search tree, BFS and DFS; Groq (`openai/gpt-oss-120b`) as the tested hosted assistant.
+
+### Data structures and algorithms: what’s next
+
+Checked with BST insert/in-order, BFS on an adjacency list, recursive grid flood fill, DFS with a `HashMap` graph and a `Stack`, merge sort, Dijkstra with a `PriorityQueue<int[]>`, records and enums, a generic linked list with interfaces, and `fib(15)`: all record correctly. Gaps, in priority order:
+
+1. **Longer runs.** The step budget tops out at 2,000 (`fib(15)` needs 1,983). Start recording at a breakpoint or condition, or skip into library-heavy stretches, instead of recording from the first line.
+2. **More objects per step.** Capture stops at 64 objects, 32 elements and 24 frames, so an 80-node tree or a deep recursion is cut off. Raise the limits for trees, or capture only what the current frame can reach.
+3. **Graph view.** Adjacency lists (`List<List<Integer>>`, `int[][]`, `Map<String, List<String>>`) show as nested lists; draw them as a graph, with visited/queued nodes colored from the recorded arrays and queues.
+4. **Recursion tree in the debugger**, not only in Need help: calls as a tree with arguments and returns, the current call highlighted.
+5. **Algorithm-aware Tutor questions** (BFS order, which node is dequeued next, what the queue holds after an iteration, the base case that ended a call) and practice for trees, BFS, DFS and sorting.
+6. **Grid view** for 2D arrays with row/column markers (`grid[r][c]` is marked today, but shown as nested arrays).
+7. Views for `HashMap` keys/values views and iterators, `Optional`, `BitSet`, and `java.time` values.
 
 ### Phase 2 — General Tutor questions and tested fixes
 

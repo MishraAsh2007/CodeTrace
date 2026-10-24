@@ -16,12 +16,14 @@ Rules:
 - Base every claim about what the program did on the recorded facts in CONTEXT (values, output, exceptions). If the recording doesn't show something, say you can't tell from the recording and suggest how to find out (for example which step to look at).
 - Never invent values, line numbers or output.
 - Teach first. Explain why, point to the line and the values involved, and suggest what to check or try. Show a full corrected program only when the student explicitly asks for the solution; prefer showing the one or two lines that change.
-- If a Tutor question is open, don't reveal its answer; help the student reason toward it.
+- If a Tutor question is open and unanswered, don't say which option is correct or quote it; explain the idea and let the student choose.
 - Keep answers short: usually under 150 words. Use Markdown with \`code\` for identifiers and fenced \`\`\`java blocks for code.
 - The program is Java 21, single-threaded, using only the standard library.`;
 
-const MAX_FILE = 9000;
-const MAX_FILES = 18000;
+// Free tiers allow a few thousand tokens per minute (Groq: 8,000), so the context stays small.
+const MAX_FILE = 8000;
+const MAX_FILES = 14000;
+const MAX_HISTORY = 6000;
 
 /** Project source with line numbers, trimmed to a budget so the active file is always included. */
 function sourceSection(project: Project, activeFile: string): string {
@@ -78,7 +80,7 @@ export function contextMessage(c: AssistContext): string {
         const table = help.visuals.find(v => v.kind === 'table');
         if (table && table.kind === 'table') out.push(`### ${table.title} (from the recording)`, [table.columns.join(' | '), ...table.rows.slice(-14).map(r => r.cells.join(' | '))].join('\n'));
         const calls = help.visuals.find(v => v.kind === 'calls');
-        if (calls && calls.kind === 'calls') out.push('### Calls (from the recording)', calls.calls.slice(0, 15).map(k => `${'  '.repeat(k.depth)}${k.label} → ${k.result}`).join('\n'));
+        if (calls && calls.kind === 'calls') out.push('### Calls (from the recording)', calls.calls.slice(0, 15).map(k => `${'  '.repeat(Math.max(0, k.depth))}${k.label} → ${k.result}`).join('\n'));
       }
     }
   }
@@ -92,7 +94,12 @@ export function contextMessage(c: AssistContext): string {
 
 /** The messages for one turn: rules, context, the last few turns, then the new question. */
 export function buildMessages(context: string, history: ChatMessage[], question: string): ChatMessage[] {
-  const recent = history.filter(m => m.role !== 'system').slice(-8);
+  const recent: ChatMessage[] = [];
+  let budget = MAX_HISTORY;
+  for (const m of history.filter(m => m.role !== 'system').slice(-8).reverse()) {
+    if (m.content.length > budget) break;
+    budget -= m.content.length; recent.unshift(m);
+  }
   return [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: context }, { role: 'assistant', content: 'I have the project, the recording and the current step. What would you like to know?' }, ...recent, { role: 'user', content: question }];
 }
 
@@ -136,7 +143,7 @@ export type AssistStatus = { configured: boolean; provider?: string; url?: strin
 export const PROVIDERS = [
   { id: 'ollama', name: 'Ollama on this computer', url: 'http://127.0.0.1:11434/v1', model: 'qwen2.5-coder:7b', key: false, note: 'Free and private: your code stays on this computer. Install Ollama, then run ollama pull qwen2.5-coder:7b (about 4.7 GB). A smaller model such as qwen2.5-coder:3b answers faster on a laptop.' },
   { id: 'gemini', name: 'Google Gemini (free tier)', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.8-flash', key: true, note: 'Get a free API key in Google AI Studio. Your code and run details are sent to Google, and on the free tier Google may use prompts to improve its products. Rate limits apply.' },
-  { id: 'groq', name: 'Groq', url: 'https://api.groq.com/openai/v1', model: '', key: true, note: 'Free tier with rate limits. Create a key at console.groq.com, then pick a model with List models. Your code is sent to Groq.' },
+  { id: 'groq', name: 'Groq', url: 'https://api.groq.com/openai/v1', model: 'openai/gpt-oss-120b', key: true, note: 'Fast, with a free tier (about 30 requests a minute and 1,000 a day). Create a key at console.groq.com. Your code is sent to Groq.' },
   { id: 'openrouter', name: 'OpenRouter', url: 'https://openrouter.ai/api/v1', model: '', key: true, note: 'One key for many providers, including some free models (their ids end in :free). Your code is sent to OpenRouter and the model’s provider.' },
   { id: 'custom', name: 'Other OpenAI-compatible server', url: '', model: '', key: true, note: 'Any server with an OpenAI-compatible /chat/completions endpoint, such as LM Studio (http://127.0.0.1:1234/v1).' },
 ] as const;

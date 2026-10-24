@@ -501,6 +501,48 @@ public final class TraceWorker {
                         int size = intField(object, "size");
                         yield map("kind", "map", "length", size, "entries", out, "truncated", size > out.size());
                     }
+                    case "java.util.Stack", "java.util.Vector" -> {
+                        int size = intField(object, "elementCount");
+                        ArrayReference data = (ArrayReference) field(object, "elementData");
+                        yield sequence("list", size, data.getValues(0, Math.min(size, Math.min(MAX_ELEMENTS, data.length()))), depth, type.equals("java.util.Stack") ? "Bottom first: the top of the stack is the last element." : null);
+                    }
+                    // List.of, Set.of and Map.of return unmodifiable collections with compact layouts.
+                    case "java.util.ImmutableCollections$ListN" -> {
+                        ArrayReference data = (ArrayReference) field(object, "elements");
+                        yield sequence("list", data.length(), data.getValues(0, Math.min(data.length(), MAX_ELEMENTS)), depth, "Unmodifiable (List.of).");
+                    }
+                    case "java.util.ImmutableCollections$List12", "java.util.ImmutableCollections$Set12" -> {
+                        Value[] parts = fieldValues(object, "e0", "e1");
+                        List<Value> items = new ArrayList<>(List.of(parts[0]));
+                        if (!isEmptySentinel(object, parts[1])) items.add(parts[1]);
+                        yield sequence(type.endsWith("List12") ? "list" : "set", items.size(), items, depth, type.endsWith("List12") ? "Unmodifiable (List.of)." : "Unmodifiable (Set.of); the order is not defined.");
+                    }
+                    case "java.util.ImmutableCollections$SetN" -> {
+                        ArrayReference data = (ArrayReference) field(object, "elements");
+                        List<Value> items = new ArrayList<>();
+                        for (Value v : data.getValues()) if (v != null && items.size() < MAX_ELEMENTS) items.add(v);
+                        yield sequence("set", intField(object, "size"), items, depth, "Unmodifiable (Set.of); the order is not defined.");
+                    }
+                    case "java.util.ImmutableCollections$Map1" -> {
+                        Value[] parts = fieldValues(object, "k0", "v0");
+                        yield map("kind", "map", "length", 1, "entries", List.of(map("key", value(parts[0], depth), "value", value(parts[1], depth))), "truncated", false, "message", "Unmodifiable (Map.of).");
+                    }
+                    case "java.util.ImmutableCollections$MapN" -> {
+                        ArrayReference table = (ArrayReference) field(object, "table");
+                        List<Value> slots = table.getValues();
+                        List<Object> out = new ArrayList<>();
+                        for (int i = 0; i + 1 < slots.size() && out.size() < MAX_ELEMENTS; i += 2) if (slots.get(i) != null) out.add(map("key", value(slots.get(i), depth), "value", value(slots.get(i + 1), depth)));
+                        int size = intField(object, "size");
+                        yield map("kind", "map", "length", size, "entries", out, "truncated", size > out.size(), "message", "Unmodifiable (Map.of); the order is not defined.");
+                    }
+                    // Collections.unmodifiableList/Set/Map wrap another collection: show the one inside.
+                    case "java.util.Collections$UnmodifiableRandomAccessList", "java.util.Collections$UnmodifiableList", "java.util.Collections$UnmodifiableSet", "java.util.Collections$UnmodifiableCollection", "java.util.Collections$UnmodifiableMap" -> {
+                        ObjectReference inner = (ObjectReference) field(object, type.endsWith("Map") ? "m" : "c");
+                        Map<String, Object> view = inner == null ? null : library(inner, inner.referenceType().name(), depth);
+                        String innerName = inner == null ? "" : inner.referenceType().name().replaceAll(".*\\.", "");
+                        if (view != null) view.put("message", "Unmodifiable view of " + ("AEIOU".indexOf(innerName.isEmpty() ? 'x' : innerName.charAt(0)) >= 0 ? "an " : "a ") + innerName + ".");
+                        yield view;
+                    }
                     case "java.util.HashSet", "java.util.LinkedHashSet", "java.util.TreeSet" -> {
                         ObjectReference backing = (ObjectReference) field(object, type.equals("java.util.TreeSet") ? "m" : "map");
                         String backingType = backing.referenceType().name();
@@ -589,6 +631,15 @@ public final class TraceWorker {
         return object.getValue(field);
     }
     private static int intField(ObjectReference object, String name) { return ((IntegerValue) field(object, name)).value(); }
+    /** ImmutableCollections marks the unused second slot of a one-element List12/Set12 with a shared EMPTY object. */
+    private static boolean isEmptySentinel(ObjectReference owner, Value value) {
+        if (value == null) return false;
+        for (ReferenceType type : owner.virtualMachine().classesByName("java.util.ImmutableCollections")) {
+            Field empty = type.fieldByName("EMPTY");
+            if (empty != null && empty.isStatic()) return value.equals(type.getValue(empty));
+        }
+        return value.type() != null && value.type().name().equals("java.lang.Object");
+    }
     /** Reads several fields with one debugger round trip. */
     private static Value[] fieldValues(ObjectReference object, String... names) {
         ReferenceType type = object.referenceType();
