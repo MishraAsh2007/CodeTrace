@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kiro · Python Visualizer</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='7' y='7' width='18' height='18' rx='4' transform='rotate(45 16 16)' fill='%23b48cff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Kiro</span>
+      <span class="brand-sub">Python Visualizer</span>
+    </div>
+
+    <label class="sample-picker">
+      <span class="visually-hidden">Load a sample program</span>
+      <select id="sample-select">
+        <option value="">Samples…</option>
+        <option value="linked_list">Linked list: sum of pairs (bug)</option>
+        <option value="bst">Binary search tree: insert (bug)</option>
+        <option value="reverse">Linked list: reverse</option>
+        <option value="recursion">Recursion: factorial</option>
+      </select>
+    </label>
+
+    <div class="toolbar" role="toolbar" aria-label="Run and debug">
+      <button id="run-btn" class="btn btn-primary" title="Run (Ctrl+Enter)">
+        <span aria-hidden="true">▶</span> Run
+      </button>
+
+      <div class="step-group" role="group" aria-label="Step through execution">
+        <button id="first-btn" class="icon-btn" title="First step (Home)" aria-label="First step">⏮</button>
+        <button id="prev-btn" class="icon-btn" title="Previous step (Alt+←)" aria-label="Previous step">◀</button>
+        <button id="next-btn" class="icon-btn" title="Next step (Alt+→)" aria-label="Next step">▶</button>
+        <button id="continue-btn" class="icon-btn" title="Continue to next breakpoint (F8)" aria-label="Continue to next breakpoint">⏩</button>
+        <button id="last-btn" class="icon-btn" title="Last step (End)" aria-label="Last step">⏭</button>
+      </div>
+
+      <button id="visualize-btn" class="btn btn-visualize" title="Scan memory and show where you are (Ctrl+Shift+V)">
+        <span aria-hidden="true">◎</span> Visualize
+      </button>
+      <button id="chat-btn" class="btn btn-kiro" title="Chat with Kiro (Ctrl+Shift+K)" aria-expanded="false" aria-controls="chat-drawer">
+        <span aria-hidden="true">✦</span> Ask Kiro
+      </button>
+    </div>
+  </header>
+
+  <main class="workspace" id="workspace">
+    <section class="pane editor-pane" id="editor-pane" aria-label="Code editor">
+      <div class="pane-header">
+        <span class="tab-title">main.py</span>
+        <span id="dirty-badge" class="badge badge-warn" hidden>edited · re-run to update</span>
+        <span class="pane-hint">Click the gutter to add a breakpoint</span>
+      </div>
+      <div id="editor" class="editor-host"></div>
+
+      <div class="console" id="console">
+        <div class="console-tabs" role="tablist" aria-label="Console">
+          <button role="tab" id="tab-output" class="console-tab is-active" aria-selected="true" aria-controls="output">Output</button>
+          <button role="tab" id="tab-input" class="console-tab" aria-selected="false" aria-controls="stdin-wrap">Input (stdin)</button>
+          <span id="run-meta" class="console-meta"></span>
+        </div>
+        <pre id="output" class="console-body" role="tabpanel" aria-labelledby="tab-output" aria-live="polite">Press Run (Ctrl+Enter) to execute your program.</pre>
+        <div id="stdin-wrap" class="console-body" role="tabpanel" aria-labelledby="tab-input" hidden>
+          <label for="stdin" class="visually-hidden">Program input, one line per input() call</label>
+          <textarea id="stdin" spellcheck="false" placeholder="One line per input() call…"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize panels" tabindex="0"></div>
+
+    <section class="pane viz-pane" id="viz-pane" aria-label="Memory visualizer">
+      <div class="pane-header">
+        <span class="tab-title">Memory</span>
+        <span id="run-status" class="status-pill" data-kind="idle">Not run yet</span>
+        <span id="step-label" class="pane-hint"></span>
+      </div>
+
+      <div class="timeline">
+        <label for="step-slider" class="visually-hidden">Execution step</label>
+        <input type="range" id="step-slider" min="0" max="0" value="0" disabled>
+        <div id="timeline-marks" class="timeline-marks" aria-hidden="true"></div>
+      </div>
+
+      <div id="here-card" class="here-card" hidden aria-live="polite">
+        <div class="here-head">
+          <span class="here-title"><span class="pulse-dot" aria-hidden="true"></span> You are here</span>
+          <button id="here-close" class="icon-btn small" aria-label="Close spotlight">✕</button>
+        </div>
+        <div id="here-where" class="here-where"></div>
+        <ul id="here-pointers" class="here-pointers"></ul>
+        <div id="here-narration" class="here-narration"></div>
+        <div class="here-actions">
+          <button id="here-chat" class="btn btn-kiro small">✦ Quiz me on this</button>
+          <button id="here-narrate" class="btn btn-ghost small" hidden>Narrate this step</button>
+        </div>
+      </div>
+
+      <div class="viz-scroll" id="viz-scroll">
+        <div class="viz-canvas" id="viz-canvas">
+          <div class="viz-empty">
+            <p class="viz-empty-title">Your program's memory shows up here</p>
+            <p>Run the code, step through it, then press <kbd>Visualize</kbd> to see exactly where you are.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="scan-overlay" id="scan-overlay" hidden aria-hidden="true">
+      <div class="scan-line"></div>
+      <div class="scan-chip">Scanning memory…</div>
+    </div>
+  </main>
+
+  <aside class="chat-drawer" id="chat-drawer" aria-label="Chat with Kiro" hidden>
+    <div class="chat-head">
+      <div class="chat-title">
+        <span class="kiro-avatar" aria-hidden="true">✦</span>
+        <div>
+          <div class="chat-name">Kiro</div>
+          <div class="chat-sub" id="chat-context">Socratic tutor</div>
+        </div>
+      </div>
+      <div class="chat-head-actions">
+        <button id="chat-reset" class="icon-btn small" title="Start a new conversation" aria-label="Start a new conversation">↺</button>
+        <button id="chat-close" class="icon-btn small" title="Close chat (Esc)" aria-label="Close chat">✕</button>
+      </div>
+    </div>
+    <div id="chat-log" class="chat-log" role="log" aria-live="polite"></div>
+    <div class="chat-quick" id="chat-quick">
+      <button class="chip" data-quick="I'm not sure. Can you give me a smaller hint?">Smaller hint</button>
+      <button class="chip" data-quick="I think I found the bug.">I found it</button>
+      <button class="chip" data-quick="What should I look at in the memory diagram?">Where do I look?</button>
+    </div>
+    <form id="chat-form" class="chat-form">
+      <label for="chat-input" class="visually-hidden">Message Kiro</label>
+      <textarea id="chat-input" rows="2" placeholder="Answer Kiro's question… (Enter to send)"></textarea>
+      <button type="submit" id="chat-send" class="btn btn-kiro" aria-label="Send message">Send</button>
+    </form>
+  </aside>
+
+  <footer class="statusbar">
+    <span id="sb-kiro" class="sb-item">Kiro: checking…</span>
+    <span id="sb-position" class="sb-item"></span>
+    <span class="sb-spacer"></span>
+    <span class="sb-item sb-keys">Ctrl+Enter run · F9 breakpoint · Alt+←/→ step · F8 continue</span>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.57.0/min/vs/loader.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
