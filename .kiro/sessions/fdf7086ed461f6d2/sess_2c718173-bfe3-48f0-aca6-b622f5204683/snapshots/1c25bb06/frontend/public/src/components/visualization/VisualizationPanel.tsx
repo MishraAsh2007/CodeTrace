@@ -1,0 +1,203 @@
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { Language } from "../../types";
+import {
+  type ExecutionTrace,
+  type ProgramState,
+  isArray,
+  isRef,
+} from "./trace";
+import { SAMPLE_TRACE } from "./sampleTrace";
+import StackFrameView, { variableAnchorId } from "./StackFrameView";
+import HeapObjectView, {
+  cellAnchorId,
+  fieldAnchorId,
+  objectAnchorId,
+} from "./HeapObjectView";
+import ArrowLayer, { type Connection } from "./ArrowLayer";
+
+export interface VisualizationPanelProps {
+  /** Source currently in the editor (unused until the backend wires up). */
+  code: string;
+  /** Active language. */
+  language: Language;
+  /**
+   * Execution trace to visualize. Defaults to a built-in sample so the panel
+   * is demoable before the Rust backend emits real traces.
+   */
+  trace?: ExecutionTrace;
+}
+
+/** Derive all arrows (source anchor -> target object) for one state. */
+function connectionsFor(state: ProgramState): Connection[] {
+  const conns: Connection[] = [];
+
+  // Reference variables in each stack frame -> their heap object.
+  for (const frame of state.stack) {
+    for (const v of frame.variables) {
+      if (isRef(v.value) && v.value.target) {
+        conns.push({
+          from: variableAnchorId(frame.id, v.name),
+          to: objectAnchorId(v.value.target),
+        });
+      }
+    }
+  }
+
+  for (const obj of Object.values(state.heap)) {
+    // Reference cells inside array objects -> the objects they point at
+    // (e.g. an array of node pointers).
+    if (isArray(obj)) {
+      obj.elements.forEach((el, i) => {
+        if (isRef(el) && el.target) {
+          conns.push({
+            from: cellAnchorId(obj.id, i),
+            to: objectAnchorId(el.target),
+          });
+        }
+      });
+    }
+
+    // Reference fields inside struct objects -> the objects they point at
+    // (e.g. a linked-list node's `next` field chaining to the next node).
+    if (isStruct(obj)) {
+      for (const field of obj.fields) {
+        if (isRef(field.value) && field.value.target) {
+          conns.push({
+            from: fieldAnchorId(obj.id, field.name),
+            to: objectAnchorId(field.value.target),
+          });
+        }
+      }
+    }
+  }
+
+  return conns;
+}
+
+/**
+ * The right half of CodeTutor: a box/arrow visualizer. It renders one program
+ * state (stack frames + heap objects), drawing arrows for reference semantics,
+ * and lets you scrub through the trace to watch state change per loop
+ * iteration.
+ */
+export default function VisualizationPanel({
+  language,
+  trace = SAMPLE_TRACE,
+}: VisualizationPanelProps) {
+  const [step, setStep] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const anchorsRef = useRef<Map<string, HTMLElement>>(new Map());
+  // Bump to force the arrow layer to re-measure after each render.
+  const [revision, setRevision] = useState(0);
+
+  const clampedStep = Math.min(step, trace.states.length - 1);
+  const state = trace.states[clampedStep];
+
+  const registerAnchor = (id: string, el: HTMLElement | null) => {
+    if (el) anchorsRef.current.set(id, el);
+    else anchorsRef.current.delete(id);
+  };
+
+  const connections = useMemo(
+    () => (state ? connectionsFor(state) : []),
+    [state]
+  );
+
+  // After the DOM for this step commits (and anchors re-register), bump the
+  // revision so the arrow layer re-measures box positions.
+  useLayoutEffect(() => {
+    setRevision((r) => r + 1);
+  }, [clampedStep]);
+
+  if (!state) {
+    return (
+      <div className="panel visualization-panel">
+        <h2 className="panel__title">Visualizer</h2>
+        <p className="panel__hint">No trace to visualize yet.</p>
+      </div>
+    );
+  }
+
+  const heapObjects = Object.values(state.heap);
+
+  return (
+    <div className="panel visualization-panel">
+      <div className="visualization-panel__header">
+        <h2 className="panel__title">Visualizer</h2>
+        <span className="panel__meta">{language.toUpperCase()}</span>
+      </div>
+
+      <div className="viz-controls">
+        <button
+          type="button"
+          onClick={() => setStep((s) => Math.max(0, s - 1))}
+          disabled={clampedStep === 0}
+        >
+          ‹ Prev
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={trace.states.length - 1}
+          value={clampedStep}
+          onChange={(e) => setStep(Number(e.target.value))}
+        />
+        <button
+          type="button"
+          onClick={() =>
+            setStep((s) => Math.min(trace.states.length - 1, s + 1))
+          }
+          disabled={clampedStep === trace.states.length - 1}
+        >
+          Next ›
+        </button>
+        <span className="viz-controls__step">
+          Step {clampedStep + 1} / {trace.states.length}
+          {state.line !== undefined ? ` · line ${state.line}` : ""}
+        </span>
+      </div>
+
+      {state.note && <p className="viz-note">{state.note}</p>}
+
+      <div className="viz-stage" ref={containerRef}>
+        <ArrowLayer
+          containerRef={containerRef}
+          anchors={anchorsRef.current}
+          connections={connections}
+          revision={revision}
+        />
+
+        <div className="viz-columns">
+          <div className="viz-column">
+            <h3 className="viz-column__title">Stack</h3>
+            {state.stack.map((frame) => (
+              <StackFrameView
+                key={frame.id}
+                frame={frame}
+                registerCellAnchor={registerAnchor}
+              />
+            ))}
+          </div>
+
+          <div className="viz-column">
+            <h3 className="viz-column__title">Heap</h3>
+            <div className="viz-heap">
+              {heapObjects.map((obj) => (
+                <HeapObjectView
+                  key={obj.id}
+                  object={obj}
+                  registerAnchor={registerAnchor}
+                  registerCellAnchor={registerAnchor}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {state.stdout && (
+        <pre className="viz-stdout">{state.stdout}</pre>
+      )}
+    </div>
+  );
+}

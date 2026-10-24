@@ -1,0 +1,699 @@
+Output:
+git : From https://github.com/microsoft/monaco-editor
+At line:1 char:78
++ ... /github.com/microsoft/monaco-editor.git; git fetch monaco-editor 2>&1
++                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (From https://gi...t/monaco-editor 
+   :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ * [new branch]          aiday/releasev0.49.0   -> 
+monaco-editor/aiday/releasev0.49.0
+ * [new branch]          alex/smoke-test-esbuild -> 
+monaco-editor/alex/smoke-test-esbuild
+ * [new branch]          alexd/regional-horse   -> 
+monaco-editor/alexd/regional-horse
+ * [new branch]          copilot/a11y-fix-close-button-name -> 
+monaco-editor/copilot/a11y-fix-close-button-name
+ * [new branch]          copilot/bugfix-error-nth-child-hover -> 
+monaco-editor/copilot/bugfix-error-nth-child-hover
+ * [new branch]          copilot/check-pr-status-issue-5307 -> 
+monaco-editor/copilot/check-pr-status-issue-5307
+ * [new branch]          copilot/fix-8caebaba-d30f-45e8-ab36-e1bfe946b117 -> 
+monaco-editor/copilot/fix-8caebaba-d30f-45e8-ab36-e1bfe946b117
+ * [new branch]          copilot/greet-users-in-application -> 
+monaco-editor/copilot/greet-users-in-application
+ * [new branch]          dependabot/npm_and_yarn/multi-a4dee5a10c -> 
+monaco-editor/dependabot/npm_and_yarn/multi-a4dee5a10c
+ * [new branch]          
+dependabot/npm_and_yarn/samples/browser-esm-vite-react/vite-8.1.6 -> 
+monaco-editor/dependabot/npm_and_yarn/samples/browser-esm-vite-react/vite-8.1.6
+ * [new branch]          dependabot/npm_and_yarn/samples/electron-41.10.6 -> 
+monaco-editor/dependabot/npm_and_yarn/samples/electron-41.10.6
+ * [new branch]          dependabot/npm_and_yarn/samples/multi-68219694b3 -> 
+monaco-editor/dependabot/npm_and_yarn/samples/multi-68219694b3
+ * [new branch]          
+dependabot/npm_and_yarn/samples/webpack-dev-middleware-7.4.6 -> 
+monaco-editor/dependabot/npm_and_yarn/samples/webpack-dev-middleware-7.4.6
+ * [new branch]          dependabot/npm_and_yarn/vite-7.3.7 -> 
+monaco-editor/dependabot/npm_and_yarn/vite-7.3.7
+ * [new branch]          
+dependabot/npm_and_yarn/webpack-plugin/multi-68219694b3 -> 
+monaco-editor/dependabot/npm_and_yarn/webpack-plugin/multi-68219694b3
+ * [new branch]          dependabot/npm_and_yarn/website/launch-editor-2.14.2 
+-> monaco-editor/dependabot/npm_and_yarn/website/launch-editor-2.14.2
+ * [new branch]          
+dependabot/npm_and_yarn/website/postcss-selector-parser-7.1.6 -> 
+monaco-editor/dependabot/npm_and_yarn/website/postcss-selector-parser-7.1.6
+ * [new branch]          
+dependabot/npm_and_yarn/website/webpack-dev-middleware-8.3.0 -> 
+monaco-editor/dependabot/npm_and_yarn/website/webpack-dev-middleware-8.3.0
+ * [new branch]          gh-pages               -> monaco-editor/gh-pages
+ * [new branch]          hediet/b/daily-grouse  -> 
+monaco-editor/hediet/b/daily-grouse
+ * [new branch]          hediet/b/deep-salmon   -> 
+monaco-editor/hediet/b/deep-salmon
+ * [new branch]          hediet/b/imaginative-ermine -> 
+monaco-editor/hediet/b/imaginative-ermine
+ * [new branch]          hediet/b/just-pigeon   -> 
+monaco-editor/hediet/b/just-pigeon
+ * [new branch]          hediet/b/puny-snipe    -> 
+monaco-editor/hediet/b/puny-snipe
+ * [new branch]          hediet/b/running-penguin -> 
+monaco-editor/hediet/b/running-penguin
+ * [new branch]          hediet/b/update        -> 
+monaco-editor/hediet/b/update
+ * [new branch]          hediet/b/wonderful-pelican -> 
+monaco-editor/hediet/b/wonderful-pelican
+ * [new branch]          hediet/gitattributes-normalize-line-endings -> 
+monaco-editor/hediet/gitattributes-normalize-line-endings
+ * [new branch]          hediet/lsp-worker      -> 
+monaco-editor/hediet/lsp-worker
+ * [new branch]          hediet/monaco-amd      -> 
+monaco-editor/hediet/monaco-amd
+ * [new branch]          hediet/typify-build    -> 
+monaco-editor/hediet/typify-build
+ * [new branch]          intense-kite           -> monaco-editor/intense-kite
+ * [new branch]          main                   -> monaco-editor/main
+ * [new branch]          release/0.52           -> monaco-editor/release/0.52
+ * [new branch]          release/v0.49.0        -> 
+monaco-editor/release/v0.49.0
+ * [new branch]          release/v0.49.0-mod    -> 
+monaco-editor/release/v0.49.0-mod
+ * [new branch]          rzhao271/key-koi       -> 
+monaco-editor/rzhao271/key-koi
+ * [new branch]          rzhao271/use-npm       -> 
+monaco-editor/rzhao271/use-npm
+ * [new branch]          stable-ape             -> monaco-editor/stable-ape
+ * [new branch]          users/merlinbot/1es-pt-auto-baselining-pr -> 
+monaco-editor/users/merlinbot/1es-pt-auto-baselining-pr
+ * [new tag]             0.17.1                 -> 0.17.1
+ * [new tag]             0.31.0                 -> 0.31.0
+ * [new tag]             v0.10.0                -> v0.10.0
+ * [new tag]             v0.10.1                -> v0.10.1
+ * [new tag]             v0.11.0                -> v0.11.0
+ * [new tag]             v0.11.1                -> v0.11.1
+ * [new tag]             v0.12.0                -> v0.12.0
+ * [new tag]             v0.13.0                -> v0.13.0
+ * [new tag]             v0.13.1                -> v0.13.1
+ * [new tag]             v0.14.0                -> v0.14.0
+ * [new tag]             v0.14.1                -> v0.14.1
+ * [new tag]             v0.14.2                -> v0.14.2
+ * [new tag]             v0.14.3                -> v0.14.3
+ * [new tag]             v0.15.0                -> v0.15.0
+ * [new tag]             v0.15.1                -> v0.15.1
+ * [new tag]             v0.15.2                -> v0.15.2
+ * [new tag]             v0.15.3                -> v0.15.3
+ * [new tag]             v0.15.4                -> v0.15.4
+ * [new tag]             v0.15.5                -> v0.15.5
+ * [new tag]             v0.15.6                -> v0.15.6
+ * [new tag]             v0.16.0                -> v0.16.0
+ * [new tag]             v0.16.1                -> v0.16.1
+ * [new tag]             v0.16.2                -> v0.16.2
+ * [new tag]             v0.17.0                -> v0.17.0
+ * [new tag]             v0.18.0                -> v0.18.0
+ * [new tag]             v0.18.1                -> v0.18.1
+ * [new tag]             v0.19.0                -> v0.19.0
+ * [new tag]             v0.19.1                -> v0.19.1
+ * [new tag]             v0.19.2                -> v0.19.2
+ * [new tag]             v0.19.3                -> v0.19.3
+ * [new tag]             v0.20.0                -> v0.20.0
+ * [new tag]             v0.21.0                -> v0.21.0
+ * [new tag]             v0.21.1                -> v0.21.1
+ * [new tag]             v0.21.2                -> v0.21.2
+ * [new tag]             v0.21.3                -> v0.21.3
+ * [new tag]             v0.22.0                -> v0.22.0
+ * [new tag]             v0.22.1                -> v0.22.1
+ * [new tag]             v0.22.2                -> v0.22.2
+ * [new tag]             v0.22.3                -> v0.22.3
+ * [new tag]             v0.23.0                -> v0.23.0
+ * [new tag]             v0.24.0                -> v0.24.0
+ * [new tag]             v0.25.0                -> v0.25.0
+ * [new tag]             v0.25.1                -> v0.25.1
+ * [new tag]             v0.25.2                -> v0.25.2
+ * [new tag]             v0.26.0                -> v0.26.0
+ * [new tag]             v0.26.1                -> v0.26.1
+ * [new tag]             v0.27.0                -> v0.27.0
+ * [new tag]             v0.28.0                -> v0.28.0
+ * [new tag]             v0.29.0                -> v0.29.0
+ * [new tag]             v0.29.1                -> v0.29.1
+ * [new tag]             v0.3.1                 -> v0.3.1
+ * [new tag]             v0.30.0                -> v0.30.0
+ * [new tag]             v0.30.1                -> v0.30.1
+ * [new tag]             v0.32.0                -> v0.32.0
+ * [new tag]             v0.33.0                -> v0.33.0
+ * [new tag]             v0.34.0                -> v0.34.0
+ * [new tag]             v0.34.1                -> v0.34.1
+ * [new tag]             v0.35.0                -> v0.35.0
+ * [new tag]             v0.35.0-dev.20230201   -> v0.35.0-dev.20230201
+ * [new tag]             v0.35.0-dev.20230202   -> v0.35.0-dev.20230202
+ * [new tag]             v0.35.0-dev.20230204   -> v0.35.0-dev.20230204
+ * [new tag]             v0.35.0-dev.20230205   -> v0.35.0-dev.20230205
+ * [new tag]             v0.35.0-dev.20230206   -> v0.35.0-dev.20230206
+ * [new tag]             v0.35.0-dev.20230208   -> v0.35.0-dev.20230208
+ * [new tag]             v0.36.0                -> v0.36.0
+ * [new tag]             v0.36.0-dev.20230208   -> v0.36.0-dev.20230208
+ * [new tag]             v0.36.0-dev.20230209   -> v0.36.0-dev.20230209
+ * [new tag]             v0.36.0-dev.20230210   -> v0.36.0-dev.20230210
+ * [new tag]             v0.36.0-dev.20230214   -> v0.36.0-dev.20230214
+ * [new tag]             v0.36.0-dev.20230215   -> v0.36.0-dev.20230215
+ * [new tag]             v0.36.0-dev.20230216   -> v0.36.0-dev.20230216
+ * [new tag]             v0.36.0-dev.20230217   -> v0.36.0-dev.20230217
+ * [new tag]             v0.36.0-dev.20230218   -> v0.36.0-dev.20230218
+ * [new tag]             v0.36.0-dev.20230219   -> v0.36.0-dev.20230219
+ * [new tag]             v0.36.0-dev.20230220   -> v0.36.0-dev.20230220
+ * [new tag]             v0.36.0-dev.20230221   -> v0.36.0-dev.20230221
+ * [new tag]             v0.36.0-dev.20230223   -> v0.36.0-dev.20230223
+ * [new tag]             v0.36.0-dev.20230224   -> v0.36.0-dev.20230224
+ * [new tag]             v0.36.1                -> v0.36.1
+ * [new tag]             v0.37.0                -> v0.37.0
+ * [new tag]             v0.37.0-dev.20230225   -> v0.37.0-dev.20230225
+ * [new tag]             v0.37.0-dev.20230226   -> v0.37.0-dev.20230226
+ * [new tag]             v0.37.0-dev.20230227   -> v0.37.0-dev.20230227
+ * [new tag]             v0.37.0-dev.20230228   -> v0.37.0-dev.20230228
+ * [new tag]             v0.37.0-dev.20230301   -> v0.37.0-dev.20230301
+ * [new tag]             v0.37.0-dev.20230303   -> v0.37.0-dev.20230303
+ * [new tag]             v0.37.0-dev.20230304   -> v0.37.0-dev.20230304
+ * [new tag]             v0.37.0-dev.20230305   -> v0.37.0-dev.20230305
+ * [new tag]             v0.37.0-dev.20230306   -> v0.37.0-dev.20230306
+ * [new tag]             v0.37.0-dev.20230307   -> v0.37.0-dev.20230307
+ * [new tag]             v0.37.0-dev.20230308   -> v0.37.0-dev.20230308
+ * [new tag]             v0.37.0-dev.20230309   -> v0.37.0-dev.20230309
+ * [new tag]             v0.37.0-dev.20230310   -> v0.37.0-dev.20230310
+ * [new tag]             v0.37.0-dev.20230311   -> v0.37.0-dev.20230311
+ * [new tag]             v0.37.0-dev.20230312   -> v0.37.0-dev.20230312
+ * [new tag]             v0.37.0-dev.20230313   -> v0.37.0-dev.20230313
+ * [new tag]             v0.37.0-dev.20230314   -> v0.37.0-dev.20230314
+ * [new tag]             v0.37.0-dev.20230315   -> v0.37.0-dev.20230315
+ * [new tag]             v0.37.0-dev.20230316   -> v0.37.0-dev.20230316
+ * [new tag]             v0.37.0-dev.20230317   -> v0.37.0-dev.20230317
+ * [new tag]             v0.37.0-dev.20230318   -> v0.37.0-dev.20230318
+ * [new tag]             v0.37.0-dev.20230319   -> v0.37.0-dev.20230319
+ * [new tag]             v0.37.0-dev.20230320   -> v0.37.0-dev.20230320
+ * [new tag]             v0.37.0-dev.20230321   -> v0.37.0-dev.20230321
+ * [new tag]             v0.37.0-dev.20230322   -> v0.37.0-dev.20230322
+ * [new tag]             v0.37.0-dev.20230323   -> v0.37.0-dev.20230323
+ * [new tag]             v0.37.0-dev.20230324   -> v0.37.0-dev.20230324
+ * [new tag]             v0.37.0-dev.20230325   -> v0.37.0-dev.20230325
+ * [new tag]             v0.37.0-dev.20230326   -> v0.37.0-dev.20230326
+ * [new tag]             v0.37.0-dev.20230327   -> v0.37.0-dev.20230327
+ * [new tag]             v0.37.0-dev.20230328   -> v0.37.0-dev.20230328
+ * [new tag]             v0.37.0-dev.20230329   -> v0.37.0-dev.20230329
+ * [new tag]             v0.37.0-dev.20230330   -> v0.37.0-dev.20230330
+ * [new tag]             v0.37.0-dev.20230403   -> v0.37.0-dev.20230403
+ * [new tag]             v0.37.0-dev.20230404   -> v0.37.0-dev.20230404
+ * [new tag]             v0.37.1                -> v0.37.1
+ * [new tag]             v0.38.0                -> v0.38.0
+ * [new tag]             v0.38.0-dev.20230405   -> v0.38.0-dev.20230405
+ * [new tag]             v0.38.0-dev.20230412   -> v0.38.0-dev.20230412
+ * [new tag]             v0.38.0-dev.20230414   -> v0.38.0-dev.20230414
+ * [new tag]             v0.38.0-dev.20230415   -> v0.38.0-dev.20230415
+ * [new tag]             v0.38.0-dev.20230416   -> v0.38.0-dev.20230416
+ * [new tag]             v0.38.0-dev.20230417   -> v0.38.0-dev.20230417
+ * [new tag]             v0.38.0-dev.20230418   -> v0.38.0-dev.20230418
+ * [new tag]             v0.38.0-dev.20230420   -> v0.38.0-dev.20230420
+ * [new tag]             v0.38.0-dev.20230422   -> v0.38.0-dev.20230422
+ * [new tag]             v0.38.0-dev.20230423   -> v0.38.0-dev.20230423
+ * [new tag]             v0.38.0-dev.20230424   -> v0.38.0-dev.20230424
+ * [new tag]             v0.38.0-dev.20230427   -> v0.38.0-dev.20230427
+ * [new tag]             v0.38.0-dev.20230428   -> v0.38.0-dev.20230428
+ * [new tag]             v0.38.0-dev.20230429   -> v0.38.0-dev.20230429
+ * [new tag]             v0.38.0-dev.20230430   -> v0.38.0-dev.20230430
+ * [new tag]             v0.38.0-dev.20230501   -> v0.38.0-dev.20230501
+ * [new tag]             v0.38.0-dev.20230502   -> v0.38.0-dev.20230502
+ * [new tag]             v0.39.0                -> v0.39.0
+ * [new tag]             v0.39.0-dev.20230503   -> v0.39.0-dev.20230503
+ * [new tag]             v0.39.0-dev.20230504   -> v0.39.0-dev.20230504
+ * [new tag]             v0.39.0-dev.20230505   -> v0.39.0-dev.20230505
+ * [new tag]             v0.39.0-dev.20230506   -> v0.39.0-dev.20230506
+ * [new tag]             v0.39.0-dev.20230507   -> v0.39.0-dev.20230507
+ * [new tag]             v0.39.0-dev.20230508   -> v0.39.0-dev.20230508
+ * [new tag]             v0.39.0-dev.20230509   -> v0.39.0-dev.20230509
+ * [new tag]             v0.39.0-dev.20230510   -> v0.39.0-dev.20230510
+ * [new tag]             v0.39.0-dev.20230511   -> v0.39.0-dev.20230511
+ * [new tag]             v0.39.0-dev.20230512   -> v0.39.0-dev.20230512
+ * [new tag]             v0.39.0-dev.20230513   -> v0.39.0-dev.20230513
+ * [new tag]             v0.39.0-dev.20230514   -> v0.39.0-dev.20230514
+ * [new tag]             v0.39.0-dev.20230515   -> v0.39.0-dev.20230515
+ * [new tag]             v0.39.0-dev.20230516   -> v0.39.0-dev.20230516
+ * [new tag]             v0.39.0-dev.20230518   -> v0.39.0-dev.20230518
+ * [new tag]             v0.39.0-dev.20230519   -> v0.39.0-dev.20230519
+ * [new tag]             v0.39.0-dev.20230520   -> v0.39.0-dev.20230520
+ * [new tag]             v0.39.0-dev.20230521   -> v0.39.0-dev.20230521
+ * [new tag]             v0.39.0-dev.20230522   -> v0.39.0-dev.20230522
+ * [new tag]             v0.39.0-dev.20230523   -> v0.39.0-dev.20230523
+ * [new tag]             v0.39.0-dev.20230524   -> v0.39.0-dev.20230524
+ * [new tag]             v0.39.0-dev.20230525   -> v0.39.0-dev.20230525
+ * [new tag]             v0.39.0-dev.20230526   -> v0.39.0-dev.20230526
+ * [new tag]             v0.39.0-dev.20230527   -> v0.39.0-dev.20230527
+ * [new tag]             v0.39.0-dev.20230528   -> v0.39.0-dev.20230528
+ * [new tag]             v0.39.0-dev.20230529   -> v0.39.0-dev.20230529
+ * [new tag]             v0.39.0-dev.20230530   -> v0.39.0-dev.20230530
+ * [new tag]             v0.39.0-dev.20230601   -> v0.39.0-dev.20230601
+ * [new tag]             v0.39.0-dev.20230606   -> v0.39.0-dev.20230606
+ * [new tag]             v0.39.0-rc2            -> v0.39.0-rc2
+ * [new tag]             v0.4.0                 -> v0.4.0
+ * [new tag]             v0.40.0                -> v0.40.0
+ * [new tag]             v0.40.0-dev.20230607   -> v0.40.0-dev.20230607
+ * [new tag]             v0.40.0-dev.20230608   -> v0.40.0-dev.20230608
+ * [new tag]             v0.40.0-dev.20230609   -> v0.40.0-dev.20230609
+ * [new tag]             v0.40.0-dev.20230610   -> v0.40.0-dev.20230610
+ * [new tag]             v0.40.0-dev.20230611   -> v0.40.0-dev.20230611
+ * [new tag]             v0.40.0-dev.20230612   -> v0.40.0-dev.20230612
+ * [new tag]             v0.40.0-dev.20230613   -> v0.40.0-dev.20230613
+ * [new tag]             v0.40.0-dev.20230614   -> v0.40.0-dev.20230614
+ * [new tag]             v0.40.0-dev.20230615   -> v0.40.0-dev.20230615
+ * [new tag]             v0.40.0-dev.20230616   -> v0.40.0-dev.20230616
+ * [new tag]             v0.40.0-dev.20230617   -> v0.40.0-dev.20230617
+ * [new tag]             v0.40.0-dev.20230618   -> v0.40.0-dev.20230618
+ * [new tag]             v0.40.0-dev.20230619   -> v0.40.0-dev.20230619
+ * [new tag]             v0.40.0-dev.20230620   -> v0.40.0-dev.20230620
+ * [new tag]             v0.40.0-dev.20230621   -> v0.40.0-dev.20230621
+ * [new tag]             v0.40.0-dev.20230622   -> v0.40.0-dev.20230622
+ * [new tag]             v0.40.0-dev.20230623   -> v0.40.0-dev.20230623
+ * [new tag]             v0.40.0-dev.20230624   -> v0.40.0-dev.20230624
+ * [new tag]             v0.40.0-dev.20230625   -> v0.40.0-dev.20230625
+ * [new tag]             v0.40.0-dev.20230626   -> v0.40.0-dev.20230626
+ * [new tag]             v0.40.0-dev.20230628   -> v0.40.0-dev.20230628
+ * [new tag]             v0.40.0-dev.20230629   -> v0.40.0-dev.20230629
+ * [new tag]             v0.40.0-dev.20230630   -> v0.40.0-dev.20230630
+ * [new tag]             v0.40.0-dev.20230701   -> v0.40.0-dev.20230701
+ * [new tag]             v0.40.0-dev.20230702   -> v0.40.0-dev.20230702
+ * [new tag]             v0.40.0-dev.20230703   -> v0.40.0-dev.20230703
+ * [new tag]             v0.40.0-dev.20230704   -> v0.40.0-dev.20230704
+ * [new tag]             v0.40.0-dev.20230705   -> v0.40.0-dev.20230705
+ * [new tag]             v0.40.0-dev.20230706   -> v0.40.0-dev.20230706
+ * [new tag]             v0.40.0-dev.20230707   -> v0.40.0-dev.20230707
+ * [new tag]             v0.41.0                -> v0.41.0
+ * [new tag]             v0.41.0-dev-20230731   -> v0.41.0-dev-20230731
+ * [new tag]             v0.41.0-dev-20230801   -> v0.41.0-dev-20230801
+ * [new tag]             v0.41.0-dev-20230802   -> v0.41.0-dev-20230802
+ * [new tag]             v0.41.0-dev-20230803   -> v0.41.0-dev-20230803
+ * [new tag]             v0.41.0-dev.20230708   -> v0.41.0-dev.20230708
+ * [new tag]             v0.41.0-dev.20230709   -> v0.41.0-dev.20230709
+ * [new tag]             v0.41.0-dev.20230710   -> v0.41.0-dev.20230710
+ * [new tag]             v0.41.0-dev.20230711   -> v0.41.0-dev.20230711
+ * [new tag]             v0.41.0-dev.20230712   -> v0.41.0-dev.20230712
+ * [new tag]             v0.41.0-dev.20230713   -> v0.41.0-dev.20230713
+ * [new tag]             v0.41.0-dev.20230714   -> v0.41.0-dev.20230714
+ * [new tag]             v0.41.0-dev.20230715   -> v0.41.0-dev.20230715
+ * [new tag]             v0.41.0-dev.20230716   -> v0.41.0-dev.20230716
+ * [new tag]             v0.41.0-dev.20230717   -> v0.41.0-dev.20230717
+ * [new tag]             v0.41.0-dev.20230718   -> v0.41.0-dev.20230718
+ * [new tag]             v0.41.0-dev.20230719   -> v0.41.0-dev.20230719
+ * [new tag]             v0.41.0-dev.20230727   -> v0.41.0-dev.20230727
+ * [new tag]             v0.41.0-rc1            -> v0.41.0-rc1
+ * [new tag]             v0.42.0-dev-20230804   -> v0.42.0-dev-20230804
+ * [new tag]             v0.42.0-dev-20230805   -> v0.42.0-dev-20230805
+ * [new tag]             v0.42.0-dev-20230806   -> v0.42.0-dev-20230806
+ * [new tag]             v0.42.0-dev-20230807   -> v0.42.0-dev-20230807
+ * [new tag]             v0.42.0-dev-20230808   -> v0.42.0-dev-20230808
+ * [new tag]             v0.42.0-dev-20230809   -> v0.42.0-dev-20230809
+ * [new tag]             v0.42.0-dev-20230817   -> v0.42.0-dev-20230817
+ * [new tag]             v0.42.0-dev-20230818   -> v0.42.0-dev-20230818
+ * [new tag]             v0.42.0-dev-20230819   -> v0.42.0-dev-20230819
+ * [new tag]             v0.42.0-dev-20230820   -> v0.42.0-dev-20230820
+ * [new tag]             v0.42.0-dev-20230822   -> v0.42.0-dev-20230822
+ * [new tag]             v0.42.0-dev-20230823   -> v0.42.0-dev-20230823
+ * [new tag]             v0.42.0-dev-20230824   -> v0.42.0-dev-20230824
+ * [new tag]             v0.42.0-dev-20230825   -> v0.42.0-dev-20230825
+ * [new tag]             v0.42.0-dev-20230826   -> v0.42.0-dev-20230826
+ * [new tag]             v0.42.0-dev-20230827   -> v0.42.0-dev-20230827
+ * [new tag]             v0.42.0-dev-20230828   -> v0.42.0-dev-20230828
+ * [new tag]             v0.42.0-dev-20230829   -> v0.42.0-dev-20230829
+ * [new tag]             v0.42.0-dev-20230830   -> v0.42.0-dev-20230830
+ * [new tag]             v0.42.0-dev-20230831   -> v0.42.0-dev-20230831
+ * [new tag]             v0.42.0-dev-20230901   -> v0.42.0-dev-20230901
+ * [new tag]             v0.42.0-dev-20230902   -> v0.42.0-dev-20230902
+ * [new tag]             v0.42.0-dev-20230903   -> v0.42.0-dev-20230903
+ * [new tag]             v0.42.0-dev-20230904   -> v0.42.0-dev-20230904
+ * [new tag]             v0.42.0-dev-20230905   -> v0.42.0-dev-20230905
+ * [new tag]             v0.42.0-dev-20230906   -> v0.42.0-dev-20230906
+ * [new tag]             v0.42.0-dev-20230908   -> v0.42.0-dev-20230908
+ * [new tag]             v0.42.0-dev-20230909   -> v0.42.0-dev-20230909
+ * [new tag]             v0.42.0-dev-20230910   -> v0.42.0-dev-20230910
+ * [new tag]             v0.42.0-dev-20230911   -> v0.42.0-dev-20230911
+ * [new tag]             v0.42.0-rc1            -> v0.42.0-rc1
+ * [new tag]             v0.43.0                -> v0.43.0
+ * [new tag]             v0.44.0                -> v0.44.0
+ * [new tag]             v0.44.0-dev-20230912   -> v0.44.0-dev-20230912
+ * [new tag]             v0.44.0-dev-20230913   -> v0.44.0-dev-20230913
+ * [new tag]             v0.44.0-dev-20230914   -> v0.44.0-dev-20230914
+ * [new tag]             v0.44.0-dev-20230915   -> v0.44.0-dev-20230915
+ * [new tag]             v0.44.0-dev-20230916   -> v0.44.0-dev-20230916
+ * [new tag]             v0.44.0-dev-20230917   -> v0.44.0-dev-20230917
+ * [new tag]             v0.44.0-dev-20230918   -> v0.44.0-dev-20230918
+ * [new tag]             v0.44.0-dev-20230919   -> v0.44.0-dev-20230919
+ * [new tag]             v0.44.0-dev-20230920   -> v0.44.0-dev-20230920
+ * [new tag]             v0.44.0-dev-20230921   -> v0.44.0-dev-20230921
+ * [new tag]             v0.44.0-dev-20230922   -> v0.44.0-dev-20230922
+ * [new tag]             v0.44.0-dev-20230923   -> v0.44.0-dev-20230923
+ * [new tag]             v0.44.0-dev-20230924   -> v0.44.0-dev-20230924
+ * [new tag]             v0.44.0-dev-20230925   -> v0.44.0-dev-20230925
+ * [new tag]             v0.44.0-dev-20230926   -> v0.44.0-dev-20230926
+ * [new tag]             v0.44.0-dev-20230927   -> v0.44.0-dev-20230927
+ * [new tag]             v0.44.0-dev-20230928   -> v0.44.0-dev-20230928
+ * [new tag]             v0.44.0-dev-20230929   -> v0.44.0-dev-20230929
+ * [new tag]             v0.44.0-dev-20230930   -> v0.44.0-dev-20230930
+ * [new tag]             v0.44.0-dev-20231001   -> v0.44.0-dev-20231001
+ * [new tag]             v0.44.0-dev-20231002   -> v0.44.0-dev-20231002
+ * [new tag]             v0.44.0-dev-20231003   -> v0.44.0-dev-20231003
+ * [new tag]             v0.44.0-dev-20231004   -> v0.44.0-dev-20231004
+ * [new tag]             v0.44.0-dev-20231005   -> v0.44.0-dev-20231005
+ * [new tag]             v0.44.0-rc1            -> v0.44.0-rc1
+ * [new tag]             v0.45.0                -> v0.45.0
+ * [new tag]             v0.45.0-dev-20231006   -> v0.45.0-dev-20231006
+ * [new tag]             v0.45.0-dev-20231007   -> v0.45.0-dev-20231007
+ * [new tag]             v0.45.0-dev-20231008   -> v0.45.0-dev-20231008
+ * [new tag]             v0.45.0-dev-20231009   -> v0.45.0-dev-20231009
+ * [new tag]             v0.45.0-dev-20231010   -> v0.45.0-dev-20231010
+ * [new tag]             v0.45.0-dev-20231011   -> v0.45.0-dev-20231011
+ * [new tag]             v0.45.0-dev-20231012   -> v0.45.0-dev-20231012
+ * [new tag]             v0.45.0-dev-20231013   -> v0.45.0-dev-20231013
+ * [new tag]             v0.45.0-dev-20231014   -> v0.45.0-dev-20231014
+ * [new tag]             v0.45.0-dev-20231015   -> v0.45.0-dev-20231015
+ * [new tag]             v0.45.0-dev-20231016   -> v0.45.0-dev-20231016
+ * [new tag]             v0.45.0-dev-20231017   -> v0.45.0-dev-20231017
+ * [new tag]             v0.45.0-dev-20231019   -> v0.45.0-dev-20231019
+ * [new tag]             v0.45.0-dev-20231020   -> v0.45.0-dev-20231020
+ * [new tag]             v0.45.0-dev-20231021   -> v0.45.0-dev-20231021
+ * [new tag]             v0.45.0-dev-20231022   -> v0.45.0-dev-20231022
+ * [new tag]             v0.45.0-dev-20231023   -> v0.45.0-dev-20231023
+ * [new tag]             v0.45.0-dev-20231024   -> v0.45.0-dev-20231024
+ * [new tag]             v0.45.0-dev-20231025   -> v0.45.0-dev-20231025
+ * [new tag]             v0.45.0-dev-20231117   -> v0.45.0-dev-20231117
+ * [new tag]             v0.45.0-dev-20231118   -> v0.45.0-dev-20231118
+ * [new tag]             v0.45.0-dev-20231119   -> v0.45.0-dev-20231119
+ * [new tag]             v0.45.0-dev-20231120   -> v0.45.0-dev-20231120
+ * [new tag]             v0.45.0-dev-20231121   -> v0.45.0-dev-20231121
+ * [new tag]             v0.45.0-dev-20231122   -> v0.45.0-dev-20231122
+ * [new tag]             v0.45.0-dev-20231123   -> v0.45.0-dev-20231123
+ * [new tag]             v0.45.0-dev-20231124   -> v0.45.0-dev-20231124
+ * [new tag]             v0.45.0-dev-20231125   -> v0.45.0-dev-20231125
+ * [new tag]             v0.45.0-dev-20231126   -> v0.45.0-dev-20231126
+ * [new tag]             v0.45.0-dev-20231127   -> v0.45.0-dev-20231127
+ * [new tag]             v0.45.0-dev-20231128   -> v0.45.0-dev-20231128
+ * [new tag]             v0.45.0-dev-20231130   -> v0.45.0-dev-20231130
+ * [new tag]             v0.45.0-dev-20231201   -> v0.45.0-dev-20231201
+ * [new tag]             v0.45.0-dev-20231202   -> v0.45.0-dev-20231202
+ * [new tag]             v0.45.0-dev-20231203   -> v0.45.0-dev-20231203
+ * [new tag]             v0.45.0-dev-20231204   -> v0.45.0-dev-20231204
+ * [new tag]             v0.45.0-dev-20231205   -> v0.45.0-dev-20231205
+ * [new tag]             v0.45.0-dev-20231206   -> v0.45.0-dev-20231206
+ * [new tag]             v0.45.0-dev-20231207   -> v0.45.0-dev-20231207
+ * [new tag]             v0.45.0-rc             -> v0.45.0-rc
+ * [new tag]             v0.46.0                -> v0.46.0
+ * [new tag]             v0.46.0-dev-20231208   -> v0.46.0-dev-20231208
+ * [new tag]             v0.46.0-dev-20231209   -> v0.46.0-dev-20231209
+ * [new tag]             v0.46.0-dev-20231210   -> v0.46.0-dev-20231210
+ * [new tag]             v0.46.0-dev-20231211   -> v0.46.0-dev-20231211
+ * [new tag]             v0.46.0-dev-20231212   -> v0.46.0-dev-20231212
+ * [new tag]             v0.46.0-dev-20231213   -> v0.46.0-dev-20231213
+ * [new tag]             v0.46.0-dev-20231214   -> v0.46.0-dev-20231214
+ * [new tag]             v0.46.0-dev-20240109   -> v0.46.0-dev-20240109
+ * [new tag]             v0.46.0-dev-20240110   -> v0.46.0-dev-20240110
+ * [new tag]             v0.46.0-dev-20240111   -> v0.46.0-dev-20240111
+ * [new tag]             v0.46.0-dev-20240112   -> v0.46.0-dev-20240112
+ * [new tag]             v0.46.0-dev-20240113   -> v0.46.0-dev-20240113
+ * [new tag]             v0.46.0-dev-20240114   -> v0.46.0-dev-20240114
+ * [new tag]             v0.46.0-dev-20240115   -> v0.46.0-dev-20240115
+ * [new tag]             v0.46.0-dev-20240116   -> v0.46.0-dev-20240116
+ * [new tag]             v0.46.0-dev-20240117   -> v0.46.0-dev-20240117
+ * [new tag]             v0.46.0-dev-20240118   -> v0.46.0-dev-20240118
+ * [new tag]             v0.46.0-dev-20240119   -> v0.46.0-dev-20240119
+ * [new tag]             v0.46.0-dev-20240120   -> v0.46.0-dev-20240120
+ * [new tag]             v0.46.0-dev-20240121   -> v0.46.0-dev-20240121
+ * [new tag]             v0.46.0-dev-20240122   -> v0.46.0-dev-20240122
+ * [new tag]             v0.46.0-dev-20240123   -> v0.46.0-dev-20240123
+ * [new tag]             v0.46.0-dev-20240124   -> v0.46.0-dev-20240124
+ * [new tag]             v0.46.0-dev-20240125   -> v0.46.0-dev-20240125
+ * [new tag]             v0.46.0-dev-20240126   -> v0.46.0-dev-20240126
+ * [new tag]             v0.46.0-dev-20240127   -> v0.46.0-dev-20240127
+ * [new tag]             v0.46.0-dev-20240128   -> v0.46.0-dev-20240128
+ * [new tag]             v0.46.0-dev-20240129   -> v0.46.0-dev-20240129
+ * [new tag]             v0.46.0-dev-20240130   -> v0.46.0-dev-20240130
+ * [new tag]             v0.46.0-dev-20240131   -> v0.46.0-dev-20240131
+ * [new tag]             v0.46.0-dev-20240201   -> v0.46.0-dev-20240201
+ * [new tag]             v0.46.0-dev-20240202   -> v0.46.0-dev-20240202
+ * [new tag]             v0.46.0-dev-20240207   -> v0.46.0-dev-20240207
+ * [new tag]             v0.46.0-rc             -> v0.46.0-rc
+ * [new tag]             v0.47.0                -> v0.47.0
+ * [new tag]             v0.47.0-dev-20240208   -> v0.47.0-dev-20240208
+ * [new tag]             v0.47.0-dev-20240209   -> v0.47.0-dev-20240209
+ * [new tag]             v0.47.0-dev-20240210   -> v0.47.0-dev-20240210
+ * [new tag]             v0.47.0-dev-20240211   -> v0.47.0-dev-20240211
+ * [new tag]             v0.47.0-dev-20240212   -> v0.47.0-dev-20240212
+ * [new tag]             v0.47.0-dev-20240213   -> v0.47.0-dev-20240213
+ * [new tag]             v0.47.0-dev-20240214   -> v0.47.0-dev-20240214
+ * [new tag]             v0.47.0-dev-20240215   -> v0.47.0-dev-20240215
+ * [new tag]             v0.47.0-dev-20240216   -> v0.47.0-dev-20240216
+ * [new tag]             v0.47.0-dev-20240217   -> v0.47.0-dev-20240217
+ * [new tag]             v0.47.0-dev-20240218   -> v0.47.0-dev-20240218
+ * [new tag]             v0.47.0-dev-20240219   -> v0.47.0-dev-20240219
+ * [new tag]             v0.47.0-dev-20240220   -> v0.47.0-dev-20240220
+ * [new tag]             v0.47.0-dev-20240221   -> v0.47.0-dev-20240221
+ * [new tag]             v0.47.0-dev-20240222   -> v0.47.0-dev-20240222
+ * [new tag]             v0.47.0-dev-20240223   -> v0.47.0-dev-20240223
+ * [new tag]             v0.47.0-dev-20240224   -> v0.47.0-dev-20240224
+ * [new tag]             v0.47.0-dev-20240225   -> v0.47.0-dev-20240225
+ * [new tag]             v0.47.0-dev-20240227   -> v0.47.0-dev-20240227
+ * [new tag]             v0.47.0-dev-20240228   -> v0.47.0-dev-20240228
+ * [new tag]             v0.47.0-dev-20240229   -> v0.47.0-dev-20240229
+ * [new tag]             v0.47.0-dev-20240301   -> v0.47.0-dev-20240301
+ * [new tag]             v0.47.0-dev-20240302   -> v0.47.0-dev-20240302
+ * [new tag]             v0.47.0-dev-20240303   -> v0.47.0-dev-20240303
+ * [new tag]             v0.47.0-dev-20240304   -> v0.47.0-dev-20240304
+ * [new tag]             v0.47.0-dev-20240305   -> v0.47.0-dev-20240305
+ * [new tag]             v0.47.0-dev-20240306   -> v0.47.0-dev-20240306
+ * [new tag]             v0.47.0-dev-20240307   -> v0.47.0-dev-20240307
+ * [new tag]             v0.47.0-dev-20240308   -> v0.47.0-dev-20240308
+ * [new tag]             v0.47.0-rc             -> v0.47.0-rc
+ * [new tag]             v0.48.0                -> v0.48.0
+ * [new tag]             v0.48.0-dev-20240319   -> v0.48.0-dev-20240319
+ * [new tag]             v0.48.0-dev-20240320   -> v0.48.0-dev-20240320
+ * [new tag]             v0.48.0-dev-20240321   -> v0.48.0-dev-20240321
+ * [new tag]             v0.48.0-dev-20240322   -> v0.48.0-dev-20240322
+ * [new tag]             v0.48.0-dev-20240323   -> v0.48.0-dev-20240323
+ * [new tag]             v0.48.0-dev-20240324   -> v0.48.0-dev-20240324
+ * [new tag]             v0.48.0-dev-20240325   -> v0.48.0-dev-20240325
+ * [new tag]             v0.48.0-dev-20240327   -> v0.48.0-dev-20240327
+ * [new tag]             v0.48.0-dev-20240328   -> v0.48.0-dev-20240328
+ * [new tag]             v0.48.0-dev-20240329   -> v0.48.0-dev-20240329
+ * [new tag]             v0.48.0-dev-20240330   -> v0.48.0-dev-20240330
+ * [new tag]             v0.48.0-dev-20240331   -> v0.48.0-dev-20240331
+ * [new tag]             v0.48.0-dev-20240401   -> v0.48.0-dev-20240401
+ * [new tag]             v0.48.0-dev-20240402   -> v0.48.0-dev-20240402
+ * [new tag]             v0.48.0-dev-20240403   -> v0.48.0-dev-20240403
+ * [new tag]             v0.48.0-dev-20240404   -> v0.48.0-dev-20240404
+ * [new tag]             v0.48.0-dev-20240405   -> v0.48.0-dev-20240405
+ * [new tag]             v0.48.0-dev-20240406   -> v0.48.0-dev-20240406
+ * [new tag]             v0.48.0-dev-20240407   -> v0.48.0-dev-20240407
+ * [new tag]             v0.48.0-dev-20240408   -> v0.48.0-dev-20240408
+ * [new tag]             v0.48.0-dev-20240409   -> v0.48.0-dev-20240409
+ * [new tag]             v0.48.0-dev-20240410   -> v0.48.0-dev-20240410
+ * [new tag]             v0.48.0-dev-20240411   -> v0.48.0-dev-20240411
+ * [new tag]             v0.48.0-dev-20240412   -> v0.48.0-dev-20240412
+ * [new tag]             v0.48.0-dev-20240413   -> v0.48.0-dev-20240413
+ * [new tag]             v0.48.0-dev-20240414   -> v0.48.0-dev-20240414
+ * [new tag]             v0.48.0-dev-20240415   -> v0.48.0-dev-20240415
+ * [new tag]             v0.48.0-dev-20240416   -> v0.48.0-dev-20240416
+ * [new tag]             v0.48.0-dev-20240417   -> v0.48.0-dev-20240417
+ * [new tag]             v0.48.0-dev-20240418   -> v0.48.0-dev-20240418
+ * [new tag]             v0.48.0-dev-20240420   -> v0.48.0-dev-20240420
+ * [new tag]             v0.48.0-dev-20240421   -> v0.48.0-dev-20240421
+ * [new tag]             v0.48.0-rc             -> v0.48.0-rc
+ * [new tag]             v0.49.0                -> v0.49.0
+ * [new tag]             v0.49.0-dev-20240423   -> v0.49.0-dev-20240423
+ * [new tag]             v0.49.0-dev-20240424   -> v0.49.0-dev-20240424
+ * [new tag]             v0.49.0-dev-20240425   -> v0.49.0-dev-20240425
+ * [new tag]             v0.49.0-dev-20240426   -> v0.49.0-dev-20240426
+ * [new tag]             v0.49.0-dev-20240427   -> v0.49.0-dev-20240427
+ * [new tag]             v0.49.0-dev-20240428   -> v0.49.0-dev-20240428
+ * [new tag]             v0.49.0-dev-20240429   -> v0.49.0-dev-20240429
+ * [new tag]             v0.49.0-dev-20240430   -> v0.49.0-dev-20240430
+ * [new tag]             v0.49.0-dev-20240501   -> v0.49.0-dev-20240501
+ * [new tag]             v0.49.0-dev-20240502   -> v0.49.0-dev-20240502
+ * [new tag]             v0.49.0-dev-20240503   -> v0.49.0-dev-20240503
+ * [new tag]             v0.49.0-dev-20240504   -> v0.49.0-dev-20240504
+ * [new tag]             v0.49.0-dev-20240505   -> v0.49.0-dev-20240505
+ * [new tag]             v0.49.0-dev-20240506   -> v0.49.0-dev-20240506
+ * [new tag]             v0.49.0-dev-20240507   -> v0.49.0-dev-20240507
+ * [new tag]             v0.49.0-dev-20240508   -> v0.49.0-dev-20240508
+ * [new tag]             v0.49.0-dev-20240509   -> v0.49.0-dev-20240509
+ * [new tag]             v0.49.0-dev-20240510   -> v0.49.0-dev-20240510
+ * [new tag]             v0.49.0-dev-20240515   -> v0.49.0-dev-20240515
+ * [new tag]             v0.49.0-dev-20240516   -> v0.49.0-dev-20240516
+ * [new tag]             v0.49.0-dev-20240517   -> v0.49.0-dev-20240517
+ * [new tag]             v0.49.0-dev-20240518   -> v0.49.0-dev-20240518
+ * [new tag]             v0.49.0-dev-20240519   -> v0.49.0-dev-20240519
+ * [new tag]             v0.49.0-dev-20240520   -> v0.49.0-dev-20240520
+ * [new tag]             v0.49.0-dev-20240521   -> v0.49.0-dev-20240521
+ * [new tag]             v0.49.0-dev-20240522   -> v0.49.0-dev-20240522
+ * [new tag]             v0.49.0-dev-20240523   -> v0.49.0-dev-20240523
+ * [new tag]             v0.49.0-dev-20240524   -> v0.49.0-dev-20240524
+ * [new tag]             v0.49.0-rc             -> v0.49.0-rc
+ * [new tag]             v0.5.0                 -> v0.5.0
+ * [new tag]             v0.5.1                 -> v0.5.1
+ * [new tag]             v0.50.0                -> v0.50.0
+ * [new tag]             v0.50.0-dev-20240525   -> v0.50.0-dev-20240525
+ * [new tag]             v0.50.0-dev-20240526   -> v0.50.0-dev-20240526
+ * [new tag]             v0.50.0-dev-20240527   -> v0.50.0-dev-20240527
+ * [new tag]             v0.50.0-dev-20240528   -> v0.50.0-dev-20240528
+ * [new tag]             v0.50.0-dev-20240529   -> v0.50.0-dev-20240529
+ * [new tag]             v0.50.0-dev-20240530   -> v0.50.0-dev-20240530
+ * [new tag]             v0.50.0-dev-20240531   -> v0.50.0-dev-20240531
+ * [new tag]             v0.50.0-dev-20240601   -> v0.50.0-dev-20240601
+ * [new tag]             v0.50.0-dev-20240602   -> v0.50.0-dev-20240602
+ * [new tag]             v0.50.0-dev-20240603   -> v0.50.0-dev-20240603
+ * [new tag]             v0.50.0-dev-20240604   -> v0.50.0-dev-20240604
+ * [new tag]             v0.50.0-dev-20240605   -> v0.50.0-dev-20240605
+ * [new tag]             v0.50.0-dev-20240606   -> v0.50.0-dev-20240606
+ * [new tag]             v0.50.0-dev-20240607   -> v0.50.0-dev-20240607
+ * [new tag]             v0.50.0-dev-20240608   -> v0.50.0-dev-20240608
+ * [new tag]             v0.50.0-dev-20240609   -> v0.50.0-dev-20240609
+ * [new tag]             v0.50.0-dev-20240610   -> v0.50.0-dev-20240610
+ * [new tag]             v0.50.0-dev-20240611   -> v0.50.0-dev-20240611
+ * [new tag]             v0.50.0-dev-20240612   -> v0.50.0-dev-20240612
+ * [new tag]             v0.50.0-dev-20240613   -> v0.50.0-dev-20240613
+ * [new tag]             v0.50.0-dev-20240614   -> v0.50.0-dev-20240614
+ * [new tag]             v0.50.0-dev-20240615   -> v0.50.0-dev-20240615
+ * [new tag]             v0.50.0-dev-20240616   -> v0.50.0-dev-20240616
+ * [new tag]             v0.50.0-dev-20240617   -> v0.50.0-dev-20240617
+ * [new tag]             v0.50.0-dev-20240618   -> v0.50.0-dev-20240618
+ * [new tag]             v0.50.0-dev-20240619   -> v0.50.0-dev-20240619
+ * [new tag]             v0.50.0-dev-20240620   -> v0.50.0-dev-20240620
+ * [new tag]             v0.50.0-rc             -> v0.50.0-rc
+ * [new tag]             v0.51.0                -> v0.51.0
+ * [new tag]             v0.51.0-dev-20240621   -> v0.51.0-dev-20240621
+ * [new tag]             v0.51.0-dev-20240622   -> v0.51.0-dev-20240622
+ * [new tag]             v0.51.0-dev-20240623   -> v0.51.0-dev-20240623
+ * [new tag]             v0.51.0-dev-20240624   -> v0.51.0-dev-20240624
+ * [new tag]             v0.51.0-dev-20240625   -> v0.51.0-dev-20240625
+ * [new tag]             v0.51.0-dev-20240626   -> v0.51.0-dev-20240626
+ * [new tag]             v0.51.0-dev-20240627   -> v0.51.0-dev-20240627
+ * [new tag]             v0.51.0-dev-20240628   -> v0.51.0-dev-20240628
+ * [new tag]             v0.51.0-dev-20240726-2 -> v0.51.0-dev-20240726-2
+ * [new tag]             v0.51.0-dev-20240727   -> v0.51.0-dev-20240727
+ * [new tag]             v0.51.0-dev-20240728   -> v0.51.0-dev-20240728
+ * [new tag]             v0.51.0-dev-20240729   -> v0.51.0-dev-20240729
+ * [new tag]             v0.51.0-dev-20240730   -> v0.51.0-dev-20240730
+ * [new tag]             v0.51.0-dev-20240731   -> v0.51.0-dev-20240731
+ * [new tag]             v0.51.0-dev-20240801   -> v0.51.0-dev-20240801
+ * [new tag]             v0.51.0-dev-20240802   -> v0.51.0-dev-20240802
+ * [new tag]             v0.51.0-dev-20240803   -> v0.51.0-dev-20240803
+ * [new tag]             v0.51.0-dev-20240804   -> v0.51.0-dev-20240804
+ * [new tag]             v0.51.0-dev-20240805   -> v0.51.0-dev-20240805
+ * [new tag]             v0.51.0-dev-20240806   -> v0.51.0-dev-20240806
+ * [new tag]             v0.51.0-dev-20240807   -> v0.51.0-dev-20240807
+ * [new tag]             v0.51.0-rc             -> v0.51.0-rc
+ * [new tag]             v0.51.0-rc2            -> v0.51.0-rc2
+ * [new tag]             v0.51.0-rc3            -> v0.51.0-rc3
+ * [new tag]             v0.52.0                -> v0.52.0
+ * [new tag]             v0.52.0-rc2            -> v0.52.0-rc2
+ * [new tag]             v0.52.2                -> v0.52.2
+ * [new tag]             v0.53.0                -> v0.53.0
+ * [new tag]             v0.53.0-dev-20250828   -> v0.53.0-dev-20250828
+ * [new tag]             v0.53.0-dev-20250829   -> v0.53.0-dev-20250829
+ * [new tag]             v0.53.0-dev-20250830   -> v0.53.0-dev-20250830
+ * [new tag]             v0.53.0-dev-20250831   -> v0.53.0-dev-20250831
+ * [new tag]             v0.53.0-dev-20250901   -> v0.53.0-dev-20250901
+ * [new tag]             v0.53.0-dev-20250902   -> v0.53.0-dev-20250902
+ * [new tag]             v0.53.0-dev-20250903   -> v0.53.0-dev-20250903
+ * [new tag]             v0.53.0-dev-20250904   -> v0.53.0-dev-20250904
+ * [new tag]             v0.53.0-dev-20250906   -> v0.53.0-dev-20250906
+ * [new tag]             v0.53.0-dev-20250907   -> v0.53.0-dev-20250907
+ * [new tag]             v0.53.0-dev-20250908   -> v0.53.0-dev-20250908
+ * [new tag]             v0.53.0-rc2            -> v0.53.0-rc2
+ * [new tag]             v0.54.0                -> v0.54.0
+ * [new tag]             v0.54.0-dev-20250909   -> v0.54.0-dev-20250909
+ * [new tag]             v0.54.0-dev-20250910   -> v0.54.0-dev-20250910
+ * [new tag]             v0.54.0-dev-20250911   -> v0.54.0-dev-20250911
+ * [new tag]             v0.54.0-dev-20250912   -> v0.54.0-dev-20250912
+ * [new tag]             v0.54.0-dev-20250913   -> v0.54.0-dev-20250913
+ * [new tag]             v0.54.0-dev-20250914   -> v0.54.0-dev-20250914
+ * [new tag]             v0.54.0-dev-20250915   -> v0.54.0-dev-20250915
+ * [new tag]             v0.54.0-dev-20250916   -> v0.54.0-dev-20250916
+ * [new tag]             v0.54.0-dev-20250917   -> v0.54.0-dev-20250917
+ * [new tag]             v0.54.0-dev-20250918   -> v0.54.0-dev-20250918
+ * [new tag]             v0.54.0-dev-20250919   -> v0.54.0-dev-20250919
+ * [new tag]             v0.54.0-dev-20250922   -> v0.54.0-dev-20250922
+ * [new tag]             v0.54.0-dev-20250923   -> v0.54.0-dev-20250923
+ * [new tag]             v0.54.0-dev-20250924   -> v0.54.0-dev-20250924
+ * [new tag]             v0.54.0-dev-20250925   -> v0.54.0-dev-20250925
+ * [new tag]             v0.54.0-dev-20250926   -> v0.54.0-dev-20250926
+ * [new tag]             v0.54.0-dev-20250928   -> v0.54.0-dev-20250928
+ * [new tag]             v0.54.0-dev-20250929   -> v0.54.0-dev-20250929
+ * [new tag]             v0.54.0-dev-20250930   -> v0.54.0-dev-20250930
+ * [new tag]             v0.54.0-dev-20251001   -> v0.54.0-dev-20251001
+ * [new tag]             v0.54.0-dev-20251002   -> v0.54.0-dev-20251002
+ * [new tag]             v0.54.0-dev-20251003   -> v0.54.0-dev-20251003
+ * [new tag]             v0.54.0-dev-20251004   -> v0.54.0-dev-20251004
+ * [new tag]             v0.54.0-dev-20251005   -> v0.54.0-dev-20251005
+ * [new tag]             v0.54.0-dev-20251006   -> v0.54.0-dev-20251006
+ * [new tag]             v0.55.0                -> v0.55.0
+ * [new tag]             v0.55.0-dev-20251007   -> v0.55.0-dev-20251007
+ * [new tag]             v0.55.0-dev-20251008   -> v0.55.0-dev-20251008
+ * [new tag]             v0.55.0-dev-20251009   -> v0.55.0-dev-20251009
+ * [new tag]             v0.55.0-dev-20251010   -> v0.55.0-dev-20251010
+ * [new tag]             v0.55.0-dev-20251010.1 -> v0.55.0-dev-20251010.1
+ * [new tag]             v0.55.0-dev-20251011   -> v0.55.0-dev-20251011
+ * [new tag]             v0.55.0-dev-20251012   -> v0.55.0-dev-20251012
+ * [new tag]             v0.55.0-dev-20251013   -> v0.55.0-dev-20251013
+ * [new tag]             v0.55.0-dev-20251014   -> v0.55.0-dev-20251014
+ * [new tag]             v0.55.0-dev-20251015   -> v0.55.0-dev-20251015
+ * [new tag]             v0.55.0-dev-20251016   -> v0.55.0-dev-20251016
+ * [new tag]             v0.55.0-dev-20251017   -> v0.55.0-dev-20251017
+ * [new tag]             v0.55.0-dev-20251018   -> v0.55.0-dev-20251018
+ * [new tag]             v0.55.0-dev-20251019   -> v0.55.0-dev-20251019
+ * [new tag]             v0.55.0-dev-20251020   -> v0.55.0-dev-20251020
+ * [new tag]             v0.55.0-dev-20251021   -> v0.55.0-dev-20251021
+ * [new tag]             v0.55.0-dev-20251022   -> v0.55.0-dev-20251022
+ * [new tag]             v0.55.0-dev-20251023   -> v0.55.0-dev-20251023
+ * [new tag]             v0.55.0-dev-20251024   -> v0.55.0-dev-20251024
+ * [new tag]             v0.55.0-dev-20251025   -> v0.55.0-dev-20251025
+ * [new tag]             v0.55.0-dev-20251026   -> v0.55.0-dev-20251026
+ * [new tag]             v0.55.0-dev-20251027   -> v0.55.0-dev-20251027
+ * [new tag]             v0.55.0-dev-20251028   -> v0.55.0-dev-20251028
+ * [new tag]             v0.55.0-dev-20251029   -> v0.55.0-dev-20251029
+ * [new tag]             v0.55.0-dev-20251030   -> v0.55.0-dev-20251030
+ * [new tag]             v0.55.0-dev-20251031   -> v0.55.0-dev-20251031
+ * [new tag]             v0.55.0-dev-20251101   -> v0.55.0-dev-20251101
+ * [new tag]             v0.55.0-dev-20251102   -> v0.55.0-dev-20251102
+ * [new tag]             v0.55.0-dev-20251103   -> v0.55.0-dev-20251103
+ * [new tag]             v0.55.0-dev-20251104   -> v0.55.0-dev-20251104
+ * [new tag]             v0.55.0-dev-20251105   -> v0.55.0-dev-20251105
+ * [new tag]             v0.55.0-dev-20251106   -> v0.55.0-dev-20251106
+ * [new tag]             v0.55.0-dev-20251107   -> v0.55.0-dev-20251107
+ * [new tag]             v0.55.0-rc             -> v0.55.0-rc
+ * [new tag]             v0.55.1                -> v0.55.1
+ * [new tag]             v0.56.0                -> v0.56.0
+ * [new tag]             v0.56.0-dev-20260113   -> v0.56.0-dev-20260113
+ * [new tag]             v0.56.0-dev-20260116   -> v0.56.0-dev-20260116
+ * [new tag]             v0.56.0-dev-20260117   -> v0.56.0-dev-20260117
+ * [new tag]             v0.56.0-dev-20260118   -> v0.56.0-dev-20260118
+ * [new tag]             v0.56.0-dev-20260119   -> v0.56.0-dev-20260119
+ * [new tag]             v0.56.0-dev-20260120   -> v0.56.0-dev-20260120
+ * [new tag]             v0.56.0-dev-20260121   -> v0.56.0-dev-20260121
+ * [new tag]             v0.56.0-dev-20260122   -> v0.56.0-dev-20260122
+ * [new tag]             v0.56.0-dev-20260123   -> v0.56.0-dev-20260123
+ * [new tag]             v0.56.0-dev-20260124   -> v0.56.0-dev-20260124
+ * [new tag]             v0.56.0-dev-20260125   -> v0.56.0-dev-20260125
+ * [new tag]             v0.56.0-dev-20260126   -> v0.56.0-dev-20260126
+ * [new tag]             v0.56.0-dev-20260127   -> v0.56.0-dev-20260127
+ * [new tag]             v0.56.0-dev-20260128   -> v0.56.0-dev-20260128
+ * [new tag]             v0.56.0-dev-20260204   -> v0.56.0-dev-20260204
+ * [new tag]             v0.56.0-dev-20260205   -> v0.56.0-dev-20260205
+ * [new tag]             v0.56.0-dev-20260206   -> v0.56.0-dev-20260206
+ * [new tag]             v0.56.0-dev-20260210   -> v0.56.0-dev-20260210
+ * [new tag]             v0.56.0-dev-20260211   -> v0.56.0-dev-20260211
+ * [new tag]             v0.56.0-dev-20260625   -> v0.56.0-dev-20260625
+ * [new tag]             v0.57.0                -> v0.57.0
+ * [new tag]             v0.57.0-rc.2           -> v0.57.0-rc.2
+ * [new tag]             v0.6.0                 -> v0.6.0
+ * [new tag]             v0.6.1                 -> v0.6.1
+ * [new tag]             v0.8.0                 -> v0.8.0
+ * [new tag]             v0.8.1                 -> v0.8.1
+ * [new tag]             v0.8.2                 -> v0.8.2
+ * [new tag]             v0.8.3                 -> v0.8.3
+ * [new tag]             v0.9.0                 -> v0.9.0
+
+Exit Code: 1

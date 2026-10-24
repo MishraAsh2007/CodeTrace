@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "1.0.0",
+  "dataModelVersion": 1,
+  "id": "sess_2c718173-bfe3-48f0-aca6-b622f5204683",
+  "title": "Pull Monaco Editor Into Repository",
+  "agentMode": "vibe",
+  "workspacePaths": [
+    "c:\\Users\\ash7m\\hackachusetts\\Hackachusetts_CodeTutor"
+  ],
+  "rootPaths": [
+    "c:\\Users\\ash7m\\hackachusetts\\Hackachusetts_CodeTutor"
+  ],
+  "createdAt": "2026-10-24T13:29:40.784Z",
+  "lastModifiedAt": "2026-10-24T23:25:53.986Z",
+  "modelId": "auto",
+  "autopilot": false,
+  "workflowLaunch": "when-asked",
+  "contextSnapshotModelDisplay": {
+    "modelId": "auto",
+    "display": "Auto (model selected dynamically on the server)"
+  },
+  "semanticReviewEnabled": true,
+  "disableAutoCompaction": false,
+  "ftaEnabled": false,
+  "workflowsEnabled": false,
+  "specPlanEnabled": false,
+  "specWorkflow": "quick",
+  "specSkipClarificationEnabled": true,
+  "memoryConfig": {
+    "mode": "disabled",
+    "reflection": false
+  },
+  "memoryConfigSource": "explicit",
+  "status": "idle",
+  "_meta": {
+    "kiro": {
+      "policyPreset": [
+        "edit-workspace"
+      ],
+      "shellType": "powershell",
+      "settings": {
+        "workflows": {
+          "enabled": false
+        },
+        "goal": {
+          "enabled": false
+        },
+        "memory": {
+          "mode": "disabled",
+          "reflection": false
+        }
+      }
+    }
+  }
+}

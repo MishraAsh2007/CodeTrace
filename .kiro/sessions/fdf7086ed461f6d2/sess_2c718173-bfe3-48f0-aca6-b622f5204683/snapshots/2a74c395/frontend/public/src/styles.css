@@ -1,0 +1,218 @@
+:root {
+  --bg: #1e1e1e;
+  --panel-bg: #252526;
+  --border: #333;
+  --text: #e4e4e4;
+  --muted: #9a9a9a;
+  --accent: #0e8adb;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app__header {
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.app__brand {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+.app__tagline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.app__main {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Split the screen in half: editor left, analysis right. */
+.workspace {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace__left {
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+
+.workspace__right {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Editor */
+.code-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.code-editor__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+}
+
+.code-editor__lang {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.code-editor__lang select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+}
+
+.code-editor__run {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.35rem 1rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.code-editor__run:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.code-editor__surface {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Panels on the right */
+.panel {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.panel__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.panel__meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.visualization-panel {
+  flex: 1;
+  min-height: 200px;
+}
+
+.visualization-panel__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  height: 100%;
+  min-height: 160px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.tutor-panel__question {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  background: rgba(14, 138, 219, 0.12);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+}
+
+.alert-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.alert {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.88rem;
+}
+
+.alert--error {
+  background: rgba(220, 70, 70, 0.14);
+}
+
+.alert--warning {
+  background: rgba(220, 180, 70, 0.14);
+}
+
+.alert--info {
+  background: rgba(70, 150, 220, 0.14);
+}
+
+.alert__line {
+  color: var(--muted);
+  flex-shrink: 0;
+}

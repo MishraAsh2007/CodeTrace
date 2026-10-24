@@ -1,0 +1,782 @@
+:root {
+  --bg: #1e1e1e;
+  --panel-bg: #252526;
+  --border: #333;
+  --text: #e4e4e4;
+  --muted: #9a9a9a;
+  --accent: #0e8adb;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app__header {
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+/* Panel show/hide toggles, pinned to the right of the header. */
+.app__toggles {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.app__toggle {
+  background: var(--panel-bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.app__toggle:hover {
+  border-color: var(--accent);
+}
+
+.app__toggle--on {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.app__brand {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+.app__tagline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.app__main {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Editor left, analysis right, with draggable splitters between panes. Flex
+   lets panes grow/shrink via flex-basis set from the splitter drag state. */
+.workspace {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace__left {
+  min-width: 0;
+  min-height: 0;
+  flex: 0 1 50%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Thin draggable divider between two panes. */
+.splitter {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: var(--border);
+  align-self: stretch;
+}
+
+.splitter:hover {
+  background: var(--accent);
+}
+
+/* While dragging a splitter, kill text selection and show the resize cursor
+   everywhere so the drag feels smooth even off the 5px handle. */
+body.is-col-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* Right side: visualizer + tutor row on top, problems list beneath. */
+.workspace__right {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The side-by-side row of visualizer and tutor. */
+.workspace__panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.workspace__viz,
+.workspace__tutor {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.workspace__tutor {
+  border-left: 1px solid var(--border);
+}
+
+/* Problems list stays visible beneath the panels. */
+.workspace__problems {
+  flex: 0 0 auto;
+  max-height: 30%;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+/* Editor takes the remaining space above the console. */
+.workspace__editor {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Console sits at the bottom-left with a fixed share of the height. */
+.workspace__console {
+  flex: 0 0 32%;
+  min-height: 120px;
+  border-top: 1px solid var(--border);
+  display: flex;
+}
+
+/* Editor */
+.code-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.code-editor__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+}
+
+.code-editor__lang {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.code-editor__lang select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+}
+
+.code-editor__run {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.35rem 1rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.code-editor__run:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.code-editor__surface {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Panels on the right */
+.panel {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.panel__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.panel__meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.visualization-panel {
+  flex: 1;
+  min-height: 200px;
+}
+
+.visualization-panel__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  height: 100%;
+  min-height: 160px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.tutor-panel__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #e8b84b;
+}
+
+.tutor-panel__hints {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tutor-panel__hint-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.tutor-panel__hint-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.tutor-panel__question {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  background: rgba(14, 138, 219, 0.12);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.tutor-panel__more {
+  margin-top: 0.6rem;
+  background: var(--panel-bg);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.tutor-panel__more:hover {
+  background: rgba(14, 138, 219, 0.15);
+}
+
+.tutor-panel__done {
+  margin: 0.6rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.alert-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.alert {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.88rem;
+}
+
+.alert--error {
+  background: rgba(220, 70, 70, 0.14);
+}
+
+.alert--warning {
+  background: rgba(220, 180, 70, 0.14);
+}
+
+.alert--info {
+  background: rgba(70, 150, 220, 0.14);
+}
+
+.alert__line {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ---- Visualizer ---------------------------------------------------------- */
+
+.visualization-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.viz-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.viz-controls__row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.viz-controls button {
+  background: var(--panel-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.viz-controls button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.viz-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.viz-controls__play {
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.viz-controls__speed {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.viz-controls__reset {
+  font-weight: 600;
+}
+
+.viz-controls__reset:hover:not(:disabled) {
+  border-color: #d9a441;
+  color: #f0c674;
+}
+
+.viz-controls__speed select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+}
+
+.viz-controls input[type="range"] {
+  flex: 1;
+  min-width: 60px;
+}
+
+.viz-controls__step {
+  white-space: nowrap;
+}
+
+.viz-note {
+  margin: 0 0 0.6rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(14, 138, 219, 0.1);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+/* Stage is the single scroll container for the box diagram. It scrolls on
+   both axes so the horizontal heap canvas can extend past the viewport. */
+.viz-stage {
+  position: relative;
+  overflow: auto;
+  max-height: 60vh;
+  min-height: 200px;
+}
+
+/* Content wrapper grows to fit the Stack + Heap canvas. It is the positioned
+   container the arrow SVG measures against, so anchors and arrows share one
+   coordinate space and scroll together. inline-block lets it size to content
+   (wider than the viewport when the heap fans out to the right). */
+.viz-stage__content {
+  position: relative;
+  display: inline-block;
+  min-width: 100%;
+  vertical-align: top;
+}
+
+.arrow-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.arrow-layer__path {
+  fill: none;
+  stroke: #d9a441;
+  stroke-width: 1.6;
+}
+
+.arrow-layer__head {
+  fill: #d9a441;
+}
+
+/* Stack column sits at its natural width on the left; the Heap column sizes
+   to its canvas (max-content) so the stage content wrapper grows wide enough
+   to scroll the whole horizontal heap layout into view. */
+.viz-columns {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.viz-column--stack {
+  min-width: 12rem;
+}
+
+/* No heap objects: the Stack column takes the whole width. */
+.viz-columns--stack-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.viz-column__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+/* Stack frames */
+.frame {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 0.6rem;
+  background: var(--panel-bg);
+}
+
+.frame--active {
+  border-color: var(--accent);
+}
+
+.frame__title {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.frame__vars {
+  padding: 0.4rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* Room on the right for stack-to-stack pointer arrows to bow out. */
+  padding-right: 2.5rem;
+}
+
+/* A whole variable is one bordered box: `name → value`. */
+.var-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #6b6b6b;
+  border-radius: 5px;
+  background: #2a2a2a;
+}
+
+.var-box__name {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.85rem;
+  color: #d7d7d7;
+}
+
+.var-box__arrow {
+  color: var(--muted);
+}
+
+.var-box__value {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.85rem;
+  color: #a8d8a8;
+  font-weight: 600;
+}
+
+/* Flash the whole box when any part of this variable changed. */
+.var-box--changed {
+  animation: cell-flash 0.9s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .var-box--changed {
+    animation: none;
+    outline: 2px solid #d9a441;
+  }
+}
+
+/* Boxed cells */
+.cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 1.7rem;
+  padding: 0 0.4rem;
+  border: 1px solid #6b6b6b;
+  border-radius: 3px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.85rem;
+  background: #2d2d2d;
+}
+
+.cell--primitive {
+  background: #2d3a2d;
+  border-color: #4f7a4f;
+}
+
+.cell--ref {
+  background: #2d3140;
+  border-color: #4f6a9a;
+}
+
+.cell--null {
+  color: var(--muted);
+}
+
+/* Flash a cell whose value changed this step, to draw the eye to the delta. */
+.cell--changed {
+  animation: cell-flash 0.9s ease-out;
+}
+
+@keyframes cell-flash {
+  0% {
+    background: #d9a441;
+    border-color: #f0c674;
+    color: #1e1e1e;
+    box-shadow: 0 0 0 3px rgba(217, 164, 65, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(217, 164, 65, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell--changed {
+    animation: none;
+    outline: 2px solid #d9a441;
+  }
+}
+
+.cell__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d9a441;
+}
+
+/* Heap objects: positioned on an absolute canvas by layoutHeap(). The canvas
+   is sized (inline) to the layout's full extent; each node sits at its {x,y}.
+   The stage scrolls to reach nodes that fan out to the right. */
+.viz-heap-canvas {
+  position: relative;
+}
+
+.viz-heap-node {
+  /* position/left/top are set inline from the layout. */
+}
+
+.heap-object {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  padding: 0.4rem;
+  width: fit-content;
+}
+
+.heap-object--struct {
+  min-width: 4rem;
+}
+
+.heap-object__title {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+  text-align: center;
+}
+
+.heap-object__cells {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.array-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.array-cell__index {
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+.struct-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0;
+}
+
+.struct-field__name {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.viz-stdout {
+  margin-top: 0.6rem;
+  padding: 0.5rem;
+  background: #111;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+
+/* ---- Console ------------------------------------------------------------- */
+
+.console {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  background: #161616;
+}
+
+.console__tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+}
+
+.console__tab {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  padding: 0.15rem 0.1rem;
+}
+
+.console__tab--active {
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
+}
+
+.console__status {
+  font-size: 0.72rem;
+  color: var(--accent);
+}
+
+.console__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.5rem 0.7rem;
+}
+
+.console__output {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #e4e4e4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.console__empty {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-style: italic;
+}
