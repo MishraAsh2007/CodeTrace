@@ -28,7 +28,9 @@ export type TraceEvent = {
   severity?: string; file?: string; line?: number; column?: number; message?: string;
   stopReason?: string; outputTruncated?: boolean;
 };
-export type RunRequest = { files: SourceFile[]; mainClass: string; stdin: string; maxSteps: number; timeoutMs: number };
+/** `trace` records with the debugger (default); `run` runs without recording; `compile` only compiles. */
+export type RunMode = 'trace' | 'run' | 'compile';
+export type RunRequest = { files: SourceFile[]; mainClass: string; stdin: string; maxSteps: number; timeoutMs: number; mode?: RunMode };
 export type Run = { id: string; status: 'running' | 'finished'; request: RunRequest; events: TraceEvent[] };
 export type QuestionKind = 'predict' | 'explain' | 'repair';
 export type Question = {

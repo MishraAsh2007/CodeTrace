@@ -39,11 +39,15 @@ public final class TraceWorker {
     record Activation(String method, String id) {}
     record PendingReturn(String frameId, String method, Value value, boolean isVoid) {}
 
+    /** trace: record with JDI. run: plain JVM, no recording (fast, for tests). compile: javac only. */
+    private final String mode;
+
     private TraceWorker(String[] args) {
         workspace = Path.of(args[0]).toAbsolutePath();
         mainClass = args[1];
         maxSteps = Integer.parseInt(args[2]);
         timeoutMs = Long.parseLong(args[3]);
+        mode = args.length > 4 ? args[4] : "trace";
     }
 
     public static void main(String[] args) {
@@ -63,7 +67,9 @@ public final class TraceWorker {
             emit(map("kind", "terminated", "stopReason", "compile-error", "message", "Fix the compiler diagnostics, then run again."));
             return;
         }
+        if (mode.equals("compile")) { emit(map("kind", "terminated", "stopReason", "compiled", "message", "The program compiles.")); return; }
         if (cancelled()) { finish("cancelled"); return; }
+        if (mode.equals("run")) { runPlain(); return; }
         LaunchingConnector connector = Bootstrap.virtualMachineManager().defaultConnector();
         Map<String, Connector.Argument> args = connector.defaultArguments();
         args.get("main").setValue(mainClass);
@@ -139,6 +145,48 @@ public final class TraceWorker {
         if (stopReason.equals("completed") && exitCode != 0) stopReason = "runtime-error";
         emit(map("kind", "terminated", "stopReason", stopReason, "steps", steps, "exitCode", exitCode,
             "outputTruncated", outputTruncated, "message", stopMessage(stopReason)));
+    }
+
+    /**
+     * Runs the program without a debugger. Output is captured the same way as in a traced run; an uncaught
+     * exception is reported from the JVM's own "Exception in thread" line, since no exception events exist.
+     */
+    private void runPlain() throws Exception {
+        Path launcher = Path.of(System.getProperty("java.home"), "bin", System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java");
+        ProcessBuilder builder = new ProcessBuilder(launcher.toString(), "-Xmx96m", "-Xss512k", "-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8",
+            "-cp", workspace.resolve("classes").toString(), mainClass).directory(workspace.toFile());
+        for (String key : List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "CLASSPATH")) builder.environment().remove(key);
+        target = builder.start();
+        StringBuilder errors = new StringBuilder();
+        Thread stdout = pump(target.getInputStream(), "stdout", null);
+        Thread stderr = pump(target.getErrorStream(), "stderr", errors);
+        // Written on its own thread: a program that never reads stdin must not block the worker.
+        Process process = target;
+        Thread input = new Thread(() -> {
+            try (OutputStream stream = process.getOutputStream()) { stream.write(Files.readAllBytes(workspace.resolve("stdin.txt"))); }
+            catch (IOException ignored) { }
+        }, "student-stdin");
+        input.setDaemon(true);
+        input.start();
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        while (target.isAlive() && System.nanoTime() < deadline && !cancelled() && !outputTruncated) target.waitFor(50, TimeUnit.MILLISECONDS);
+        // A program that has filled the output budget is almost always looping; stop it instead of waiting.
+        String reason = !target.isAlive() ? "completed" : cancelled() ? "cancelled" : outputTruncated ? "output-limit" : "timeout";
+        stopTarget();
+        stdout.join(700);
+        stderr.join(700);
+        int exitCode = target.isAlive() ? -1 : target.exitValue();
+        Map<String, Object> end = map("kind", "terminated", "stopReason", reason, "steps", 0, "exitCode", exitCode, "outputTruncated", outputTruncated, "recorded", false);
+        if (reason.equals("completed") && exitCode != 0) {
+            java.util.regex.Matcher thrown = java.util.regex.Pattern.compile("Exception in thread \"[^\"]*\" ([\\w$.]+)(?::\\s?(.*))?").matcher(errors);
+            if (thrown.find()) {
+                reason = "exception";
+                end.put("exception", map("type", thrown.group(1), "message", clip(thrown.group(2) == null ? "" : thrown.group(2).trim(), 1000), "caught", false));
+            } else reason = "runtime-error";
+            end.put("stopReason", reason);
+        }
+        end.put("message", stopMessage(reason));
+        emit(end);
     }
 
     private boolean compile() throws Exception {
@@ -556,12 +604,16 @@ public final class TraceWorker {
         return out;
     }
 
-    private Thread pump(InputStream input, String stream) {
+    private Thread pump(InputStream input, String stream) { return pump(input, stream, null); }
+
+    /** Streams output as events, within the shared output budget. `copy` keeps the first 8 KiB for inspection. */
+    private Thread pump(InputStream input, String stream, StringBuilder copy) {
         Thread thread = new Thread(() -> {
             try (Reader reader = new InputStreamReader(input, StandardCharsets.UTF_8)) {
                 char[] buffer = new char[1024];
                 int count;
                 while ((count = reader.read(buffer)) >= 0) {
+                    if (copy != null && copy.length() < 8192) synchronized (copy) { copy.append(buffer, 0, Math.min(count, 8192 - copy.length())); }
                     int before = outputChars.getAndAdd(count);
                     int allowed = Math.min(count, Math.max(0, 32768 - before));
                     if (allowed > 0) emit(map("kind", "output", "stream", stream, "text", new String(buffer, 0, allowed)));
@@ -590,6 +642,8 @@ public final class TraceWorker {
             case "timeout" -> "Time budget reached. The recorded steps are available for replay.";
             case "cancelled" -> "Run stopped. The recorded steps are available for replay.";
             case "unsupported-concurrency" -> "Multiple user threads were detected. This prototype traces single-threaded programs only.";
+            case "output-limit" -> "The program printed more than 32,768 characters and was stopped.";
+            case "compiled" -> "The program compiles.";
             default -> "The JVM exited without completing normally. See stderr.";
         };
     }

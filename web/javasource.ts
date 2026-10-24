@@ -2,7 +2,25 @@
  * Lightweight Java source analysis for project management: package, top-level types, main methods and methods.
  * It is a tokenizer-level heuristic, not a parser. It never decides what compiles; javac does.
  */
-export type JavaMethod = { name: string; isStatic: boolean };
+export type JavaParam = { type: string; name: string };
+export type JavaMethod = { name: string; isStatic: boolean; isPrivate?: boolean; returnType?: string; params?: JavaParam[]; line?: number };
+
+/** Splits a parameter list at top-level commas: `int[] xs, Map<String, Integer> m` → two parameters. */
+function parameters(list: string): JavaParam[] {
+  const out: JavaParam[] = [];
+  let depth = 0, start = 0;
+  const push = (text: string) => {
+    const m = text.replace(/@[\w$.]+/g, '').replace(/\bfinal\b/g, '').trim().match(/^(.+?)\s*([A-Za-z_$][\w$]*)\s*((?:\[\s*\])*)$/);
+    if (m) out.push({ type: (m[1] + m[3]).replace(/\s+/g, ' ').replace(/\s*(\[|\]|<|>|,)\s*/g, '$1').replace(/,/g, ', ').replace(/\.\.\.$/, '[]'), name: m[2] });
+  };
+  for (let k = 0; k < list.length; k++) {
+    if (list[k] === '<') depth++;
+    else if (list[k] === '>') depth--;
+    else if (list[k] === ',' && depth === 0) { push(list.slice(start, k)); start = k + 1; }
+  }
+  if (list.trim()) push(list.slice(start));
+  return out;
+}
 export type JavaType = {
   name: string;
   kind: 'class' | 'interface' | 'enum' | 'record' | 'annotation';
@@ -118,7 +136,8 @@ function members(masked: string, depth: Int32Array, bodyStart: number, end: numb
     // A method declaration has a return type (or void) before its name; this excludes field initializers like `int x = f();`.
     if (prefix.includes('=') || !/[\w$>\]]\s+$/.test(prefix) || /\b(?:record|new|class|interface|enum|throw|return)\s+$/.test(prefix)) continue;
     const isStatic = /\bstatic\b/.test(prefix);
-    methods.push({ name: m[1], isStatic });
+    const returnType = prefix.replace(/@[\w$.]+(?:\([^)]*\))?/g, '').replace(/\b(?:public|protected|private|static|final|abstract|synchronized|native|strictfp|default)\b/g, '').replace(/<[^<>]*(?:<[^<>]*>[^<>]*)*>\s*(?=[\w$])/, '').trim();
+    methods.push({ name: m[1], isStatic, isPrivate: /\bprivate\b/.test(prefix), returnType, params: parameters(masked.slice(open + 1, close)), line: lineOf(masked, m.index) });
     if (m[1] === 'main' && isStatic && /\bvoid\s+$/.test(prefix) && /^\(\s*(?:final\s+)?String\s*(?:\[\s*\]\s*[\w$]+|\.\.\.\s*[\w$]+|[\w$]+\s*\[\s*\])\s*\)$/.test(masked.slice(open, close + 1))) hasMain = true;
     call.lastIndex = close + 1;
   }
@@ -218,6 +237,55 @@ export function setPackage(src: string, packageName: string): string {
     return `${src.slice(0, info.packageIndex)}package ${packageName};${src.slice(info.packageEnd)}`;
   }
   return packageName ? `package ${packageName};\n\n${src}` : src;
+}
+
+const lineStart = (src: string, line: number) => {
+  let index = 0;
+  for (let l = 1; l < line && index >= 0; l++) index = src.indexOf('\n', index) + 1 || -1;
+  return Math.max(0, index);
+};
+
+/**
+ * The body of the innermost method or constructor containing a line: `{ start, end }` are indices of its
+ * opening brace and just after its closing brace. Lambda and anonymous-class bodies are skipped.
+ */
+export function enclosingMethod(src: string, line: number): { start: number; end: number } | null {
+  const masked = maskJava(src);
+  const from = lineStart(src, line);
+  const lineEnd = masked.indexOf('\n', from) < 0 ? masked.length : masked.indexOf('\n', from);
+  let best: { start: number; end: number } | null = null;
+  for (let k = masked.indexOf('{'); k >= 0 && k < lineEnd; k = masked.indexOf('{', k + 1)) {
+    const before = masked.slice(Math.max(0, k - 400), k).replace(/\s+throws\s+[\w$.<>,\s]+$/, '').trimEnd();
+    if (!before.endsWith(')')) continue;
+    let parens = 0, open = -1;
+    for (let j = before.length - 1; j >= 0; j--) {
+      if (before[j] === ')') parens++;
+      else if (before[j] === '(' && --parens === 0) { open = j; break; }
+    }
+    if (open < 0) continue;
+    const head = before.slice(0, open).match(/([\w$]+)\s*$/);
+    if (!head || KEYWORDS.has(head[1]) || /\bnew\s+[\w$.<>]*$/.test(before.slice(0, open))) continue;
+    const end = matchingBrace(masked, k);
+    // The innermost method body that overlaps the line wins; a one-line method opens and closes on it.
+    if (end > from && (!best || end - k < best.end - best.start)) best = { start: k, end };
+  }
+  return best;
+}
+
+export type ForEachLoop = { variable: string; iterable: string; headerLine: number; firstLine: number; lastLine: number };
+/** Enhanced for loops over a simple name (or this.name) inside a range of source. */
+export function forEachLoops(src: string, range: { start: number; end: number }): ForEachLoop[] {
+  const masked = maskJava(src);
+  const loops: ForEachLoop[] = [];
+  const re = /\bfor\s*\(\s*(?:final\s+)?[\w$.<>\[\],?\s]+?\s+([A-Za-z_$][\w$]*)\s*:\s*(?:this\s*\.\s*)?([A-Za-z_$][\w$]*)\s*\)/g;
+  re.lastIndex = range.start;
+  for (let m; (m = re.exec(masked)) && m.index < range.end;) {
+    const after = m.index + m[0].length;
+    const brace = masked.slice(after).match(/^\s*\{/);
+    const bodyEnd = brace ? matchingBrace(masked, after + brace[0].length - 1) : masked.indexOf(';', after) + 1;
+    loops.push({ variable: m[1], iterable: m[2], headerLine: lineOf(src, m.index), firstLine: lineOf(src, after), lastLine: lineOf(src, Math.max(after, bodyEnd - 1)) });
+  }
+  return loops;
 }
 
 /** Top-level classes that a method test can target. */

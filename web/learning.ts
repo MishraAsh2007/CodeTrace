@@ -309,8 +309,10 @@ function compileQuestions(run: Run): Question[] {
         [code(`${from} ${name} = ${expression};`), code(`${to} ${name} = ${expression} + 0;`), code(`${to} ${name} = (${expression});`)], 0));
     }
   }
-  const missing = message.match(/cannot find symbol[\s\S]*?symbol:\s+(?:variable|method|class)\s+([\w$]+)/);
-  if (missing) {
+  // Only for variables: an unknown method or class has other causes (arrays have no length(), a missing import),
+  // which the compile-help card explains.
+  const missing = message.match(/cannot find symbol[\s\S]*?symbol:\s+variable\s+([\w$]+)/);
+  if (missing && !/location:\s+variable\s/.test(message)) {
     const name = missing[1];
     const source = run.request.files.find(f => f.name === diagnostic.file)?.content ?? '';
     const words = [...new Set(source.match(new RegExp(IDENT, 'g')) ?? [])].filter(w => w !== name);

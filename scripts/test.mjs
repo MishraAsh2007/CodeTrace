@@ -9,7 +9,10 @@ import { decodeProject, encodeProject } from '../web/share.ts';
 import { analyzeJava, expectedPath, fileIssues, mainClasses, renameType, setPackage, splitTopLevelTypes } from '../web/javasource.ts';
 import { limitProblem, projectFromSources, projectFromZip, projectToZip } from '../web/importer.ts';
 import { Library } from '../web/library.ts';
-import { evaluateTest, requestForTest, testProblems, valuesMatch } from '../web/tests.ts';
+import { batchOutcome, batchRequest, batchResults, evaluateTest, harnessErrorDetail, requestForTest, testProblems, valuesMatch } from '../web/tests.ts';
+import { caseToCheck, planTests, sampleCalls } from '../web/testgen.ts';
+import { applyEdits, compileIssues } from '../web/compilehelp.ts';
+import { cursorsFor } from '../web/cursors.ts';
 import { templates } from '../web/templates.ts';
 import { readZip, writeZip } from '../web/zip.ts';
 
@@ -485,6 +488,151 @@ public class Main {
         assert.equal(outcome.passed, true, `${template.id} / ${check.name}: ${outcome.detail}`);
       }
     }
+  });
+  await test('plain run and compile-only modes report outcomes without recording', async () => {
+    const plain = await execute(request(examples[0], { mode: 'run' }));
+    assert.equal(reason(plain), 'exception');
+    assert.equal(plain.events.at(-1).recorded, false);
+    assert.equal(plain.events.at(-1).exception.type, 'java.lang.ArrayIndexOutOfBoundsException');
+    assert.ok(!plain.events.some(e => e.kind === 'line'), 'nothing is recorded');
+    assert.match(evaluateTest(plain, examples[0].checks[0]).detail, /^ArrayIndexOutOfBoundsException: Index 3 out of bounds/);
+    const done = await execute(request(example('recursion'), { mode: 'run' }));
+    assert.equal(reason(done), 'completed');
+    assert.equal(output(done, 'stdout').trim(), '120');
+    const flood = await execute({ ...oneFile('public class Main { public static void main(String[] args) { while (true) System.out.println("again"); } }'), mode: 'run' });
+    assert.equal(reason(flood), 'output-limit');
+    const compiled = await execute(request(examples[0], { mode: 'compile' }));
+    assert.equal(reason(compiled), 'compiled');
+    assert.equal(output(compiled, 'stdout'), '');
+    assert.equal(reason(await execute({ ...oneFile('public class Main { int x = ; }'), mode: 'compile' })), 'compile-error');
+    assert.equal((await fetch(base + '/api/runs', { method: 'POST', headers, body: JSON.stringify({ ...oneFile('class Main {}'), mode: 'debug' }) })).status, 400);
+  });
+  await test('index markers follow loops through arrays, lists, strings and grids', async () => {
+    const marks = (data, states, i) => cursorsFor(data, states, i).map(c => `${c.name}[${c.label}]=${c.index}${c.inRange ? '' : '!'}${c.kind === 'for-each' ? ' each' : ''}`);
+    const everyMark = data => { const states = snapshots(data); return new Set(states.flatMap((_, i) => marks(data, states, i))); };
+    const bounds = await execute(request(examples[0]));
+    const states = snapshots(bounds);
+    assert.deepEqual(marks(bounds, states, states.findIndex(e => e.exception && !e.exception.caught)), ['values[i]=3!'], 'the failing index is past the end');
+    const palindrome = everyMark(await execute(request(example('palindrome'))));
+    assert.ok(palindrome.has('word[i]=0') && palindrome.has('word[word.length() - i]=5!'), [...palindrome].join());
+    const custom = everyMark(await execute(oneFile(`import java.util.*;
+public class Main {
+    int[] data = {9, 8};
+    int peek(int k) { return data[k]; }
+    public static void main(String[] args) {
+        int[] values = {4, 7, 2};
+        int total = 0;
+        for (int v : values) {
+            total += v;
+        }
+        for (int i = values.length - 1; i >= 0; i--) {
+            total += values[values.length - 1 - i];
+        }
+        List<String> names = new ArrayList<>(List.of("a", "b"));
+        for (int j = 0; j < names.size(); j++) {
+            System.out.println(names.get(j));
+        }
+        int[][] grid = {{1, 2}, {3, 4}};
+        for (int r = 0; r < grid.length; r++) {
+            for (int c = 0; c < grid[r].length; c++) {
+                total += grid[r][c];
+            }
+        }
+        System.out.println(new Main().peek(1) + total);
+    }
+}
+`)));
+    for (const mark of ['values[v]=2 each', 'values[values.length - 1 - i]=2', 'names[j]=1', 'grid[r]=1', 'grid[r][c]=1', 'data[k]=1']) assert.ok(custom.has(mark), `${mark} in ${[...custom].join(', ')}`);
+  });
+  await test('compile help explains javac errors and every suggested fix compiles', async () => {
+    const wrap = body => `import java.util.*;\npublic class Main {\n${body}\n}\n`;
+    const main = body => wrap(`  public static void main(String[] args) {\n${body}\n  }`);
+    const cases = {
+      'Missing semicolon': main('    int x = 5\n    System.out.println(x);'),
+      'Unknown name totl': main('    int total = 3;\n    System.out.println(totl);'),
+      'Scanner needs an import': 'public class Main {\n  public static void main(String[] args) {\n    Scanner in = new Scanner(System.in);\n  }\n}\n',
+      'Arrays use length, not length()': main('    int[] v = {1};\n    System.out.println(v.length());'),
+      'Arrays use length, not size()': main('    int[] v = {1};\n    System.out.println(v.size());'),
+      'Strings use length()': main('    String s = "a";\n    System.out.println(s.length);'),
+      'Lists use size()': main('    List<Integer> v = new ArrayList<>();\n    System.out.println(v.length);'),
+      'A String can’t be used as an int': main('    Scanner in = new Scanner(System.in);\n    int n = in.nextLine();'),
+      'An int can’t be used as a String': main('    String s = 5;'),
+      'A double doesn’t fit in an int': main('    int half = 7 / 2.0;'),
+      'Not every path returns a value': wrap('  static int sign(int n) {\n    if (n > 0) {\n      return 1;\n    }\n  }\n  public static void main(String[] args) {}'),
+      'count has no starting value': main('    int count;\n    count++;'),
+      'Missing closing brace': 'public class Main {\n  public static void main(String[] args) {\n    for (int i = 0; i < 3; i++) {\n      System.out.println(i);\n  }\n}\n',
+      'main can’t use helper without an object': wrap('  int helper() { return 1; }\n  public static void main(String[] args) {\n    System.out.println(helper());\n  }'),
+      'FileNotFoundException must be handled': 'import java.io.*;\npublic class Main {\n  public static void main(String[] args) {\n    new FileReader("x.txt");\n  }\n}\n',
+      'x is declared twice': main('    int x = 1;\n    int x = 2;'),
+      'This line can never run': wrap('  static int f() {\n    return 1;\n    System.out.println("never");\n  }\n  public static void main(String[] args) {}'),
+      'An if ends with a stray semicolon': main('    int x = 1;\n    if (x > 0);\n      System.out.println(1);\n    else\n      System.out.println(2);'),
+      'Comparing a char with a String': main('    String s = "a";\n    if (s.charAt(0) == "a") {}'),
+      'x is final': main('    final int x = 1;\n    x = 2;'),
+      'Constructor name doesn’t match the class': wrap('  public Mian() {}\n  public static void main(String[] args) {}'),
+      'Text is missing its closing quote': main('    System.out.println("hello);'),
+      '== compares; = assigns': main('    int x = 1;\n    x == 2;'),
+      'A void method can’t return a value': wrap('  static void f() {\n    return 5;\n  }\n  public static void main(String[] args) {}'),
+      'Missing )': main('    System.out.println("a";'),
+      'Unknown method lenght()': main('    String s = "a";\n    System.out.println(s.lenght());'),
+      'Unknown class Strng': main('    Strng s = "a";'),
+    };
+    const compileErrors = async files => (await execute({ ...oneFile(''), files, mode: 'compile' })).events.filter(e => e.kind === 'diagnostic' && e.severity === 'error');
+    for (const [title, content] of Object.entries(cases)) {
+      const files = [{ name: 'Main.java', content }];
+      const [issue] = compileIssues(files, await compileErrors(files));
+      assert.equal(issue?.title, title);
+      assert.ok(issue.explanation.length > 20, title);
+      assert.ok(issue.fixes.length > 0, `${title} has a fix`);
+      const remaining = await compileErrors(applyEdits(files, issue.fixes[0].action));
+      assert.deepEqual(remaining.map(e => e.message.split('\n')[0]), [], `${title}: ${issue.fixes[0].label}`);
+    }
+    // A move fix renames the file to match its public class.
+    const misnamed = [{ name: 'Main.java', content: 'public class Other {\n  public static void main(String[] args) {}\n}\n' }];
+    const [move] = compileIssues(misnamed, await compileErrors(misnamed));
+    assert.deepEqual(move.fixes[0].action, { kind: 'move', from: 'Main.java', to: 'Other.java' });
+    assert.deepEqual(await compileErrors(applyEdits(misnamed, move.fixes[0].action)), []);
+    // Some errors get an explanation but no automatic fix.
+    const deref = [{ name: 'Main.java', content: main('    int x = 5;\n    System.out.println(x.length());') }];
+    const [explained] = compileIssues(deref, await compileErrors(deref));
+    assert.equal(explained.title, 'int values have no methods');
+    assert.deepEqual(explained.fixes, []);
+  });
+  await test('generated tests try sample calls in one JVM and attribute hangs and bad calls', async () => {
+    const files = [{ name: 'Main.java', content: `public class Main {
+    public static void main(String[] args) { System.out.println(max(new int[]{4, 9, 2})); }
+    static int max(int[] xs) { int best = 0; for (int x : xs) if (x > best) best = x; return best; }
+    static boolean isEven(int n) { return n % 2 == 0; }
+    static int spin(int n) { while (n > 0) { } return n; }
+    static void hello() { System.out.println("hi"); }
+    int counter() { return 1; }
+    private static int secret() { return 4; }
+}
+` }];
+    const plan = planTests(files);
+    assert.deepEqual(plan.skipped.map(s => s.method).sort(), ['counter', 'hello', 'secret']);
+    assert.deepEqual(plan.cases.filter(c => c.method === 'max').map(c => c.call), ['max(new int[]{})', 'max(new int[]{7})', 'max(new int[]{3, 1, 2})', 'max(new int[]{-2, 5, 5, 0})']);
+    assert.deepEqual(sampleCalls({ name: 'find', params: [{ type: 'int[]', name: 'xs' }, { type: 'int', name: 't' }] }).slice(0, 3), ['find(new int[]{}, 0)', 'find(new int[]{7}, 1)', 'find(new int[]{3, 1, 2}, 2)']);
+    assert.deepEqual(sampleCalls({ name: 'add', params: [{ type: 'int', name: 'a' }, { type: 'int', name: 'b' }] })[0], 'add(0, 1)');
+    const runBase = { files, mainClass: 'Main', stdin: '', maxSteps: 100, timeoutMs: 2000 };
+    const id = call => plan.cases.find(c => c.call === call).id;
+    const batch = await execute(batchRequest(runBase, '', plan.cases).request);
+    assert.equal(reason(batch), 'timeout', 'spin(1) never returns');
+    const results = batchResults(output(batch, 'stdout'));
+    assert.equal(results.get(id('max(new int[]{3, 1, 2})')).value, '3');
+    assert.equal(results.get(id('isEven(-3)')).value, 'false');
+    assert.equal(results.get(id('spin(0)')).value, '0');
+    assert.equal(results.has(id('spin(1)')), false);
+    // A call that doesn't compile is traced to its own line in the harness.
+    const { request: bad, lines } = batchRequest(runBase, '', [{ id: 7, expression: 'Main.isEven(4)' }, { id: 8, expression: 'Main.hello()' }]);
+    const error = (await execute({ ...bad, mode: 'compile' })).events.find(e => e.kind === 'diagnostic' && e.severity === 'error');
+    assert.equal(lines.get(error.line), 8);
+    assert.match(harnessErrorDetail(error.message), /returns void/);
+    // A confirmed case becomes an ordinary method test.
+    const check = caseToCheck(plan.cases.find(c => c.call === 'max(new int[]{7})'), '7');
+    assert.equal(batchOutcome(check, results.get(id('max(new int[]{7})'))).passed, true);
+    assert.equal(batchOutcome({ ...check, expectedOutput: '8' }, results.get(id('max(new int[]{7})'))).detail, 'Expected 8, got 7');
+    const project = { name: 'Gen', files, mainClass: 'Main', stdin: '', maxSteps: 100, checks: [check] };
+    assert.equal(evaluateTest(await execute(requestForTest(project, check, { ...runBase, mode: 'run' })), check).passed, true);
   });
   await test('project import rejects malformed nested values without throwing', () => {
     assert.equal(validateProject({ ...examples[0], files: [null] }), false);

@@ -16,9 +16,9 @@ applyTheme();
 const features: [string, string, string][] = [
   ['play', 'Real Java, real JVM', 'Your code is compiled with javac and runs on a JDK 21 virtual machine. What you see is what Java actually did, not a simulation.'],
   ['history', 'Step forward and back', 'Every line is recorded, so you can step backward as easily as forward, jump over calls, step out of methods and scrub through the whole run.'],
-  ['layers', 'Stack and heap, drawn', 'Frames, local variables, objects, arrays, lists, maps and sets, with arrows from each reference to the object it points to.'],
-  ['lightbulb', 'A tutor that read your run', 'Questions are built from the values your program produced: predict what happens next, explain the error, then choose a fix.'],
-  ['list-checks', 'Prove the fix with tests', 'Check what a program prints, or call one method and check what it returns. Every test runs your current code in a fresh JVM.'],
+  ['layers', 'Stack and heap, drawn', 'Frames, local variables, objects, arrays, lists, maps and sets, with arrows from each reference to the object it points to, and markers for the index a loop is at.'],
+  ['lightbulb', 'A tutor that read your run', 'Questions are built from the values your program produced: predict what happens next, explain the error, then choose a fix. Compile errors come with plain-language explanations and fixes checked by javac.'],
+  ['list-checks', 'Prove the fix with tests', 'Check what a program prints, or call one method and check what it returns. Generate tests from your own methods, confirm the expected values, and run them in a fresh JVM.'],
   ['folder-open', 'Your own projects', 'Start from a template, paste code, or drop in .java files, a folder or a zip. TraceLab sorts files into packages, finds the main class, and saves every project in your browser.'],
 ];
 const steps: [string, string][] = [

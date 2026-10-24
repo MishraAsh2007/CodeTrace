@@ -37,7 +37,8 @@ The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse exa
 
 ## Your own projects
 
-- **Projects:** create as many as you like from **⋯ → New project**, the project switcher in the top bar, or the **My projects** view. Rename, duplicate, export or delete them there. Everything is saved in the browser as you type (`/app/?new` opens the new-project dialog).
+- **Projects:** create as many as you like with **New project** in the top bar, the **+** in the activity bar, the project switcher, **⋯ → New project**, or the **My projects** view. Rename, duplicate, export or delete them in **My projects**. Everything is saved in the browser as you type (`/app/?new` opens the new-project dialog).
+- **Files:** **+** (new file) and **upload** (add files from your computer) sit at the right of the editor tabs and in the Explorer header. Both work in examples too.
 - **Start from:** a template (blank program, reads input, class + Main, packages), pasted code, or files. Pasted code with several public classes is split into one file per class.
 - **Import:** choose or drop `.java` files, a folder, a `.zip`, or a TraceLab `.json` export. Files are placed by their `package` declaration and public class name, not by the folder they came from, so `src/main/java/com/x/App.java` becomes `com/x/App.java`. The class with a `main` method becomes the main class (preferring one named `Main`). Dropping files onto the Explorer adds them to the open project; dropping anywhere else creates a new one.
 - **Explorer:** packages show as folders, the main class has a ▶ badge, and any class with `main` can be made the entry point. If a file's path doesn't match its package or class name, the Explorer and editor show a warning with a one-click **Move**, because TraceLab only records classes whose paths match. Rename/move can also update the class name and package declaration.
@@ -49,6 +50,14 @@ The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse exa
 - **Program output:** standard input plus the exact expected output (trailing whitespace and line endings ignored).
 - **Method call:** a class, a Java expression such as `sum(new int[]{1, 2})` or `new Counter().next()`, and an expected value: `3`, `"text"` (quotes optional), `[1, 2]`, `true`, `null`, or `throws ArithmeticException`. A bare call is prefixed with its class when that class declares the method. Decimals match to about nine significant digits. TraceLab generates a `TraceLabCall__` class in the target's package to evaluate the call, so package-private methods are reachable; it is not added to your project.
 - Edit tests in a form (**Tests → Edit** or **Add test**). After a run, **Save this run's output as a test** pre-fills a test, with a reminder to check that the output is actually correct. A failing test can be recorded and stepped through with **Debug this test**.
+- **Generate:** tries sample arguments on every public or package-private `static` method that returns a value and takes numbers, booleans, `char`, `String`, arrays (`int[]`, `int[][]`, `String[]`, …) or `List<Integer|String|Double>`, plus one output test for the current input. All calls run in one plain JVM; a call that never returns is reported after 3 s and the method's other samples are skipped. You review a table of results, correct any value that is wrong, and choose which become tests. These are *characterization* tests: they record what the code does now, so a bug becomes the expected answer unless you change it. Instance, `void` and private methods are listed as skipped, with the reason.
+- **Speed:** **Run tests** uses a plain JVM without recording, and evaluates all method tests that share a package and input in one JVM, so a dozen method tests take about as long as one program run. **Debug this test** records the failing case.
+
+## Compile errors
+
+When javac rejects the program, the Tutor explains each error in plain language and suggests concrete fixes. TraceLab compiles every suggested fix in the background and labels it **Compiles**, **Clears this error · N others left**, or **Doesn't clear this error**. **Apply** edits the code (Ctrl+Z undoes it) and runs again; the same fixes are available as quick fixes on the red underline (Ctrl+.). In examples, the fixes stay folded until the Tutor's question about the error is answered.
+
+Covered: missing `;` `)` `}` or closing quote, misspelled variables, methods and classes (edit distance), missing imports for common JDK classes, `length` vs `length()` vs `size()`, `String`↔number conversions (`Integer.parseInt`, `nextInt`, `String.valueOf`), lossy conversions, missing `return`, uninitialized locals, non-static access from `main`, unreported checked exceptions (`throws`), duplicate declarations, unreachable code, `if (…);` before `else`, `'a'` vs `"a"`, assigning to `final`, constructor typos, `==` used as a statement, returning a value from `void`, and file/class name mismatches (rename or move). Other errors get an explanation without an automatic fix. Fixes are suggestions for the student to accept; when an error has several causes, the explanation says so.
 
 ## The learning loop
 
@@ -60,8 +69,8 @@ The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse exa
 
 ## Features
 
-- **IDE:** Monaco editor, a project library, multiple files and packages with a package-tree Explorer, rename/move/delete, compiler diagnostics in the editor and Problems panel, lightweight completions (snippets such as `sout`/`fori`, keywords, common JDK types, project identifiers; not semantic IntelliSense), keyboard shortcuts, light/dark/system themes, resizable editor/debugger and bottom-panel splits, collapsible sidebar and Tutor, autosave, import/export, share links (the project travels in the URL fragment, which is not sent to the server), and trace export.
-- **Debugger:** real JDK 21 compilation and JDI capture; frames with stable activation IDs, parameters, return values, statics and exceptions; stack and heap columns with reference arrows; renderers for arrays, strings, boxed values, `ArrayList`, `LinkedList`, `ArrayDeque`, `PriorityQueue`, `HashMap`/`LinkedHashMap`/`TreeMap`, `HashSet`/`LinkedHashSet`/`TreeSet` and `StringBuilder`; changed/new highlighting; a “Changes” strip narrating each step; step into/back, frame-aware **Over**, **Out** and **Back** (F10, Shift+F11, Shift+F10); scrubber, autoplay, filter and replay bookmarks.
+- **IDE:** Monaco editor (with its find, command palette, hovers and quick fixes), a project library, multiple files and packages with a package-tree Explorer, rename/move/delete, compiler diagnostics with explanations and checked fixes in the editor and Problems panel, lightweight completions (snippets such as `sout`/`fori`, keywords, common JDK types, project identifiers; not semantic IntelliSense), keyboard shortcuts, light/dark/system themes, resizable editor/debugger and bottom-panel splits, collapsible sidebar and Tutor, autosave, import/export, share links (the project travels in the URL fragment, which is not sent to the server), and trace export.
+- **Debugger:** real JDK 21 compilation and JDI capture; frames with stable activation IDs, parameters, return values, statics and exceptions; stack and heap columns with reference arrows; renderers for arrays, strings, boxed values, `ArrayList`, `LinkedList`, `ArrayDeque`, `PriorityQueue`, `HashMap`/`LinkedHashMap`/`TreeMap`, `HashSet`/`LinkedHashSet`/`TreeSet` and `StringBuilder`; changed/new highlighting; index markers that show where the code is in an array, list, string or 2D array (`values[i]`, `list.get(j)`, `word.charAt(word.length() - 1 - i)`, `grid[r][c]`, and the current element of a for-each loop), with an out-of-range index drawn as a dashed cell past the end and a hint such as `→ values[2] = 2` next to the index variable; a “Changes” strip narrating each step; step into/back, frame-aware **Over**, **Out** and **Back** (F10, Shift+F11, Shift+F10); scrubber, autoplay, filter and replay bookmarks.
 - **Tutor:** predict/explain/fix questions for array and string bounds, null fields and `Map.get` misses, division by zero, `NumberFormatException`, `ConcurrentModificationException`, non-terminating loops, runaway recursion, string identity, integer division, pass-by-value, aliasing (objects and arrays), return values, state changes and compiler errors (lossy conversion, missing symbols). A question is shown only when the recorded run supports its premise. Repair questions highlight the line and jump to it for editing. Tests run in fresh JVMs; a failing test can be debugged directly; concepts practiced are tallied per browser.
 - **Runner:** step/time/output/trace limits, partial traces on limits, cancellation, one job at a time, incremental polling, job cleanup, and host/origin checks.
 
@@ -73,7 +82,7 @@ Output is read asynchronously, so a chunk may appear one step early or late; the
 
 Default limits: 500 steps (configurable 10–2,000), 8 s execution, 96 MiB heap, 32,768 output characters, 24 MiB trace, 24 frames, 64 objects, 32 locals per frame, 32 elements per array or collection, 24 fields per object and 12 traversal levels. The runner keeps the latest eight runs; the browser keeps the current and previous run.
 
-TraceLab never calls student methods such as `toString()` to display objects. Library internals are hidden except for the renderers above. Multi-threaded programs are not supported. Not yet included: semantic IntelliSense (Eclipse JDT LS), Maven/Gradle dependencies, live breakpoints, expression stepping, test types other than stdin/stdout, collaboration, other languages, and a production sandbox. The Tutor is deterministic and needs no API key.
+TraceLab never calls student methods such as `toString()` to display objects. Library internals are hidden except for the renderers above. Multi-threaded programs are not supported. Not yet included: semantic IntelliSense (Eclipse JDT LS), Maven/Gradle dependencies, live breakpoints, expression stepping, test types beyond program output and method calls, generated tests for instance methods, collaboration, other languages, and a production sandbox. The Tutor is deterministic and needs no API key.
 
 ## Tests
 
@@ -81,7 +90,7 @@ TraceLab never calls student methods such as `toString()` to display objects. Li
 npm test
 ```
 
-Builds the worker and runner, runs the Rust unit tests, then runs 44 integration checks against real JVM programs over HTTP: tracing semantics, collections, frame identity, limits, cancellation, API rejection, every gallery example and its repair, share links, source analysis, import/zip round trips, the project library, method-call tests (values, arrays, collections, exceptions, void and instance-method errors), every new-project template, and the website/IDE/404 routes. Port 4317 must be free.
+Builds the worker and runner, runs the Rust unit tests, then runs 48 integration checks against real JVM programs over HTTP: tracing semantics, collections, frame identity, limits, cancellation, API rejection, every gallery example and its repair, share links, source analysis, import/zip round trips, the project library, method-call tests (values, arrays, collections, exceptions, void and instance-method errors), every new-project template, plain-run and compile-only modes, index markers, compile help (each suggested fix for 28 javac errors must compile), test generation, and the website/IDE/404 routes. Port 4317 must be free.
 
 ## Structure
 
@@ -92,7 +101,9 @@ web/tokens.css, theme.ts, gallery.ts      Shared design tokens, theme and exampl
 web/learning.ts, narrate.ts, ...          Tutor questions, step narration, arrows, sharing, layout
 web/library.ts                            Browser project library and example edits
 web/javasource.ts, importer.ts, zip.ts    Java source analysis, imports/exports, dependency-free zip
-web/tests.ts, templates.ts                Output and method-call tests; new-project templates
+web/tests.ts, testgen.ts, templates.ts    Output and method-call tests, test generation, new-project templates
+web/compilehelp.ts                        javac error explanations and fixes
+web/cursors.ts                            Index markers for arrays, lists, strings and for-each loops
 web/examples.ts                           Example projects and gallery metadata
 web/public/screenshots/                   Product screenshots used by the site
 server/main.rs                            Rust HTTP API, job supervision, limits, static files

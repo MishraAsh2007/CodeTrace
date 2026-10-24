@@ -26,7 +26,10 @@ struct RunRequest {
     #[serde(default)] stdin: String,
     #[serde(default = "default_steps")] max_steps: usize,
     #[serde(default = "default_timeout")] timeout_ms: u64,
+    /// "trace" records with JDI; "run" runs without recording; "compile" only compiles.
+    #[serde(default = "default_mode")] mode: String,
 }
+fn default_mode() -> String { "trace".into() }
 fn default_steps() -> usize { 500 }
 fn default_timeout() -> u64 { 8000 }
 
@@ -61,6 +64,7 @@ fn validate(request: &RunRequest) -> Result<(), &'static str> {
     if request.stdin.len() > 16_384 { return Err("Input is limited to 16 KiB."); }
     if !(10..=2000).contains(&request.max_steps) { return Err("The trace budget must be between 10 and 2,000 steps."); }
     if !(500..=15000).contains(&request.timeout_ms) { return Err("The time budget must be between 500 and 15,000 ms."); }
+    if !["trace", "run", "compile"].contains(&request.mode.as_str()) { return Err("The mode must be trace, run or compile."); }
     let mut total = 0;
     let mut names = HashSet::new();
     for file in &request.files {
@@ -178,7 +182,7 @@ async fn execute(state: &AppState, request: &RunRequest, run: &SharedRun) -> Res
     let mut command = Command::new(&state.java);
     command.args(["-Xmx256m", "--add-modules", "jdk.jdi", "-cp"])
         .arg(state.root.join(".local/worker")).arg("TraceWorker")
-        .arg(dir.path()).arg(&request.main_class).arg(request.max_steps.to_string()).arg(request.timeout_ms.to_string())
+        .arg(dir.path()).arg(&request.main_class).arg(request.max_steps.to_string()).arg(request.timeout_ms.to_string()).arg(&request.mode)
         .current_dir(dir.path()).stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).kill_on_drop(true);
     // Prevent inherited JVM options from altering the compiler, target, or NDJSON protocol.
@@ -272,7 +276,7 @@ async fn main() {
 mod tests {
     use super::*;
     fn request(name: &str) -> RunRequest {
-        RunRequest { files: vec![SourceFile { name: name.into(), content: "class Main {}".into() }], main_class: "Main".into(), stdin: String::new(), max_steps: 100, timeout_ms: 1000 }
+        RunRequest { files: vec![SourceFile { name: name.into(), content: "class Main {}".into() }], main_class: "Main".into(), stdin: String::new(), max_steps: 100, timeout_ms: 1000, mode: "trace".into() }
     }
     #[test] fn paths_cannot_escape_workspace() {
         for name in ["../Main.java", "/Main.java", "C:/Main.java", "a\\Main.java", "a/../Main.java", "CON.java", "Main.java.exe"] { assert!(validate(&request(name)).is_err(), "{name}"); }
@@ -283,6 +287,8 @@ mod tests {
         req.files.push(SourceFile { name: "main.java".into(), content: "".into() });
         assert!(validate(&req).is_err());
         let mut req = request("Main.java"); req.main_class = "Main -javaagent:bad".into();
+        assert!(validate(&req).is_err());
+        let mut req = request("Main.java"); req.mode = "shell".into();
         assert!(validate(&req).is_err());
     }
 }

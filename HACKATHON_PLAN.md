@@ -12,7 +12,7 @@ Avoid a full VS Code fork during the hackathon. Monaco provides its editor compo
 
 ## Status — October 24, 2026
 
-The prototype meets the definition of done below and runs locally (`npm run build`, `npm start`). `npm test` runs 44 checks against real JVM runs. The code is on the `Java` branch of [MishraAsh2007/Hackachusetts_CodeTutor](https://github.com/MishraAsh2007/Hackachusetts_CodeTutor/tree/Java). Details are in [README.md](README.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md).
+The prototype meets the definition of done below and runs locally (`npm run build`, `npm start`). `npm test` runs 48 checks against real JVM runs. The code is on the `Java` branch of [MishraAsh2007/Hackachusetts_CodeTutor](https://github.com/MishraAsh2007/Hackachusetts_CodeTutor/tree/Java). Details are in [README.md](README.md) and [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 | Opportunity | Status |
 | --- | --- |
@@ -43,11 +43,22 @@ Agreed on October 24, 2026. Each phase ships with integration tests and a browse
 | Tests | A form editor; **method-call tests** (`sum(new int[]{1, 2})` → `3`, values, arrays, collections, `throws X`) run through a generated harness; **save this run’s output as a test**; a failing method test can be recorded and stepped through |
 | Export | Zip with `src/` and `tracelab.json`, which re-imports with its tests |
 
+### Phase 1.5 — Feedback from the first users ✅ done
+
+| Feedback | Shipped |
+| --- | --- |
+| “I can’t find how to start a new project” | **New project** in the top bar and **+** in the activity bar, besides the project switcher, ⋯ menu and My projects view. The My projects view was always there, but empty until the first project, and the sidebar starts collapsed on screens under 1500 px |
+| “I can’t add files to an example” | It worked from the Explorer, which was hidden with the sidebar. **New file** and **Add files** now also sit in the editor tab bar |
+| Help with compile errors | Plain-language explanations for about 30 javac messages; concrete fixes that TraceLab compiles in the background before labelling them; apply-and-rerun, Ctrl+Z, and Monaco quick fixes (Ctrl+.). Monaco’s editor contributions (find, hovers, suggestions, quick fixes, F1) are now loaded |
+| Generate tests for my own programs | Sample arguments for static methods with common parameter types, run in one JVM; a review table where the student confirms or corrects each value (characterization tests) |
+| “It doesn’t show where we are in the array” | Index markers for `a[i]`, `list.get(i)`, `s.charAt(…)`, `grid[r][c]` and for-each loops, evaluated from recorded values; out-of-range indexes drawn past the end |
+| Fast mode (from phase 2) | `run` (no recording) and `compile` modes in the runner; Run tests batches method tests into one JVM |
+
 ### Phase 2 — General Tutor questions and tested fixes
 
 - **A. Questions from any recording.** Extract facts from every run (value changes of any type, which line runs next and which branch was taken, loop iteration counts, calls and returns, output, the values on a throwing line) and build questions from them: “what is `x` after this line?”, “which line runs next?”, “how many times does line 7 run?”, “what does `f(3)` return?”, “which value caused the exception?”, “where does the output first differ from the test?”. Wrong answers come from common mistakes: the old value, off by one, another variable, the branch not taken. Correct answers always come from the recording.
 - **B. Tested fixes.** Try small standard edits near the failing lines (`<` ↔ `<=`, ±1, `==` → `equals`, cast before dividing, initialize a field, add a missing update, `&&` ↔ `||`), run each against the project’s tests on the real JVM, and offer only verified fixes as correct answers, with compiled-but-failing edits as distractors. Without tests, say that “the exception went away” is weaker evidence. Keep the hand-written questions where their wording is clearer.
-- **Fast mode:** run tests without recording for speed.
+- ~~**Fast mode:** run tests without recording for speed.~~ Shipped in phase 1.5; tested fixes can use the same `run` mode and batch harness.
 
 ### Phase 3 — Debug larger programs
 

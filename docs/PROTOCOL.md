@@ -16,9 +16,16 @@ The Rust service listens only on `127.0.0.1:4317`. API calls except health requi
   "mainClass": "Main",
   "stdin": "",
   "maxSteps": 500,
-  "timeoutMs": 8000
+  "timeoutMs": 8000,
+  "mode": "trace"
 }
 ```
+
+`mode` is optional:
+
+- `trace` (default): compile, then run under JDI and record every step.
+- `run`: compile, then run on a plain JVM with the same input, output, heap and time limits, without recording (about twice as fast). The `terminated` event has `recorded: false` and `steps: 0`. An uncaught exception is parsed from the JVM's `Exception in thread …` line into `exception: {type, message, caught: false}` with stop reason `exception`. A program that exceeds the output limit is stopped immediately with stop reason `output-limit`. Used for tests and test generation.
+- `compile`: compile only. The run ends with stop reason `compiled` or `compile-error`. Used to check suggested compile fixes.
 
 It returns `{"id":"<opaque run id>"}` immediately. A busy runner returns HTTP 409. Paths are validated relative `.java` paths; entry classes are dot-separated Java identifiers. Requests are limited to 20 files, 64 KiB per file, 256 KiB total source, 16 KiB input and a 512 KiB JSON body.
 
@@ -36,9 +43,9 @@ Every event has `schemaVersion: 1`, `runId`, `sequence`, and `kind`.
 - `returns` (on `line`/`exception`): user methods that completed normally since the previous stop, oldest first: `{method, frameId, value}` or `{method, frameId, void: true}`. `frameId` matches the activation's frame `id`. Constructors and static initializers are omitted; methods exited by an exception produce no entry (JDWP does not report those exits).
 - `exception`: the same captured state, plus `exception: {type,message,caught}`. For a library exception, location is the nearest user-source frame; do not present it as the exact internal library throw location.
 - `output`: `stream` (`stdout` or `stderr`) and a text chunk. Receipt order is preserved, not exact source-line synchronization.
-- `terminated`: `stopReason`, `message`, and, when available, `steps`, `exitCode`, `outputTruncated`.
+- `terminated`: `stopReason`, `message`, and, when available, `steps`, `exitCode`, `outputTruncated`, `recorded` (false in `run` mode) and `exception` (`run` mode only).
 
-Stop reasons: `completed`, `compile-error`, `exception`, `runtime-error`, `step-limit`, `timeout`, `cancelled`, `unsupported-concurrency`, `trace-limit`, and `worker-error`.
+Stop reasons: `completed`, `compile-error`, `exception`, `runtime-error`, `step-limit`, `timeout`, `cancelled`, `unsupported-concurrency`, `trace-limit`, `worker-error`, and, outside `trace` mode, `output-limit` (`run`) and `compiled` (`compile`).
 
 Frames contain `id`, `method`, source `file`/`line`, typed `locals` (parameters carry `argument: true`), and an optional `truncated` flag. IDs are derived from method entry/exit activation tracking; after a caught exception unwinds frames, the worker realigns its activation stack with the real user frames at the next stop, so surviving frames keep their IDs. Objects use JDI identity, scoped to the run, so two references to the same object point to the same heap node. Objects are not pinned alive across stops (returned objects are pinned only until the next stop describes them). Trace data does not invoke methods on target objects. Exceptions that are thrown and caught entirely inside library code are not recorded.
 
@@ -62,6 +69,8 @@ Collection views are read from JDK fields, never by calling `size()`, `iterator(
 ## Method-call tests
 
 The runner has no special endpoint for these. The browser adds a generated `TraceLabCall__.java` to the request's files, in the target class's package, and sets `mainClass` to it. Its `main` evaluates the test's expression, catches any `Throwable`, and prints one line prefixed by U+001E and `TRACELAB_RESULT `: `value <formatted value>` or `throws <exception class>`. Strings and chars are printed as literals, arrays and collections element by element; other objects use `String.valueOf`, so this is the one place student `toString()` methods can run. The harness file is excluded when comparing a run with the project's source. Requests still count against the 20-file limit.
+
+**Run tests** and test generation use a batch form of the harness in `run` mode: `main` evaluates many expressions in turn, each as `run(<id>, () -> <expression>)` on its own source line, and prints `TRACELAB_RESULT <id> value …` or `TRACELAB_RESULT <id> throws …` after each one. A javac error on a harness line is attributed to that expression, which is dropped before retrying. If the batch stops early (timeout, output limit or `System.exit`), the first expression without a result is reported as unfinished and the rest run in a new batch. "Debug this test" still records a single expression with the one-call harness.
 
 ## Future adapters
 

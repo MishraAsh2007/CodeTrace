@@ -1,7 +1,9 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
+// editor.api alone has no editor features; edcore.main adds them (suggestions, hovers, quick fixes, find, F1 commands).
+import 'monaco-editor/esm/vs/editor/edcore.main';
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces } from 'lucide';
+import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles } from 'lucide';
 import { categories, copyExample, demoFor, demos, exampleIndex, examples } from './examples';
 import type { DemoCategory } from './examples';
 import { exceptionMessage, failingCheck, normalizeOutput, output, questionsFor, sameSource, snapshots, validateProject, valueText } from './learning';
@@ -9,11 +11,18 @@ import { Library, StorageFullError } from './library';
 import type { DocRef } from './library';
 import { droppedFiles, importFiles, limitProblem, projectFromSources, projectToZip, validFileName } from './importer';
 import { analyzeJava, fileIssues, mainClasses, preferredMain, renameType, setPackage, testTargets } from './javasource';
-import { describeTest, evaluateTest, isCallTest, requestForTest, testProblems } from './tests';
+import { batchOutcome, batchRequest, batchResults, describeTest, evaluateTest, harnessErrorDetail, isCallTest, isHarnessFile, requestForTest, testExpression, testProblems } from './tests';
+import type { BatchCase, BatchResult, TestOutcome } from './tests';
+import { caseToCheck, packageOf, planTests } from './testgen';
+import type { CaseResult } from './testgen';
 import { templates } from './templates';
-import { boxedValue, describeStep, displayMethod, heapIndex, isInlineValue, returnedCall, simpleType, stepBackOver, stepOut, stepOver } from './narrate';
+import { boxedValue, describeStep, describeValue, displayMethod, heapIndex, isInlineValue, returnedCall, simpleType, stepBackOver, stepOut, stepOver } from './narrate';
 import type { StoryItem } from './narrate';
 import { drawArrows, focusArrows } from './arrows';
+import { cursorsByObject, cursorsFor, variableTargets } from './cursors';
+import type { Cursor } from './cursors';
+import { applyEdits, compileIssues } from './compilehelp';
+import type { CompileFix, CompileIssue, LineEdit } from './compilehelp';
 import { decodeProject, encodeProject, SHARE_PREFIX } from './share';
 import { identifiers, registerJavaCompletions } from './snippets';
 import { CONCEPTS, loadProgress, recordSolved, resetProgress } from './progress';
@@ -22,19 +31,19 @@ import type { SidebarView } from './layout';
 import { applyTheme, onSystemThemeChange, resolvedTheme, setTheme, themeChoice } from './theme';
 import type { ThemeChoice } from './theme';
 import { categoryLabel, demoCard, demoName, filterBar, LOGO_SVG, visibleDemos } from './gallery';
-import type { Check as TestCase, Frame, HeapObject, Project, Question, Run, RunRequest, TraceEvent, TraceValue, Variable } from './types';
+import type { Check as TestCase, Frame, HeapObject, Project, Question, Run, RunRequest, SourceFile, TraceEvent, TraceValue, Variable } from './types';
 import './tokens.css';
 import './style.css';
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
-const iconSet = { Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces };
+const iconSet = { Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles };
 const $ = <T extends HTMLElement = HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const esc = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 /** Escapes text and renders `backtick` spans as inline code. */
 const rich = (value: unknown): string => esc(value).replace(/`([^`]+)`/g, '<code>$1</code>');
 const icon = (name: string, cls = '') => `<i data-lucide="${name}" class="${cls}" aria-hidden="true"></i>`;
 const icons = () => createIcons({ icons: iconSet, attrs: { 'stroke-width': 1.75 } });
-const VERSION = '1.1';
+const VERSION = '1.2';
 const DEFAULT_EXAMPLE = 'bounds';
 /** "3 minutes ago"-style label for project lists. */
 function relativeTime(time: number): string {
@@ -103,6 +112,14 @@ let progress = loadProgress();
 let hintsShown = 0;
 let checkResults: { name: string; index: number; status: 'running' | 'passed' | 'failed'; detail?: string }[] = [];
 let checksSource = '';
+/** Compile-error help for the current run, and the result of compiling each suggested fix. */
+let helpCache: { run: Run | null; issues: CompileIssue[] } = { run: null, issues: [] };
+type FixCheck = { status: 'checking' | 'compiles' | 'fixed' | 'unchanged' | 'unknown'; remaining?: number };
+let fixChecks = new Map<string, FixCheck>();
+let fixTask: Promise<void> | null = null;
+let fixCancel = false;
+/** Test generation in progress; runs wait for it because the runner has one job slot. */
+let genTask: Promise<unknown> | null = null;
 const models = new Map<string, monaco.editor.ITextModel>();
 const breakpoints = new Map<string, Set<number>>();
 let changingModel = false;
@@ -115,6 +132,7 @@ $('#app').innerHTML = `
     <div class="menu-wrap project-wrap"><button class="project-switch" id="project-switch" aria-haspopup="menu" aria-expanded="false" aria-controls="project-menu" title="Switch project"><span id="doc-kind" class="doc-kind" hidden>Example</span><span id="project-title"></span>${icon('chevron-down')}</button>
       <div class="menu project-menu" id="project-menu" role="menu" hidden></div>
     </div>
+    <button id="new-project-top" class="btn btn-ghost btn-compact" data-action="new-project" title="Start a new project from a template, pasted code or files" aria-label="New project">${icon('plus')}<span class="label">New project</span></button>
     <button id="save-copy" class="btn btn-secondary btn-compact" hidden title="Copy this example into your projects">${icon('save')}Save as my project</button>
     <span class="save-state" id="save-state">Saved</span>
     <div class="topbar-run">
@@ -154,6 +172,7 @@ $('#app').innerHTML = `
       <button data-view="explorer" class="activity" title="Explorer" aria-label="Explorer">${icon('files')}</button>
       <button data-view="projects" class="activity" title="My projects" aria-label="My projects">${icon('folder-kanban')}</button>
       <button data-view="examples" class="activity" title="Examples" aria-label="Examples">${icon('flask-conical')}</button>
+      <button data-action="new-project" class="activity" title="New project" aria-label="New project">${icon('plus')}</button>
       <span class="activity-spacer"></span>
       <button data-action="shortcuts" class="activity" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">${icon('keyboard')}</button>
       <button data-action="settings" class="activity" title="Project settings" aria-label="Project settings">${icon('settings-2')}</button>
@@ -209,7 +228,7 @@ $('#app').innerHTML = `
       <div class="coach-scroll">
         <ol class="learning-stages" id="learning-stages" aria-label="Debugging steps"></ol>
         <div id="coach-content"></div>
-        <section class="tests-card"><div class="card-title">${icon('list-checks')}<h3>Tests</h3><span class="tab-count" id="tests-count"></span><button id="edit-checks" class="link-btn">Edit</button></div><p class="muted" id="tests-blurb">Each test runs your current code in a fresh JVM and checks its output or a method’s result.</p><div class="tests-actions"><button id="verify" class="btn btn-secondary">${icon('play')}Run tests</button><button id="add-test" class="btn btn-ghost">${icon('list-plus')}Add test</button></div><button id="save-run-test" class="link-btn" hidden>${icon('save')}Save this run’s output as a test</button><div id="check-results" aria-live="polite"></div></section>
+        <section class="tests-card"><div class="card-title">${icon('list-checks')}<h3>Tests</h3><span class="tab-count" id="tests-count"></span><button id="edit-checks" class="link-btn">Edit</button></div><p class="muted" id="tests-blurb">Each test runs your current code in a fresh JVM and checks its output or a method’s result.</p><div class="tests-actions"><button id="verify" class="btn btn-secondary">${icon('play')}Run tests</button><button id="add-test" class="btn btn-ghost">${icon('list-plus')}Add test</button><button id="generate-tests" class="btn btn-ghost" title="Try sample arguments on your methods and turn the results into tests you confirm">${icon('wand-sparkles')}Generate</button></div><button id="save-run-test" class="link-btn" hidden>${icon('save')}Save this run’s output as a test</button><div id="check-results" aria-live="polite"></div></section>
         <section class="progress-card" id="progress-card"></section>
         <p class="coach-footnote">Questions are generated from values recorded during your run and from the recorded source. Passing tests confirms those cases, not every possible input.</p>
       </div>
@@ -397,7 +416,9 @@ function renderFiles() {
   document.title = `${project.name} · TraceLab`;
   $('#folder-name').textContent = project.name;
   $('#file-list').innerHTML = renderTree();
-  $('#editor-tabs').innerHTML = available.map(f => `<button class="panel-tab ${f.name === activeFile ? 'active' : ''}" role="tab" aria-selected="${f.name === activeFile}" data-tab="${esc(f.name)}" title="${esc(f.name)}">${icon('file-code-2')}${esc(f.name.split('/').at(-1))}</button>`).join('') + (traceSource ? '<span class="tab-note">Recorded source · read-only</span>' : '');
+  // Adding files works from the tab bar too, so it doesn't depend on the sidebar being open.
+  $('#editor-tabs').innerHTML = available.map(f => `<button class="panel-tab ${f.name === activeFile ? 'active' : ''}" role="tab" aria-selected="${f.name === activeFile}" data-tab="${esc(f.name)}" title="${esc(f.name)}">${icon('file-code-2')}${esc(f.name.split('/').at(-1))}</button>`).join('')
+    + (traceSource ? '<span class="tab-note">Recorded source · read-only</span>' : `<span class="tab-actions"><button class="icon-btn small" data-action="new-file" title="New Java file" aria-label="New Java file">${icon('plus')}</button><button class="icon-btn small" data-action="add-files" title="Add files from your computer" aria-label="Add files from your computer">${icon('upload')}</button></span>`);
   renderDocChrome();
   renderLint();
   $('#example-list').innerHTML = categories.map(c => {
@@ -427,7 +448,7 @@ function renderProjectList() {
   const row = (ref: DocRef, name: string, meta: string, actions: string) => `<div class="project-row ${doc.kind === ref.kind && doc.id === ref.id ? 'active' : ''}"><button data-open-doc="${ref.kind}:${esc(ref.id)}" title="Open ${esc(name)}">${icon(ref.kind === 'example' ? 'flask-conical' : 'folder')}<span class="project-text"><span>${esc(name)}</span><small>${esc(meta)}</small></span></button>${actions}</div>`;
   $('#project-list').innerHTML = `${list.length ? list.map(p => row({ kind: 'project', id: p.id }, p.name, `${p.fileCount} file${p.fileCount === 1 ? '' : 's'} · ${relativeTime(p.updatedAt)}`,
     `<button class="file-action" data-project-action="rename" data-id="${esc(p.id)}" title="Rename" aria-label="Rename ${esc(p.name)}">${icon('pencil')}</button><button class="file-action" data-project-action="duplicate" data-id="${esc(p.id)}" title="Duplicate" aria-label="Duplicate ${esc(p.name)}">${icon('copy')}</button><button class="file-action" data-project-action="export" data-id="${esc(p.id)}" title="Export as zip" aria-label="Export ${esc(p.name)}">${icon('download')}</button><button class="file-action" data-project-action="delete" data-id="${esc(p.id)}" title="Delete" aria-label="Delete ${esc(p.name)}">${icon('trash-2')}</button>`)).join('')
-    : `<div class="side-empty"><p>Your projects appear here. Create one from a template, paste code, or drop in .java files.</p></div>`}
+    : `<div class="side-empty"><p>Your projects appear here. Create one from a template, paste code, or drop in .java files.</p><p>Examples are separate: edits to an example stay with that example. Use Save as my project to copy one here.</p></div>`}
     <button class="btn btn-primary btn-block" data-action="new-project">${icon('plus')}New project</button>
     ${edited.length ? `<h3 class="side-subhead">Examples you changed</h3>${edited.map(e => row({ kind: 'example', id: e.example }, e.name, 'Edited example', `<button class="file-action" data-reset-example="${esc(e.example)}" title="Reset to the original" aria-label="Reset ${esc(e.name)}">${icon('rotate-ccw')}</button>`)).join('')}` : ''}`;
 }
@@ -519,16 +540,19 @@ editor.onMouseDown(event => {
   breakpoints.set(activeFile, set); updateDecorations();
 });
 editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => startRun());
+// Monaco binds Shift+F10 to its context menu; in TraceLab it steps back over, as everywhere else on the page.
+editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F10, () => navigate('back-over'));
 
 // ---------- Memory rendering ----------
 
-type RenderContext = { heap: Map<string, HeapObject>; previousHeap: Map<string, HeapObject> };
+type RenderContext = { heap: Map<string, HeapObject>; previousHeap: Map<string, HeapObject>; cursors: Map<string, Cursor[]>; targets: Map<string, Cursor>; topFrame?: string };
 function refColor(id = '') { return ['green', 'blue', 'orange', 'violet'][Number(id.replace(/\D/g, '')) % 4]; }
 function inlineText(object: HeapObject): string { return object.kind === 'string' ? `“${object.text ?? ''}”${object.truncated ? '…' : ''}` : boxedValue(object) ?? ''; }
 
 function renderValue(value: TraceValue, previous: TraceValue | undefined, ctx: RenderContext) {
   const object = value.kind === 'reference' ? ctx.heap.get(value.ref!) : undefined;
-  if (ui.inline && object && isInlineValue(object)) {
+  // A string being indexed gets its own card, so it is drawn as a reference with an arrow.
+  if (ui.inline && object && isInlineValue(object) && !ctx.cursors.has(object.id)) {
     const before = previous?.kind === 'reference' ? ctx.previousHeap.get(previous.ref!) : undefined;
     const changed = previous && (previous.ref !== value.ref || (before && inlineText(before) !== inlineText(object)));
     return `<span class="inline-value ${changed ? 'changed' : ''}" title="${esc(`${simpleType(object.type)} object @${object.id}${changed && previous ? ` · previously ${previous.kind === 'reference' && before ? inlineText(before) : valueText(previous)}` : ''}`)}">${esc(inlineText(object))}<small>@${esc(object.id)}</small></span>`;
@@ -537,24 +561,59 @@ function renderValue(value: TraceValue, previous: TraceValue | undefined, ctx: R
   if (value.kind === 'reference') return `<button class="ref ${refColor(value.ref)} ${changed ? 'changed' : ''} ${value.omitted ? 'omitted' : ''}" data-ref="${esc(value.ref)}" title="${value.omitted ? 'Not captured: object limit reached' : `Go to ${esc(simpleType(value.type ?? 'object'))} @${esc(value.ref)}`}">${icon('arrow-up-right')}@${esc(value.ref)}${value.omitted ? ' …' : ''}</button>`;
   return `<span class="primitive ${value.kind === 'null' ? 'null' : ''} ${changed ? 'changed' : ''}" ${changed ? `title="Previously ${esc(valueText(previous!))}"` : ''}>${esc(valueText(value))}</span>`;
 }
-function renderVariables(variables: Variable[], previous: Variable[] | undefined, ctx: RenderContext, qualified = false) {
+/** "→ values[2] = 7" next to an index variable in the running frame. */
+function indexHint(cursor: Cursor, ctx: RenderContext): string {
+  const object = ctx.heap.get(cursor.objectId);
+  if (!object) return '';
+  const length = object.kind === 'string' ? object.text?.length ?? 0 : object.length ?? 0;
+  if (!cursor.inRange) return `<span class="index-hint error" title="${esc(`${cursor.name}[${cursor.label}] is outside 0 to ${length - 1}`)}">→ past the end of ${esc(cursor.name)} (length ${length})</span>`;
+  const element = object.kind === 'string' ? `'${object.text?.[cursor.index] ?? '?'}'` : object.elements?.[cursor.index] ? describeValue(object.elements[cursor.index], ctx.heap) : '…';
+  return `<span class="index-hint" title="${esc(cursor.kind === 'for-each' ? `This iteration is at position ${cursor.index} of ${cursor.name}` : `${cursor.name}[${cursor.label}]`)}">→ ${esc(cursor.name)}[${cursor.index}] = ${esc(element)}</span>`;
+}
+
+function renderVariables(variables: Variable[], previous: Variable[] | undefined, ctx: RenderContext, qualified = false, frameId?: string) {
   return variables.filter(v => !watchFilter || `${v.name} ${v.type} ${valueText(v.value)}`.toLowerCase().includes(watchFilter)).map(v => {
     const prior = previous?.find(p => p.name === v.name);
     const fresh = previous && !prior;
-    return `<div class="variable ${fresh ? 'fresh' : ''}"><div class="variable-label"><span class="variable-name">${esc(v.name.split('.').slice(qualified ? -2 : -1).join('.'))}</span><span class="variable-type">${esc(simpleType(v.type))}${v.argument ? ' · param' : ''}</span></div>${renderValue(v.value, prior?.value, ctx)}</div>`;
+    const target = frameId && frameId === ctx.topFrame ? ctx.targets.get(v.name) : undefined;
+    return `<div class="variable ${fresh ? 'fresh' : ''}"><div class="variable-label"><span class="variable-name">${esc(v.name.split('.').slice(qualified ? -2 : -1).join('.'))}</span><span class="variable-type">${esc(simpleType(v.type))}${v.argument ? ' · param' : ''}</span>${target ? indexHint(target, ctx) : ''}</div>${renderValue(v.value, prior?.value, ctx)}</div>`;
   }).join('');
 }
+
+/** Array, list or string cells, with markers for the indexes the running method is using. */
+function renderCells(object: HeapObject, previous: HeapObject | undefined, ctx: RenderContext): string {
+  const cursors = ctx.cursors.get(object.id) ?? [];
+  const tags = (index: number) => cursors.filter(c => c.index === index).map(c => `<span class="cursor-tag ${c.inRange ? '' : 'error'} ${c.kind}" title="${esc(c.kind === 'for-each' ? `${c.label} is element ${index} in this iteration` : `${c.name}[${c.label}] is index ${index}`)}">${esc(c.label)}</span>`).join('');
+  const isString = object.kind === 'string';
+  const values = isString ? [...(object.text ?? '')].slice(0, 64) : object.elements ?? [];
+  const cells = values.map((v, i) => {
+    const marks = tags(i);
+    const content = typeof v === 'string' ? `<span class="primitive char">${esc(v === ' ' ? '␣' : v)}</span>` : renderValue(v, previous?.elements?.[i], ctx);
+    return `<div class="array-cell ${marks ? 'pointed' : ''}">${object.kind === 'set' ? '' : `<span class="array-index">${i}</span>`}${content}${marks ? `<div class="cursor-tags">${marks}</div>` : ''}</div>`;
+  }).join('');
+  const length = isString ? (object.text?.length ?? 0) : (object.length ?? 0);
+  // Indexes outside the array get a ghost cell, so the failed access is visible next to the real cells.
+  const outside = [...new Set(cursors.filter(c => !c.inRange).map(c => c.index))].sort((a, b) => a - b);
+  const ghosts = outside.map(i => `<div class="array-cell ghost ${i < 0 ? 'before' : ''}"><span class="array-index">${i}</span><span class="ghost-box" title="No element at index ${i}: valid indexes are 0 to ${length - 1}">✕</span><div class="cursor-tags">${tags(i)}</div></div>`);
+  const before = ghosts.filter((_, k) => outside[k] < 0).join(''), after = ghosts.filter((_, k) => outside[k] >= 0).join('');
+  const hidden = cursors.filter(c => c.inRange && c.index >= values.length);
+  const note = hidden.length ? `<div class="array-caption">${hidden.map(c => `${esc(c.label)} = ${c.index}`).join(', ')} (beyond the ${values.length} elements captured)</div>` : '';
+  const empty = !values.length && !ghosts.length ? `<span class="empty-array">${object.kind === 'array' ? 'Empty · no valid indices' : isString ? 'Empty string' : `Empty ${object.kind}`}</span>` : '';
+  return `<div class="array-cells ${object.kind} ${cursors.length ? 'has-cursor' : ''}">${before}${cells}${after}${empty}</div>${note}`;
+}
 function renderHeap(object: HeapObject, previous: HeapObject | undefined, isNew: boolean, ctx: RenderContext, snapshot: TraceEvent) {
-  if (ui.inline && isInlineValue(object)) return '';
+  const indexed = ctx.cursors.has(object.id);
+  if (ui.inline && isInlineValue(object) && !indexed) return '';
   if (watchFilter && !JSON.stringify(object).toLowerCase().includes(watchFilter)) return '';
   const refs = snapshot.frames?.flatMap(f => f.locals.filter(v => v.value.ref === object.id).map(v => v.name)) ?? [];
   let body = '';
-  if (object.kind === 'string') body = `<div class="string-value ${previous && previous.text !== object.text ? 'changed' : ''}">“${esc(object.text)}”</div>`;
+  if (object.kind === 'string' && indexed && (object.text?.length ?? 0) <= 64) body = renderCells(object, previous, ctx);
+  else if (object.kind === 'string') body = `<div class="string-value ${previous && previous.text !== object.text ? 'changed' : ''}">“${esc(object.text)}”</div>`;
   else if (object.kind === 'map') body = `<div class="map-entries">${object.entries?.map(e => {
     const before = previous?.entries?.find(p => JSON.stringify(p.key) === JSON.stringify(e.key));
     return `<div class="map-entry ${previous && !before ? 'fresh' : ''}">${renderValue(e.key, undefined, ctx)}<span class="map-arrow">→</span>${renderValue(e.value, before?.value, ctx)}</div>`;
   }).join('') || '<span class="empty-array">Empty map</span>'}</div>`;
-  else if (object.elements) body = `<div class="array-cells ${object.kind}">${object.elements.map((v, i) => `<div class="array-cell">${object.kind === 'set' ? '' : `<span class="array-index">${i}</span>`}${renderValue(v, previous?.elements?.[i], ctx)}</div>`).join('') || `<span class="empty-array">${object.kind === 'array' ? 'Empty · no valid indices' : `Empty ${object.kind}`}</span>`}</div>`;
+  else if (object.elements) body = renderCells(object, previous, ctx);
   else if (object.fields) body = `<div class="object-fields">${renderVariables(object.fields, previous?.fields, ctx)}</div>`;
   else body = `<p class="object-note">${esc(object.message ?? 'No visible fields.')}</p>`;
   const note = object.message && object.kind !== 'opaque' && object.kind !== 'unavailable' ? `<p class="object-note">${esc(object.message)}</p>` : '';
@@ -585,7 +644,7 @@ function renderFrame(frame: Frame, index: number, previous: TraceEvent | undefin
   const returnNotes = returns.map(r => `<div class="return-note">${icon('corner-left-up')}<span>${esc(returnedCall(states, at, r.frameId, r.method, ctx.previousHeap))} ${r.void ? 'finished' : 'returned'}</span>${r.value ? renderValue(r.value, undefined, ctx) : ''}</div>`).join('');
   const prior = previous?.frames?.find(f => f.id === frame.id);
   const isNew = !!previous && !prior;
-  return `<details class="frame ${index === 0 ? 'current' : ''} ${isNew ? 'new-frame' : ''}" open><summary><span class="frame-name">${index === 0 ? '<span class="frame-active-dot"></span>' : ''}${esc(displayMethod(frame.method))}<span class="method-parens">()</span></span><span class="frame-location">${esc(frame.file)}:${frame.line}</span></summary><div class="frame-variables">${returnNotes}${renderVariables(frame.locals, prior?.locals, ctx) || '<div class="no-vars">No local variables in scope</div>'}${frame.truncated ? '<div class="array-caption">Locals truncated</div>' : ''}</div></details>`;
+  return `<details class="frame ${index === 0 ? 'current' : ''} ${isNew ? 'new-frame' : ''}" open><summary><span class="frame-name">${index === 0 ? '<span class="frame-active-dot"></span>' : ''}${esc(displayMethod(frame.method))}<span class="method-parens">()</span></span><span class="frame-location">${esc(frame.file)}:${frame.line}</span></summary><div class="frame-variables">${returnNotes}${renderVariables(frame.locals, prior?.locals, ctx, false, frame.id) || '<div class="no-vars">No local variables in scope</div>'}${frame.truncated ? '<div class="array-caption">Locals truncated</div>' : ''}</div></details>`;
 }
 
 let arrowFrame = 0;
@@ -602,7 +661,7 @@ const STOP_LABELS: Record<string, [string, string]> = {
 
 function renderEmptyDebugger(reason: string | undefined) {
   if (running) return `<div class="empty-state"><span class="empty-icon spin">${icon('loader-circle')}</span><h3>Recording your program…</h3><p>TraceLab compiles your code with javac, runs it on a real JVM, and records every line it executes.</p></div>`;
-  if (reason === 'compile-error') return `<div class="empty-state"><span class="empty-icon error">${icon('circle-x')}</span><h3>The program didn’t compile</h3><p>Fix the errors listed under Problems, then run again. The Tutor can explain the first error.</p><button class="btn btn-secondary" data-console-open="diagnostics">Show problems</button></div>`;
+  if (reason === 'compile-error') return `<div class="empty-state"><span class="empty-icon error">${icon('circle-x')}</span><h3>The program didn’t compile</h3><p>The Tutor explains each error in plain language and suggests fixes that TraceLab has checked with javac. You can also press Ctrl+. on a red underline.</p><div class="empty-actions"><button class="btn btn-primary" data-action="show-tutor">${icon('wrench')}Show fixes</button><button class="btn btn-secondary" data-console-open="diagnostics">Show problems</button></div></div>`;
   return `<div class="empty-state"><span class="empty-icon">${icon('bug')}</span><h3>Run your program to start debugging</h3><p>TraceLab records the execution, so you can step forward and back through every line and inspect the call stack and heap at each step.</p><button class="btn btn-primary" data-run>${icon('play')}Run <kbd>Ctrl ↵</kbd></button><div class="empty-hints"><span><kbd class="key">F10</kbd> Step over</span><span><kbd class="key">F11</kbd> Step into</span><span><kbd class="key">⇧F11</kbd> Step out</span></div></div>`;
 }
 
@@ -624,7 +683,9 @@ function renderTrace(followLine = false) {
   if (!snapshot) {
     canvas.innerHTML = renderEmptyDebugger(reason);
   } else {
-    const ctx: RenderContext = { heap: heapIndex(snapshot), previousHeap: heapIndex(previous) };
+    // Index markers use the recorded source, so they pause while the code differs from the recording.
+    const cursors = run && (!dirtyTrace() || traceSource) ? cursorsFor(run, states, step) : [];
+    const ctx: RenderContext = { heap: heapIndex(snapshot), previousHeap: heapIndex(previous), cursors: cursorsByObject(cursors), targets: variableTargets(cursors, snapshot.frames?.[0]), topFrame: snapshot.frames?.[0]?.id };
     const heapCards = snapshot.heap?.map(o => renderHeap(o, previous?.heap?.find(p => p.id === o.id), !!previous && !ctx.previousHeap.has(o.id), ctx, snapshot)).join('') ?? '';
     const message = event?.exception ? exceptionMessage(run!, event) : '';
     canvas.innerHTML = `${event?.exception ? `<div class="exception-card">${icon('bug')}<div><strong>${esc(event.exception.type.split('.').at(-1))}</strong>${message ? `<p>${esc(message)}</p>` : ''}</div></div>` : ''}
@@ -670,9 +731,18 @@ function renderConsole() {
     el.innerHTML = `<label class="input-label" for="stdin">Standard input<span>Sent to the program on the next run, then closed.</span></label><textarea id="stdin" spellcheck="false">${esc(project.stdin)}</textarea>`;
     $('#stdin').addEventListener('input', e => { project.stdin = (e.target as HTMLTextAreaElement).value; save(); });
   } else if (consoleTab === 'diagnostics') {
-    el.innerHTML = diagnostics.length ? diagnostics.map(d => `<button class="diagnostic ${d.severity}" data-diagnostic="${esc(d.file)}" data-line="${d.line ?? 1}">${icon(d.severity === 'error' ? 'circle-x' : 'info')}<span><strong>${esc(d.message)}</strong><small>${esc(d.file)} · line ${d.line}, column ${d.column}</small></span></button>`).join('') : '<div class="console-empty">No problems in the last run.</div>';
+    // Each error shows the Tutor's plain-language title and its first suggested fix.
+    const help = new Map(compileHelp().map(i => [`${i.file}:${i.line}:${errorKey(i.message)}`, i]));
+    const shown = new Set<CompileIssue>();
+    el.innerHTML = diagnostics.length ? diagnostics.map(d => {
+      const issue = d.severity === 'error' ? help.get(`${d.file}:${d.line}:${errorKey(d.message)}`) : undefined;
+      const first = issue && !shown.has(issue);
+      if (issue) shown.add(issue);
+      const extra = issue && first ? `<div class="diagnostic-help"><span>${icon('lightbulb')}${esc(issue.title)}</span>${issue.fixes[0] && !fixesFolded() ? renderFix(issue.fixes[0], true) : ''}</div>` : '';
+      return `<div class="diagnostic-item"><button class="diagnostic ${d.severity}" data-diagnostic="${esc(d.file)}" data-line="${d.line ?? 1}">${icon(d.severity === 'error' ? 'circle-x' : 'info')}<span><strong>${esc(d.message)}</strong><small>${esc(d.file)} · line ${d.line}, column ${d.column}</small></span></button>${extra}</div>`;
+    }).join('') : '<div class="console-empty">No problems in the last run.</div>';
   } else if (consoleTab === 'checks') {
-    el.innerHTML = project.checks.length ? `<table class="test-table"><thead><tr><th>Test</th><th>Type</th><th>Input or call</th><th>Expected</th></tr></thead><tbody>${project.checks.map(c => { const d = describeTest(c); return `<tr><td>${esc(c.name)}</td><td>${esc(d.kind)}</td><td><code>${esc(d.given)}</code></td><td><code>${esc(d.expects)}</code></td></tr>`; }).join('')}</tbody></table>` : '<div class="console-empty">This project has no tests yet. Use Add test in the Tutor panel.</div>';
+    el.innerHTML = project.checks.length ? `<table class="test-table"><thead><tr><th>Test</th><th>Type</th><th>Input or call</th><th>Expected</th></tr></thead><tbody>${project.checks.map(c => { const d = describeTest(c); return `<tr><td>${esc(c.name)}</td><td>${esc(d.kind)}</td><td><code>${esc(d.given)}</code></td><td><code>${esc(d.expects)}</code></td></tr>`; }).join('')}</tbody></table>` : `<div class="console-empty">This project has no tests yet. Write one with Add test in the Tutor panel, or <button class="link-btn" data-action="generate-tests">generate tests from your methods</button>.</div>`;
   } else {
     const sequence = currentEvent()?.sequence ?? Infinity;
     const stdout = run ? output(run, 'stdout', sequence) : '';
@@ -712,7 +782,8 @@ function renderCoach() {
     const brief = demo && demo.category !== 'tour' && !run
       ? `<div class="brief"><span class="chip ${({ runtime: 'danger', output: 'warning', hang: 'violet', compile: 'info', tour: 'accent' } as const)[demo.category]}">${esc(categoryLabel(demo.category))}</span><h3>${esc(project.name)}</h3><p>${esc(demo.summary)}</p><dl><dt>Symptom</dt><dd>${esc(demo.symptom)}</dd><dt>Look at</dt><dd><code>${esc(demo.snippet)}</code></dd></dl><p class="muted">Run the program. The Tutor will ask about what actually happened, then help you choose a fix.</p><button class="btn btn-primary btn-block" data-run>${icon('play')}Run program</button></div>`
       : `<div class="empty-coach">${icon('lightbulb')}<h3>${run ? (running ? 'Recording…' : 'No questions for this run') : 'Questions appear after you run'}</h3><p>${run ? 'TraceLab asks only about things it can confirm from the recorded run, such as exceptions, values that changed, references and return values. Step through the trace and compare it with your tests.' : 'Run your program and the Tutor will ask about what it actually did: predict a value, explain an error, then choose a fix and test it.'}</p>${!run ? `<button class="btn btn-secondary" data-action="gallery">${icon('layout-grid')}Try an example</button>` : ''}</div>`;
-    el.innerHTML = `${mismatchCard}${brief}`;
+    const help = compileHelpCard();
+    el.innerHTML = `${mismatchCard}${help || brief}`;
     renderStages(); icons();
     return;
   }
@@ -721,7 +792,7 @@ function renderCoach() {
   const label = { predict: 'Predict', explain: 'Explain', repair: 'Fix' }[q.kind];
   const editCta = correct && q.kind === 'repair' && q.focus ? `<button id="edit-focus" class="btn btn-secondary btn-block">${icon('wrench')}Edit ${esc(q.focus.file)}, line ${q.focus.line}</button>` : '';
   const inspect = q.step >= 0 || q.focus ? `<button id="go-question" class="link-btn">${icon('microscope')}${q.step >= 0 ? 'Show this moment' : 'Show the line'}${q.focus ? ` · line ${q.focus.line}` : ''}</button>` : '';
-  el.innerHTML = `${mismatchCard}<article class="question-card ${q.kind}"><header class="question-top"><span class="question-type">${label}</span><span class="question-count">${questionIndex + 1} of ${questions.length}</span></header><h3>${esc(q.title)}</h3><p class="question-context">${rich(q.context)}</p>${inspect}<h4>${rich(q.prompt)}</h4><div class="answer-options" role="group" aria-label="Answers">${q.options.map((option, index) => `<button class="answer-option ${answer === index ? (correct ? 'correct' : 'incorrect') : ''}" data-answer="${index}" aria-pressed="${answer === index}"><span class="option-key">${String.fromCharCode(65 + index)}</span><span>${rich(option)}</span>${answer === index ? icon(correct ? 'circle-check' : 'circle-x') : ''}</button>`).join('')}</div>${answer !== undefined ? `<div class="answer-feedback ${correct ? 'correct' : ''}" role="status"><strong>${correct ? 'Correct — that matches the recorded run.' : 'Not quite.'}</strong><p>${correct ? rich(q.explanation) : 'Compare your answer with the recorded values. Try again, or reveal a hint.'}</p>${editCta}</div>` : ''}<footer class="question-footer"><button id="hint" class="link-btn" ${hintsShown >= q.hints.length ? 'disabled' : ''}>${icon('lightbulb')}${hintsShown < q.hints.length ? `Hint (${hintsShown + 1} of ${q.hints.length})` : 'No more hints'}</button>${questions.length > 1 ? `<button id="next-question" class="link-btn">${questionIndex === questions.length - 1 ? 'First question' : 'Next question'}${icon('arrow-right')}</button>` : ''}</footer>${q.hints.slice(0, hintsShown).map(h => `<div class="hint">${rich(h)}</div>`).join('')}</article>`;
+  el.innerHTML = `${mismatchCard}<article class="question-card ${q.kind}"><header class="question-top"><span class="question-type">${label}</span><span class="question-count">${questionIndex + 1} of ${questions.length}</span></header><h3>${esc(q.title)}</h3><p class="question-context">${rich(q.context)}</p>${inspect}<h4>${rich(q.prompt)}</h4><div class="answer-options" role="group" aria-label="Answers">${q.options.map((option, index) => `<button class="answer-option ${answer === index ? (correct ? 'correct' : 'incorrect') : ''}" data-answer="${index}" aria-pressed="${answer === index}"><span class="option-key">${String.fromCharCode(65 + index)}</span><span>${rich(option)}</span>${answer === index ? icon(correct ? 'circle-check' : 'circle-x') : ''}</button>`).join('')}</div>${answer !== undefined ? `<div class="answer-feedback ${correct ? 'correct' : ''}" role="status"><strong>${correct ? 'Correct — that matches the recorded run.' : 'Not quite.'}</strong><p>${correct ? rich(q.explanation) : 'Compare your answer with the recorded values. Try again, or reveal a hint.'}</p>${editCta}</div>` : ''}<footer class="question-footer"><button id="hint" class="link-btn" ${hintsShown >= q.hints.length ? 'disabled' : ''}>${icon('lightbulb')}${hintsShown < q.hints.length ? `Hint (${hintsShown + 1} of ${q.hints.length})` : 'No more hints'}</button>${questions.length > 1 ? `<button id="next-question" class="link-btn">${questionIndex === questions.length - 1 ? 'First question' : 'Next question'}${icon('arrow-right')}</button>` : ''}</footer>${q.hints.slice(0, hintsShown).map(h => `<div class="hint">${rich(h)}</div>`).join('')}</article>${compileHelpCard()}`;
   renderStages(); icons();
 }
 
@@ -736,6 +807,7 @@ function answerQuestion(index: number) {
     renderProgress();
   }
   renderCoach();
+  if (consoleTab === 'diagnostics') renderConsole();
 }
 
 function renderCheckResults() {
@@ -743,6 +815,180 @@ function renderCheckResults() {
   $('#check-results').innerHTML = `${stale ? '<div class="callout subtle">The code or tests changed since these results. Run the tests again.</div>' : ''}${checkResults.map(r => `<div class="check-result ${r.status}">${icon(r.status === 'passed' ? 'circle-check' : r.status === 'failed' ? 'circle-x' : 'loader-circle', r.status === 'running' ? 'spin' : '')}<div><span>${esc(r.name)}</span>${r.detail ? `<small>${esc(r.detail)}</small>` : ''}${r.status === 'failed' && !stale && !running && !checking ? `<button class="link-btn trace-case" data-trace-check="${r.index}">${icon('microscope')}Debug this test</button>` : ''}</div></div>`).join('')}${allChecksPassed() ? `<div class="callout success">${icon('circle-check')}<span>All ${checkResults.length} tests pass.</span></div>` : ''}`;
   renderStages(); icons();
 }
+
+// ---------- Compile-error help ----------
+
+/** Explanations and suggested fixes for the current run's javac errors (computed once per run). */
+function compileHelp(): CompileIssue[] {
+  if (!run || running) return [];
+  if (helpCache.run !== run) helpCache = { run, issues: run.events.some(e => e.kind === 'diagnostic' && e.severity === 'error') ? compileIssues(run.request.files, run.events) : [] };
+  return helpCache.issues;
+}
+function findFix(id: string): { issue: CompileIssue; fix: CompileFix } | null {
+  for (const issue of compileHelp()) { const fix = issue.fixes.find(f => f.id === id); if (fix) return { issue, fix }; }
+  return null;
+}
+const errorKey = (message: string | undefined) => (message ?? '').split('\n').slice(0, 2).join(' ').replace(/\s+/g, ' ');
+/** Whether a diagnostic from compiling a fix is the original error, allowing for lines the fix inserted above it. */
+function sameError(issue: CompileIssue, fix: CompileFix, event: TraceEvent): boolean {
+  const file = fix.action.kind === 'move' && fix.action.from === issue.file ? fix.action.to : issue.file;
+  if (event.file !== file || errorKey(event.message) !== errorKey(issue.message)) return false;
+  let line = issue.line;
+  if (fix.action.kind === 'edit') for (const e of fix.action.edits) if (e.file === issue.file && (e.line < issue.line || (e.line === issue.line && e.remove === 0))) line += e.insert.length - e.remove;
+  return Math.abs((event.line ?? 0) - line) <= 1;
+}
+function fixStatusHtml(id: string): { tone: string; html: string } {
+  const check = fixChecks.get(id);
+  if (!check) return { tone: '', html: '' };
+  if (check.status === 'checking') return { tone: '', html: `${icon('loader-circle', 'spin')}Checking with javac…` };
+  if (check.status === 'compiles') return { tone: 'ok', html: `${icon('circle-check')}Compiles` };
+  if (check.status === 'fixed') return { tone: 'ok', html: `${icon('circle-check')}Clears this error · ${check.remaining} other${check.remaining === 1 ? '' : 's'} left` };
+  if (check.status === 'unchanged') return { tone: 'warning', html: `${icon('triangle-alert')}Doesn’t clear this error` };
+  return { tone: '', html: 'Not checked' };
+}
+function renderFix(fix: CompileFix, compact = false): string {
+  const status = fixStatusHtml(fix.id);
+  const diff = fix.action.kind === 'move'
+    ? `<code class="del">${esc(fix.before)}</code><code class="ins">${esc(fix.after)}</code>`
+    : `${fix.before ? `<code class="del">${esc(fix.before)}</code>` : ''}${fix.after ? `<code class="ins">${esc(fix.after)}</code>` : '<code class="ins">(line removed)</code>'}`;
+  return `<div class="fix">${compact ? '' : `<div class="fix-diff" aria-label="Change">${diff}</div>`}<div class="fix-row"><button class="btn btn-secondary btn-compact" data-apply-fix="${esc(fix.id)}" ${dirtyTrace() || running || checking ? 'disabled' : ''} title="Apply this change and run again">${icon('wrench')}${esc(fix.label)}</button><span class="fix-status ${status.tone}" data-fix-status="${esc(fix.id)}">${status.html}</span></div>${fix.caution && !compact ? `<p class="fix-caution">${esc(fix.caution)}</p>` : ''}</div>`;
+}
+function renderIssue(issue: CompileIssue, hideFixes: boolean): string {
+  const fixes = issue.fixes.map(f => renderFix(f)).join('');
+  const fixBlock = !issue.fixes.length ? '<p class="fix-none">No automatic fix for this one; the explanation describes what to change.</p>'
+    : hideFixes ? `<details class="fix-reveal"><summary>Show ${issue.fixes.length === 1 ? 'the suggested fix' : `${issue.fixes.length} suggested fixes`}</summary>${fixes}</details>` : fixes;
+  return `<article class="compile-issue"><header>${icon('circle-x')}<div><h4>${esc(issue.title)}</h4><button class="link-btn" data-diagnostic="${esc(issue.file)}" data-line="${issue.line}">${esc(issue.file)} · line ${issue.line}</button>${issue.count > 1 ? `<small> · reported ${issue.count} times</small>` : ''}</div></header><p>${esc(issue.explanation)}</p><details class="javac-message"><summary>What javac said</summary><pre>${esc(issue.message)}</pre></details>${fixBlock}</article>`;
+}
+/** In an example the fix is the exercise, so suggested fixes stay folded until the Tutor's questions are answered. */
+const fixesFolded = () => doc.kind === 'example' && questions.some(q => !solvedQuestions.has(q.id));
+/** Tutor card for compile errors. */
+function compileHelpCard(): string {
+  const issues = compileHelp();
+  if (!issues.length) return '';
+  const hideFixes = fixesFolded();
+  const shown = issues.slice(0, 3);
+  const note = dirtyTrace() ? '<div class="callout subtle">The code changed since this compile. Run again to refresh these suggestions.</div>'
+    : `<p class="muted">TraceLab compiles each suggested fix before marking it as working. Applying a fix edits your code and runs it again; Ctrl+Z undoes it.${issues.length > 1 ? ' Start with the first error: later ones are often caused by it.' : ''}</p>`;
+  return `<section class="compile-help"><div class="card-title">${icon('wrench')}<h3>${issues.length === 1 ? 'Compile error' : 'Compile errors'}</h3><span class="tab-count error">${issues.length}</span></div>${note}${shown.map(i => renderIssue(i, hideFixes)).join('')}${issues.length > shown.length ? `<button class="link-btn" data-console-open="diagnostics">${icon('arrow-right')}${issues.length - shown.length} more under Problems</button>` : ''}</section>`;
+}
+function updateFixStatuses() {
+  document.querySelectorAll<HTMLElement>('[data-fix-status]').forEach(el => {
+    const status = fixStatusHtml(el.dataset.fixStatus!);
+    el.className = `fix-status ${status.tone}`; el.innerHTML = status.html;
+  });
+  icons();
+}
+
+/** Compiles a request without recording it. */
+const compileOnly = (request: RunRequest) => quietRun({ ...request, mode: 'compile' });
+/** A background job (compile check or plain run) that doesn't change the current run. `stoppable` lets Stop cancel it. */
+async function quietRun(request: RunRequest, stoppable = false): Promise<TraceEvent[]> {
+  const created = await api<{ id: string }>('/runs', { method: 'POST', body: JSON.stringify(request) });
+  if (stoppable) { currentRunId = created.id; if (checkCancelled) await api(`/runs/${created.id}`, { method: 'DELETE' }).catch(() => {}); }
+  try {
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 120));
+      const page = await api<Run & { total: number }>(`/runs/${created.id}`);
+      if (page.status === 'finished') return page.events;
+    }
+    await api(`/runs/${created.id}`, { method: 'DELETE' }).catch(() => {});
+    throw new Error('The runner did not finish in time.');
+  } finally { if (stoppable) currentRunId = null; }
+}
+
+/** Compiles each suggested fix for the first errors in the background, one at a time (the runner has one job slot). */
+async function verifyFixes(forRun: Run) {
+  fixChecks = new Map(); fixCancel = false;
+  const queue = compileHelp().slice(0, 3).flatMap(issue => issue.fixes.map(fix => ({ issue, fix })));
+  for (const { fix } of queue) fixChecks.set(fix.id, { status: 'checking' });
+  updateFixStatuses();
+  for (const { issue, fix } of queue) {
+    if (fixCancel || run !== forRun) break;
+    try {
+      const events = await compileOnly({ ...forRun.request, files: applyEdits(forRun.request.files, fix.action) });
+      const errors = events.filter(e => e.kind === 'diagnostic' && e.severity === 'error');
+      // Count errors the way the Tutor lists them: one per message and line.
+      const remaining = new Set(errors.map(e => `${e.file}:${e.line}:${errorKey(e.message)}`)).size;
+      fixChecks.set(fix.id, events.at(-1)?.stopReason === 'compiled' ? { status: 'compiles' }
+        : errors.some(e => sameError(issue, fix, e)) ? { status: 'unchanged' }
+        : remaining ? { status: 'fixed', remaining } : { status: 'unknown' });
+    } catch { fixChecks.set(fix.id, { status: 'unknown' }); }
+    updateFixStatuses();
+  }
+  for (const [id, check] of fixChecks) if (check.status === 'checking') fixChecks.set(id, { status: 'unknown' });
+  updateFixStatuses();
+}
+function startFixChecks() {
+  if (!run || !compileHelp().some(i => i.fixes.length)) return;
+  const task = verifyFixes(run).finally(() => { if (fixTask === task) fixTask = null; });
+  fixTask = task;
+}
+/** Stops background fix checks and waits for jobs in flight (including test generation), so the runner's slot is free. */
+async function settleFixChecks() {
+  if (fixTask) { fixCancel = true; await fixTask.catch(() => {}); }
+  if (genTask) await genTask.catch(() => {});
+}
+
+/** A Monaco edit that replaces whole lines, matching applyEdits in compilehelp.ts. */
+function lineOperation(model: monaco.editor.ITextModel, e: LineEdit): { range: monaco.Range; text: string } {
+  const count = model.getLineCount();
+  const text = e.insert.join('\n').replace(/\r/g, '');
+  if (e.remove === 0) {
+    if (e.line > count) return { range: new monaco.Range(count, model.getLineMaxColumn(count), count, model.getLineMaxColumn(count)), text: `\n${text}` };
+    return { range: new monaco.Range(e.line, 1, e.line, 1), text: `${text}\n` };
+  }
+  const last = Math.min(count, e.line + e.remove - 1);
+  if (e.insert.length) return { range: new monaco.Range(e.line, 1, last, model.getLineMaxColumn(last)), text };
+  // Delete whole lines with their line break.
+  if (last < count) return { range: new monaco.Range(e.line, 1, last + 1, 1), text: '' };
+  return { range: new monaco.Range(Math.max(1, e.line - 1), e.line > 1 ? model.getLineMaxColumn(e.line - 1) : 1, last, model.getLineMaxColumn(last)), text: '' };
+}
+
+/** Applies a suggested fix to the editor (undoable), then runs again so the Tutor sees the new result. */
+async function applyFix(id: string) {
+  const found = findFix(id);
+  if (!found || running || checking) return;
+  if (dirtyTrace()) { toast('The code changed since this compile. Run again to refresh the suggested fixes.', 'error'); return; }
+  const { fix } = found;
+  if (fix.action.kind === 'move') {
+    if (!moveFile(fix.action.from, fix.action.to)) return;
+  } else {
+    const byFile = new Map<string, LineEdit[]>();
+    for (const e of fix.action.edits) byFile.set(e.file, [...(byFile.get(e.file) ?? []), e]);
+    for (const [file, edits] of byFile) {
+      if (!project.files.some(f => f.name === file)) continue;
+      const model = getModel(file, false);
+      model.pushStackElement();
+      model.pushEditOperations([], edits.map(e => lineOperation(model, e)), () => null);
+      model.pushStackElement();
+    }
+    const first = fix.action.edits[0];
+    selectFile(first.file, false);
+    const line = Math.min(first.line, editor.getModel()!.getLineCount());
+    editor.revealLineInCenter(line); editor.setPosition({ lineNumber: line, column: 1 });
+  }
+  toast(`Applied “${fix.label}”. Running again…`, 'success');
+  await startRun();
+}
+
+monaco.languages.registerCodeActionProvider('java', {
+  provideCodeActions(model, range, context) {
+    const name = [...models.entries()].find(([, m]) => m === model)?.[0];
+    if (!name?.startsWith('workspace/') || dirtyTrace()) return { actions: [], dispose() {} };
+    const file = name.slice('workspace/'.length);
+    const actions = compileHelp().filter(i => i.file === file && i.line >= range.startLineNumber && i.line <= range.endLineNumber).flatMap(issue => issue.fixes
+      .filter(fix => fix.action.kind === 'edit' && fix.action.edits.every(e => e.file === file))
+      .map(fix => {
+        const check = fixChecks.get(fix.id);
+        const edits = fix.action.kind === 'edit' ? fix.action.edits : [];
+        return { title: `${fix.label}${check?.status === 'compiles' ? ' (compiles)' : ''}`, kind: 'quickfix', isPreferred: check?.status === 'compiles',
+          diagnostics: context.markers.filter(m => m.startLineNumber === issue.line),
+          edit: { edits: edits.map(e => ({ resource: model.uri, textEdit: lineOperation(model, e), versionId: model.getVersionId() })) } };
+      }));
+    return { actions, dispose() {} };
+  },
+});
 
 // ---------- Runner API ----------
 
@@ -803,6 +1049,9 @@ async function startRun(override?: RunRequest) {
   const problem = limitProblem(project.files);
   if (problem) { toast(problem, 'error'); return; }
   if (!override && !ensureMainClass()) return;
+  // Background fix checks hold the runner's only job slot for about half a second each.
+  await settleFixChecks();
+  if (running || checking) return;
   stopPlayback(); traceSource = false; selectFile(activeFile, false);
   if (run) previousRun = run;
   run = null; step = 0; resetQuestions();
@@ -822,7 +1071,10 @@ async function startRun(override?: RunRequest) {
     if (questions.length && !layout.coach && window.innerWidth >= 1100) setLayout({ coach: true });
     applyDiagnostics();
   } catch (error) { toast(error instanceof Error ? error.message : 'The run failed.', 'error'); }
-  finally { running = false; currentRunId = null; setBusy(); renderTrace(true); renderCoach(); renderSourceBanner(); renderCheckResults(); renderSaveRunTest(); }
+  finally {
+    running = false; currentRunId = null; setBusy(); renderTrace(true); renderCoach(); renderSourceBanner(); renderCheckResults(); renderSaveRunTest();
+    if (!stopRequested) startFixChecks();
+  }
 }
 
 /** Offers to save a finished run's output as a test, unless a test already covers that input. */
@@ -846,10 +1098,27 @@ async function verify() {
   const problem = limitProblem(project.files);
   if (problem) { toast(problem, 'error'); return; }
   if (project.checks.some(c => !isCallTest(c)) && !ensureMainClass()) return;
+  await settleFixChecks();
+  if (running || checking) return;
   if (!layout.coach) setLayout({ coach: true });
   stopPlayback(); checking = true; checkCancelled = false; stopRequested = false; setBusy();
   checksSource = sourceKey(); checkResults = [];
-  const request = requestFor(); const checks = structuredClone(project.checks);
+  // Tests run on a plain JVM (no recording), which is about twice as fast; "Debug this test" records one.
+  const request: RunRequest = { ...requestFor(), mode: 'run', timeoutMs: 4000 }; const checks = structuredClone(project.checks);
+  // Method tests with the same package and input run together in one JVM; output tests run one at a time.
+  const batched = new Map<number, TestOutcome>();
+  const batchKey = (test: TestCase) => `${packageOf(test.target ?? '')}\u0000${test.stdin}`;
+  async function runCallBatch(key: string) {
+    const group = checks.map((test, index) => ({ test, index })).filter(({ test, index }) => isCallTest(test) && !batched.has(index) && batchKey(test) === key && !testProblems(test, project).length);
+    const cases = group.map(({ test, index }) => ({ id: index, expression: testExpression(test, request.files) }));
+    try {
+      const results = await runBatches({ ...request, stdin: group[0].test.stdin }, new Map([[packageOf(group[0].test.target ?? ''), cases]]), { stoppable: true });
+      for (const { test, index } of group) batched.set(index, batchOutcome(test, results.get(index)!));
+    } catch (error) {
+      if (!(error instanceof ProjectCompileError)) throw error;
+      for (const { index } of group) batched.set(index, { passed: false, detail: 'The project does not compile. Fix the errors under Problems first.' });
+    }
+  }
   try {
     for (const [index, test] of checks.entries()) {
       if (checkCancelled) break;
@@ -857,7 +1126,8 @@ async function verify() {
       checkResults.push(result); renderCheckResults();
       const invalid = testProblems(test, project);
       if (invalid.length) { result.status = 'failed'; result.detail = invalid[0]; renderCheckResults(); continue; }
-      const outcome = evaluateTest(await collect(requestForTest(project, test, request)), test);
+      if (isCallTest(test) && !batched.has(index)) await runCallBatch(batchKey(test));
+      const outcome = batched.get(index) ?? evaluateTest(await collect(requestForTest(project, test, request)), test);
       result.status = outcome.passed ? 'passed' : 'failed';
       result.detail = outcome.detail;
       renderCheckResults();
@@ -925,6 +1195,7 @@ function openDialog(title: string, body: string, onSave: () => void, button = 'S
   $('#dialog').classList.toggle('wide', !!options.wide);
   $('#dialog-title').textContent = title; $('#dialog-body').innerHTML = body; $('#dialog-error').textContent = '';
   $('#dialog-submit').textContent = button;
+  $<HTMLButtonElement>('#dialog-submit').disabled = false;
   $('#dialog-submit').className = `btn ${options.danger ? 'btn-danger' : 'btn-primary'}`;
   $('#dialog-cancel').hidden = options.cancel === null;
   $('#dialog-cancel').textContent = options.cancel ?? 'Cancel';
@@ -1335,6 +1606,146 @@ function saveRunAsTest() {
     '<strong>Check the expected output before saving.</strong><p>This copies what the program printed. If the program has a bug, this test would expect the wrong answer.</p>');
 }
 
+// ---------- Test generation ----------
+
+const GEN_TIMEOUT = 3000;
+class ProjectCompileError extends Error {}
+/**
+ * Evaluates method calls on a plain JVM, one batch per package. A call that doesn't compile is dropped and the batch
+ * retried; a call that hangs or exits is reported, and the calls after it run in a new batch. `related` marks other
+ * calls to skip after a hang (for generation: the same method), so one endless loop costs one time limit.
+ */
+async function runBatches<T extends BatchCase>(base: RunRequest, byPackage: Map<string, T[]>, options: { related?: (stuck: T, other: T) => boolean; label?: (c: T) => string; onProgress?: (done: number) => void; stoppable?: boolean } = {}): Promise<Map<number, BatchResult>> {
+  const results = new Map<number, BatchResult>();
+  for (const [pkg, cases] of byPackage) {
+    let pending = cases;
+    for (let attempt = 0; attempt < 8 && pending.length && !(options.stoppable && checkCancelled); attempt++) {
+      const { request, lines } = batchRequest(base, pkg, pending);
+      const events = await quietRun(request, options.stoppable);
+      const errors = events.filter(e => e.kind === 'diagnostic' && e.severity === 'error');
+      if (errors.length) {
+        const bad = new Map<number, string>();
+        for (const e of errors) { const id = isHarnessFile(e.file ?? '') ? lines.get(e.line ?? 0) : undefined; if (id !== undefined && !bad.has(id)) bad.set(id, e.message ?? ''); }
+        if (!bad.size) throw new ProjectCompileError('The project doesn’t compile, so its methods can’t be called. Fix the errors under Problems first.');
+        for (const [id, message] of bad) results.set(id, { id, status: 'invalid', value: '', detail: harnessErrorDetail(message) });
+        pending = pending.filter(c => !bad.has(c.id));
+        continue;
+      }
+      const found = batchResults(output({ id: '', status: 'finished', request, events }, 'stdout'));
+      for (const [id, r] of found) results.set(id, r);
+      options.onProgress?.(results.size);
+      const missing = pending.filter(c => !found.has(c.id));
+      if (!missing.length) break;
+      const reason = events.at(-1)?.stopReason;
+      if (reason === 'cancelled') { for (const c of missing) results.set(c.id, { id: c.id, status: 'unfinished', value: '', detail: 'Stopped' }); pending = []; break; }
+      const stuck = missing[0];
+      results.set(stuck.id, { id: stuck.id, status: 'unfinished', value: '', detail: reason === 'timeout' ? `Didn’t finish within ${(base.timeoutMs ?? 0) / 1000} seconds (an endless loop?)` : reason === 'output-limit' ? 'Printed too much output (an endless loop?)' : 'Ended the program, for example with System.exit' });
+      const related = (c: T) => !!options.related?.(stuck, c);
+      for (const c of missing.slice(1).filter(related)) results.set(c.id, { id: c.id, status: 'unfinished', value: '', detail: `Skipped because ${options.label?.(stuck) ?? 'an earlier call'} didn’t finish` });
+      pending = missing.slice(1).filter(c => !related(c));
+    }
+    for (const c of pending) if (!results.has(c.id)) results.set(c.id, { id: c.id, status: 'unfinished', value: '', detail: 'Wasn’t run' });
+  }
+  return results;
+}
+function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const item of items) map.set(key(item), [...(map.get(key(item)) ?? []), item]);
+  return map;
+}
+
+type GenRow = { key: string; check: TestCase; label: string; expected: string; status: CaseResult['status'] | 'output'; detail?: string; checked: boolean };
+
+async function generateTestsDialog() {
+  if (running || checking || genTask) return;
+  if (!runnerOnline) { toast('The Java runner isn’t connected. Start it with npm start, then try again.', 'error'); checkHealth(); return; }
+  const problem = limitProblem(project.files);
+  if (problem) { toast(problem, 'error'); return; }
+  const room = 20 - project.checks.length;
+  if (room <= 0) { toast('This project already has 20 tests, the maximum. Remove some first.', 'error'); return; }
+  const plan = planTests(project.files);
+  const known = new Set(project.checks.filter(isCallTest).map(c => `${c.target}|${c.call}`));
+  plan.cases = plan.cases.filter(c => !known.has(`${c.target}|${c.call}`));
+  const withOutput = mainClasses(project.files).includes(project.mainClass) && !project.checks.some(c => !isCallTest(c) && normalizeOutput(c.stdin) === normalizeOutput(project.stdin));
+  const noHarnessSlot = project.files.length >= 20;
+  if (noHarnessSlot) plan.cases = [];
+  const files = structuredClone(project.files);
+  const forDoc = `${doc.kind}:${doc.id}`;
+  let rows: GenRow[] = [];
+  const skippedNote = plan.skipped.length ? `<details class="gen-skipped"><summary>${plan.skipped.length} method${plan.skipped.length === 1 ? '' : 's'} skipped</summary><ul>${plan.skipped.map(s => `<li><code>${esc(s.className)}.${esc(s.method)}</code>: ${esc(s.reason)}</li>`).join('')}</ul></details>` : '';
+  const total = plan.cases.length + (withOutput ? 1 : 0);
+  openDialog('Generate tests', `<div id="gen-body"><p class="gen-progress">${icon('loader-circle', 'spin')}<span id="gen-status">Trying ${plan.cases.length} sample call${plan.cases.length === 1 ? '' : 's'}${withOutput ? ' and your program’s output' : ''} on a plain JVM…</span></p>${skippedNote}</div>`, () => {
+    const chosen = rows.filter(r => r.checked);
+    if (!chosen.length) throw new Error('Select at least one test to add.');
+    if (chosen.length > room) throw new Error(`Only ${room} more test${room === 1 ? '' : 's'} fit (a project can have 20). Clear some checkboxes.`);
+    if (`${doc.kind}:${doc.id}` !== forDoc) throw new Error('The open project changed. Generate the tests again.');
+    const checks = chosen.map(r => ({ ...r.check, expectedOutput: isCallTest(r.check) ? r.expected.trim() : r.expected }));
+    const empty = checks.find(c => isCallTest(c) && !c.expectedOutput);
+    if (empty) throw new Error(`Enter an expected value for ${empty.call}.`);
+    if (!validateProject({ ...project, checks: [...project.checks, ...checks] })) throw new Error('One of the tests is too long. Outputs are limited to 32 KiB.');
+    project.checks = [...project.checks, ...checks]; save(); renderFiles(); renderConsole(); renderCheckResults(); renderCoach(); renderSaveRunTest(); setBusy();
+    toast(`Added ${checks.length} test${checks.length === 1 ? '' : 's'}. Run tests to check them against your code.`, 'success');
+  }, 'Add selected tests', { wide: true });
+  const submit = $<HTMLButtonElement>('#dialog-submit');
+  submit.disabled = true;
+  if (!total) {
+    $('#gen-body').innerHTML = `<p class="dialog-note">${noHarnessSlot ? 'Method tests need one free file slot, and this project already has 20 files.' : 'There’s nothing new to generate. TraceLab generates tests for public static methods that return a value and take numbers, booleans, characters, Strings, arrays or lists, plus one output test for the current input.'}</p>${skippedNote}`;
+    icons(); return;
+  }
+  const task = (async () => {
+    await settleFixChecks();
+    const base: RunRequest = { ...requestFor(''), files, mode: 'run', timeoutMs: GEN_TIMEOUT };
+    const results = plan.cases.length ? await runBatches(base, groupBy(plan.cases, c => packageOf(c.target)), {
+      related: (stuck, c) => c.target === stuck.target && c.method === stuck.method, label: c => c.call,
+      onProgress: done => { const el = document.getElementById('gen-status'); if (el) el.textContent = `Tried ${done} of ${plan.cases.length} calls…`; },
+    }) : new Map<number, CaseResult>();
+    let outputRow: GenRow | null = null;
+    if (withOutput) {
+      const request: RunRequest = { ...requestFor(), files, mode: 'run', timeoutMs: GEN_TIMEOUT };
+      const events = await quietRun(request);
+      const finished = { id: '', status: 'finished', request, events } as Run;
+      if (events.at(-1)?.stopReason === 'completed') {
+        const stdout = normalizeOutput(output(finished, 'stdout'));
+        if (stdout) outputRow = { key: 'output', check: { name: project.stdin.trim() ? 'Output for the current input' : 'Program output', stdin: project.stdin, expectedOutput: stdout }, label: '', expected: stdout, status: 'output', checked: true };
+      }
+    }
+    return { results, outputRow };
+  })();
+  genTask = task;
+  try {
+    const { results, outputRow } = await task;
+    rows = plan.cases.map(c => {
+      const r = results.get(c.id) ?? { id: c.id, status: 'unfinished' as const, value: '', detail: 'wasn’t run' };
+      return { key: String(c.id), check: caseToCheck(c, r.value), label: `${c.className}.${c.call}`, expected: r.value, status: r.status, detail: r.detail, checked: r.status === 'value' };
+    });
+    if (outputRow) rows.unshift(outputRow);
+    // Pre-select returned values (not exceptions) up to the project's test limit.
+    let budget = room;
+    for (const r of rows) { if (r.checked && budget > 0) budget--; else r.checked = false; }
+  } catch (error) {
+    if (!$<HTMLDialogElement>('#dialog').open) return;
+    $('#gen-body').innerHTML = `<div class="callout warning">${icon('triangle-alert')}<div><strong>Couldn’t generate tests</strong><p>${esc(error instanceof Error ? error.message : String(error))}</p></div></div>${skippedNote}`;
+    icons(); return;
+  } finally { genTask = null; }
+  if (!$<HTMLDialogElement>('#dialog').open || !document.getElementById('gen-body')) return;
+  const row = (r: GenRow, i: number) => {
+    const usable = r.status === 'value' || r.status === 'throws' || r.status === 'output';
+    const note = r.status === 'throws' ? `<small class="gen-note warn">Threw an exception. Keep it only if that’s the intended behavior.</small>` : !usable ? `<small class="gen-note">${esc(r.detail ?? '')}</small>` : '';
+    const field = r.status === 'output'
+      ? `<textarea data-gen-expected="${i}" rows="3" spellcheck="false" aria-label="Expected output">${esc(r.expected)}</textarea>`
+      : usable ? `<input data-gen-expected="${i}" value="${esc(r.expected)}" spellcheck="false" aria-label="Expected value for ${esc(r.label)}" />` : '';
+    return `<tr class="${usable ? '' : 'unusable'}"><td><input type="checkbox" data-gen="${i}" ${r.checked ? 'checked' : ''} ${usable ? '' : 'disabled'} aria-label="Add ${esc(r.label || r.check.name)}" /></td><td>${r.status === 'output' ? `<strong>${esc(r.check.name)}</strong><small>${r.check.stdin ? `Input: <code>${esc(JSON.stringify(r.check.stdin))}</code>` : 'No input'}</small>` : `<code>${esc(r.label)}</code>`}</td><td>${field}${note}</td></tr>`;
+  };
+  $('#gen-body').innerHTML = `<div class="callout warning">${icon('triangle-alert')}<div><strong>Check every expected value before adding</strong><p>Each value is what your code returns <em>right now</em>. If the code has a bug, the test will expect the wrong answer. Change any value that isn’t what the method should return.</p></div></div>
+    ${rows.length ? `<table class="gen-table"><thead><tr><th><span class="sr-only">Add</span></th><th>Call</th><th>Expected value</th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table>` : '<p class="dialog-note">None of the sample calls produced a result.</p>'}
+    <p class="dialog-note" id="gen-count"></p>${skippedNote}`;
+  const count = () => { const n = rows.filter(r => r.checked).length; $('#gen-count').textContent = `${n} selected · ${room} more test${room === 1 ? '' : 's'} fit in this project`; submit.disabled = n === 0; };
+  const body = $('#gen-body');
+  body.addEventListener('change', e => { const el = e.target as HTMLInputElement; if (el.dataset.gen !== undefined) { rows[Number(el.dataset.gen)].checked = el.checked; count(); } });
+  body.addEventListener('input', e => { const el = e.target as HTMLInputElement; if (el.dataset.genExpected !== undefined) rows[Number(el.dataset.genExpected)].expected = el.value; });
+  count(); icons();
+}
+
 function shortcutsDialog() {
   const rows: [string, string][] = [['Ctrl + Enter', 'Run and record'], ['F10', 'Step over'], ['F11 or Alt + →', 'Step into'], ['Shift + F11', 'Step out'], ['Shift + F10', 'Step back over'], ['Alt + ←', 'Step back'], ['Ctrl + S', 'Save to this browser'], ['Ctrl + Space', 'Code completion'], ['Ctrl + F', 'Find in file'], ['F1', 'Editor command palette']];
   openDialog('Keyboard shortcuts', `<table class="shortcut-table">${rows.map(([keys, action]) => `<tr><td>${keys.split(' or ').map(k => k.split(' + ').map(p => `<kbd class="key">${esc(p)}</kbd>`).join(' + ')).join(' or ')}</td><td>${esc(action)}</td></tr>`).join('')}</table>`, () => {}, 'Done', { cancel: null });
@@ -1382,6 +1793,9 @@ async function runAction(action: string) {
   else if (action === 'settings') settingsDialog();
   else if (action === 'shortcuts') shortcutsDialog();
   else if (action === 'about') aboutDialog();
+  else if (action === 'generate-tests') generateTestsDialog();
+  else if (action === 'new-file') newFile();
+  else if (action === 'show-tutor') { setLayout({ coach: true }); document.querySelector('.compile-help')?.scrollIntoView({ block: 'nearest' }); }
 }
 
 // ---------- Wiring ----------
@@ -1399,6 +1813,7 @@ $('#new-file').onclick = () => newFile();
 $('#edit-checks').onclick = () => testsDialog();
 $('#add-test').onclick = () => testsDialog({ name: `Test ${project.checks.length + 1}`, kind: 'output', stdin: '', expectedOutput: '' });
 $('#save-run-test').onclick = () => saveRunAsTest();
+$('#generate-tests').onclick = () => generateTestsDialog();
 $('#gallery-close').onclick = () => closeGallery();
 $('#gallery').addEventListener('click', e => { if (e.target === e.currentTarget) closeGallery(); });
 $('#gallery-filters').addEventListener('click', e => { const b = (e.target as Element).closest<HTMLElement>('[data-filter]'); if (b) { galleryFilter = b.dataset.filter as DemoCategory | 'all'; renderGallery(); } });
@@ -1504,6 +1919,7 @@ document.addEventListener('click', e => {
     else toast('That object is hidden by the filter or was not captured at this step.');
   }
   if (target.dataset.traceCheck !== undefined) traceCheck(Number(target.dataset.traceCheck));
+  if (target.dataset.applyFix) applyFix(target.dataset.applyFix);
   if (target.dataset.diagnostic) { selectFile(target.dataset.diagnostic, dirtyTrace()); editor.revealLineInCenter(Number(target.dataset.line)); editor.setPosition({ lineNumber: Number(target.dataset.line), column: 1 }); editor.focus(); }
   if (target.id === 'view-recorded') { selectFile(activeFile, true); renderTrace(true); }
   if (target.id === 'return-editor') selectFile(activeFile, false);
