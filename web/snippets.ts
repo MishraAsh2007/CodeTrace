@@ -7,7 +7,7 @@ const TYPES = ['String', 'StringBuilder', 'Integer', 'Double', 'Boolean', 'Chara
  * Lightweight Java completions: snippets, keywords, common JDK types and identifiers from open files.
  * This is not semantic IntelliSense; it does not know types, members or imports.
  */
-export function registerJavaCompletions(monaco: typeof Monaco, documentWords: () => string[]) {
+export function registerJavaCompletions(monaco: typeof Monaco, documentWords: () => string[], semantic: () => boolean = () => false) {
   const { CompletionItemKind: Kind, CompletionItemInsertTextRule: Rule } = monaco.languages;
   const snippets: [string, string, string][] = [
     ['sout', 'System.out.println(${1});', 'Print a line to standard output'],
@@ -30,7 +30,11 @@ export function registerJavaCompletions(monaco: typeof Monaco, documentWords: ()
       const seen = new Set<string>();
       const suggestions: Monaco.languages.CompletionItem[] = [];
       const add = (item: Omit<Monaco.languages.CompletionItem, 'range'>) => { if (!seen.has(String(item.label))) { seen.add(String(item.label)); suggestions.push({ ...item, range }); } };
+      // Snippets only after a dot would be noise; the language server handles member completion.
+      if (model.getLineContent(position.lineNumber).slice(0, word.startColumn - 1).trimEnd().endsWith('.')) return { suggestions: [] };
       for (const [label, insertText, detail] of snippets) add({ label, kind: Kind.Snippet, insertText, insertTextRules: Rule.InsertAsSnippet, detail, sortText: `0${label}` });
+      // With the language server running, it provides keywords, types and names with real type information.
+      if (semantic()) return { suggestions };
       for (const keyword of KEYWORDS) add({ label: keyword, kind: Kind.Keyword, insertText: keyword, sortText: `2${keyword}` });
       for (const type of TYPES) add({ label: type, kind: Kind.Class, insertText: type, detail: 'JDK type', sortText: `3${type}` });
       for (const identifier of documentWords()) if (identifier !== word.word) add({ label: identifier, kind: Kind.Text, insertText: identifier, sortText: `1${identifier}` });

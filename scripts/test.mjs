@@ -13,6 +13,10 @@ import { batchOutcome, batchRequest, batchResults, evaluateTest, harnessErrorDet
 import { caseToCheck, planTests, sampleCalls } from '../web/testgen.ts';
 import { applyEdits, compileIssues } from '../web/compilehelp.ts';
 import { cursorsFor } from '../web/cursors.ts';
+import { JavaLanguageClient } from '../web/lsp.ts';
+import { lintHelp } from '../web/linthelp.ts';
+import { checkable, spellingTokens } from '../web/spell.ts';
+import { readFileSync } from 'node:fs';
 import { templates } from '../web/templates.ts';
 import { readZip, writeZip } from '../web/zip.ts';
 
@@ -633,6 +637,52 @@ public class Main {
     assert.equal(batchOutcome({ ...check, expectedOutput: '8' }, results.get(id('max(new int[]{7})'))).detail, 'Expected 8, got 7');
     const project = { name: 'Gen', files, mainClass: 'Main', stdin: '', maxSteps: 100, checks: [check] };
     assert.equal(evaluateTest(await execute(requestForTest(project, check, { ...runBase, mode: 'run' })), check).passed, true);
+  });
+  await test('spelling checks words in comments, text and names; lint messages get explanations', async () => {
+    const src = 'public class Main {\n    // We recieve the numbrs here\n    static int totalAmout = 0; // see https://exampel.com\n    String s = "Helo %d\\n";\n    char c = \'x\';\n}\n';
+    const tokens = checkable(spellingTokens(src));
+    const words = tokens.map(t => t.word);
+    assert.ok(words.includes('recieve') && words.includes('numbrs') && words.includes('Amout') && words.includes('Helo'), words.join());
+    assert.ok(!words.includes('exampel') && !words.includes('d') && !words.includes('int'), 'URLs, format specifiers and short words are skipped');
+    assert.equal(tokens.find(t => t.word === 'Amout').kind, 'name');
+    assert.equal(src.slice(tokens.find(t => t.word === 'recieve').offset).startsWith('recieve'), true);
+    const { default: nspell } = await import('nspell');
+    const speller = nspell(readFileSync('node_modules/dictionary-en/index.aff', 'utf8'), readFileSync('node_modules/dictionary-en/index.dic', 'utf8'));
+    assert.deepEqual(['recieve', 'numbrs', 'Amout', 'Helo', 'total', 'Main', 'static'].filter(w => !speller.correct(w)), ['recieve', 'numbrs', 'Amout', 'Helo']);
+    assert.ok(speller.suggest('recieve').includes('receive'));
+    assert.match(lintHelp('Empty control-flow statement'), /semicolon right after if/);
+    assert.match(lintHelp('The assignment to variable count has no effect'), /this\.count = count/);
+    assert.match(lintHelp('Null pointer access: The variable t can only be null at this location'), /t is always null/);
+    assert.match(lintHelp('Unlikely argument type for equals(): int seems to be unrelated to String'), /never equal/);
+    assert.equal(lintHelp('Some message TraceLab does not know'), null);
+  });
+  await test('Java language server: completion, problems as you type, quick fixes and rename across files', async () => {
+    const health = await api('/api/health');
+    if (health.languageServer === 'unavailable') { console.log('SKIP language server (none installed; run npm run setup:jdtls)'); return; }
+    const client = new JavaLanguageClient(base);
+    const diagnostics = {};
+    client.onDiagnostics = (file, list) => { diagnostics[file] = list; };
+    const main = 'public class Main {\n    public static void main(String[] args) {\n        String name = "abc";\n        int total = Helper.twice(3);\n        if (total > 2);\n        System.out.println(name.length() + total);\n        ArrayList<String> xs = new ArrayList<>();\n    }\n}\n';
+    const helper = 'public class Helper {\n    public static int twice(int n) {\n        return n * 2;\n    }\n}\n';
+    await client.connect([{ name: 'Main.java', content: main }, { name: 'Helper.java', content: helper }]);
+    assert.equal(client.state, 'ready', client.reason);
+    for (let i = 0; i < 300 && !(diagnostics['Main.java'] ?? []).some(d => /ArrayList/.test(d.message)); i++) await sleep(100);
+    const messages = (diagnostics['Main.java'] ?? []).map(d => d.message);
+    assert.ok(messages.includes('Empty control-flow statement'), messages.join(' | '));
+    assert.ok(messages.some(m => /ArrayList cannot be resolved to a type/.test(m)), messages.join(' | '));
+    const completion = await client.request('textDocument/completion', { textDocument: { uri: client.uri('Main.java') }, position: { line: 5, character: 32 } });
+    assert.ok((completion.items ?? completion).some(i => i.label.startsWith('length')), 'member completion on a String');
+    const unresolved = diagnostics['Main.java'].filter(d => /ArrayList/.test(d.message));
+    const actions = await client.request('textDocument/codeAction', { textDocument: { uri: client.uri('Main.java') }, range: unresolved[0].range, context: { diagnostics: unresolved } });
+    assert.ok(actions.some(a => a.title === "Import 'ArrayList' (java.util)"), actions.map(a => a.title).join(' | '));
+    const rename = await client.request('textDocument/rename', { textDocument: { uri: client.uri('Helper.java') }, position: { line: 1, character: 23 }, newName: 'doubled' }, 30000);
+    const changed = [...Object.keys(rename.changes ?? {}), ...(rename.documentChanges ?? []).map(c => c.textDocument.uri)].map(uri => client.nameOf(uri)).sort();
+    assert.deepEqual(changed, ['Helper.java', 'Main.java']);
+    // A second page reuses the running server instead of initializing it again.
+    const again = new JavaLanguageClient(base);
+    await again.connect([{ name: 'Main.java', content: main }]);
+    assert.equal(again.state, 'ready', again.reason);
+    await api('/api/lsp/stop', { method: 'POST', body: '{}' });
   });
   await test('project import rejects malformed nested values without throwing', () => {
     assert.equal(validateProject({ ...examples[0], files: [null] }), false);

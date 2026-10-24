@@ -650,3 +650,19 @@ dialog.wide { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48
 .editor-tabs .tab-actions svg { color: var(--text-3); }
 .side-empty p + p { margin-top: 8px; }
 @media (max-width: 1280px) { #new-project-top .label { display: none; } #new-project-top { padding: 0 7px; } }
+
+/* Java language server status and as-you-type problems. */
+#lsp-status .status-dot { background: var(--text-3); }
+#lsp-status.pending .status-dot { background: var(--warning); animation: lsp-pulse 1.2s ease-in-out infinite; }
+#lsp-status.offline .status-dot { background: var(--danger); }
+#lsp-status:not(.pending):not(.offline):not(.basic) .status-dot { background: var(--accent); }
+@keyframes lsp-pulse { 50% { opacity: .35; } }
+.tab-count.warning { background: var(--warning-soft); color: var(--warning-text); }
+.diagnostic.warning svg { color: var(--warning); }
+.problems-head { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .5px; color: var(--text-3); padding: 8px 8px 4px; }
+.problems-head:first-child { padding-top: 2px; }
+.dialog-subhead { font-size: 13px; font-weight: 650; margin-bottom: 6px; }
+.editor-toggles { border: 0; margin: 14px 0 0; padding: 12px 0 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.editor-toggles legend { font-size: 13px; font-weight: 650; padding: 0; margin-bottom: 6px; float: left; width: 100%; }
+.editor-toggles label { display: flex; gap: 8px; align-items: baseline; color: var(--text-2); }
+.editor-toggles code { font-size: 12px; }

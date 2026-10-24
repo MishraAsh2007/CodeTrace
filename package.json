@@ -8,16 +8,19 @@
     "build": "tsc --noEmit && vite build && node scripts/build.mjs",
     "build:web": "tsc --noEmit && vite build",
     "start": "node scripts/start.mjs",
+    "setup:jdtls": "node scripts/setup-jdtls.mjs",
     "test": "node scripts/test.mjs",
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "dictionary-en": "4.0.0",
     "lucide": "^0.468.0",
-    "monaco-editor": "^0.52.2"
+    "monaco-editor": "^0.52.2",
+    "nspell": "2.1.5"
   },
   "devDependencies": {
+    "@types/node": "^22.10.5",
     "typescript": "^5.7.3",
-    "vite": "^6.1.0",
-    "@types/node": "^22.10.5"
+    "vite": "^6.1.0"
   }
 }

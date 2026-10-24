@@ -12,6 +12,8 @@ use std::{collections::{HashMap, HashSet}, path::PathBuf, sync::{Arc, atomic::{A
 use tokio::{io::{AsyncBufReadExt, AsyncReadExt, BufReader}, process::Command, sync::{Mutex, Semaphore}};
 use tower_http::services::{ServeDir, ServeFile};
 
+mod lsp;
+
 const MAX_TRACE_BYTES: usize = 24 * 1024 * 1024;
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -48,6 +50,7 @@ struct AppState {
     slots: Arc<Semaphore>,
     root: PathBuf,
     java: PathBuf,
+    lsp: Arc<lsp::Lsp>,
 }
 
 type ApiError = (StatusCode, Json<Value>);
@@ -65,9 +68,14 @@ fn validate(request: &RunRequest) -> Result<(), &'static str> {
     if !(10..=2000).contains(&request.max_steps) { return Err("The trace budget must be between 10 and 2,000 steps."); }
     if !(500..=15000).contains(&request.timeout_ms) { return Err("The time budget must be between 500 and 15,000 ms."); }
     if !["trace", "run", "compile"].contains(&request.mode.as_str()) { return Err("The mode must be trace, run or compile."); }
+    check_files(&request.files)
+}
+
+/// Path, name and size rules shared by runs and the language-server workspace.
+fn check_files(files: &[SourceFile]) -> Result<(), &'static str> {
     let mut total = 0;
     let mut names = HashSet::new();
-    for file in &request.files {
+    for file in files {
         let Some(stem) = file.name.strip_suffix(".java") else { return Err("Only .java files are supported."); };
         if file.name.len() > 180 || !stem.split('/').all(identifier) { return Err("Use relative Java paths such as Main.java or demo/Main.java."); }
         for part in stem.split('/') {
@@ -105,7 +113,7 @@ async fn guard(req: Request, next: Next) -> Response {
 }
 
 async fn health(State(state): State<AppState>) -> Json<Value> {
-    Json(json!({"ok": true, "language": "Java 21", "mode": "local-trusted", "engine": "Rust + JDI", "workerReady": state.root.join(".local/worker/TraceWorker.class").exists()}))
+    Json(json!({"ok": true, "language": "Java 21", "mode": "local-trusted", "engine": "Rust + JDI", "workerReady": state.root.join(".local/worker/TraceWorker.class").exists(), "languageServer": state.lsp.status().await["state"]}))
 }
 
 async fn create_run(State(state): State<AppState>, Json(request): Json<RunRequest>) -> Result<Json<Value>, ApiError> {
@@ -148,6 +156,37 @@ async fn cancel_run(State(state): State<AppState>, Path(id): Path<String>) -> Re
     let run = state.runs.lock().await.get(&id).cloned().ok_or_else(|| error(StatusCode::NOT_FOUND, "Run not found."))?;
     run.lock().await.cancel.store(true, Ordering::Relaxed);
     Ok(Json(json!({"ok": true})))
+}
+
+// ---------- Language server ----------
+
+async fn lsp_status(State(state): State<AppState>) -> Json<Value> { Json(state.lsp.status().await) }
+
+async fn lsp_stop(State(state): State<AppState>) -> Json<Value> { state.lsp.stop().await; Json(state.lsp.status().await) }
+
+async fn lsp_start(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
+    state.lsp.start().await.map(Json).map_err(|msg| error(StatusCode::SERVICE_UNAVAILABLE, &msg))
+}
+
+#[derive(Deserialize)]
+struct LspFiles { files: Vec<SourceFile> }
+async fn lsp_files(State(state): State<AppState>, Json(body): Json<LspFiles>) -> Result<Json<Value>, ApiError> {
+    if body.files.len() > 20 { return Err(error(StatusCode::BAD_REQUEST, "Provide at most 20 Java source files.")); }
+    check_files(&body.files).map_err(|msg| error(StatusCode::BAD_REQUEST, msg))?;
+    state.lsp.write_files(&body.files).await.map(Json).map_err(|msg| error(StatusCode::INTERNAL_SERVER_ERROR, &msg))
+}
+
+#[derive(Deserialize)]
+struct LspSend { session: u64, messages: Vec<Value> }
+async fn lsp_send(State(state): State<AppState>, Json(body): Json<LspSend>) -> Result<Json<Value>, ApiError> {
+    if body.messages.len() > 200 { return Err(error(StatusCode::BAD_REQUEST, "Too many messages in one request.")); }
+    state.lsp.send(body.session, &body.messages).await.map(|_| Json(json!({"ok": true}))).map_err(|msg| error(StatusCode::CONFLICT, &msg))
+}
+
+#[derive(Deserialize)]
+struct LspReceive { session: u64, since: usize, wait: Option<u64> }
+async fn lsp_receive(State(state): State<AppState>, Query(query): Query<LspReceive>) -> Json<Value> {
+    Json(state.lsp.receive(query.session, query.since, Duration::from_millis(query.wait.unwrap_or(15_000).min(25_000))).await)
 }
 
 async fn append(run: &SharedRun, mut event: Value) {
@@ -254,11 +293,17 @@ async fn execute(state: &AppState, request: &RunRequest, run: &SharedRun) -> Res
 async fn main() {
     let root = std::env::var_os("TRACELAB_ROOT").map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
     let java_home = std::env::var_os("JAVA_HOME").expect("Set JAVA_HOME to a JDK 21+ or start with npm start.");
-    let state = AppState { runs: Arc::new(Mutex::new(HashMap::new())), slots: Arc::new(Semaphore::new(1)), root: root.clone(), java: PathBuf::from(java_home).join("bin").join(if cfg!(windows) { "java.exe" } else { "java" }) };
+    let state = AppState { runs: Arc::new(Mutex::new(HashMap::new())), slots: Arc::new(Semaphore::new(1)), root: root.clone(), java: PathBuf::from(java_home).join("bin").join(if cfg!(windows) { "java.exe" } else { "java" }), lsp: lsp::Lsp::new(&root) };
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/runs", post(create_run))
         .route("/api/runs/{id}", get(get_run).merge(delete(cancel_run)))
+        .route("/api/lsp/status", get(lsp_status))
+        .route("/api/lsp/start", post(lsp_start))
+        .route("/api/lsp/stop", post(lsp_stop))
+        .route("/api/lsp/files", post(lsp_files))
+        .route("/api/lsp/send", post(lsp_send))
+        .route("/api/lsp/receive", get(lsp_receive))
         .fallback_service(ServeDir::new(root.join("dist")).not_found_service(ServeFile::new(root.join("dist/404.html"))))
         .layer(DefaultBodyLimit::max(512 * 1024))
         .layer(middleware::from_fn(guard))
@@ -268,6 +313,7 @@ async fn main() {
     axum::serve(listener, app).with_graceful_shutdown(async move {
         let _ = tokio::signal::ctrl_c().await;
         for run in state.runs.lock().await.values() { run.lock().await.cancel.store(true, Ordering::Relaxed); }
+        state.lsp.stop().await;
         tokio::time::sleep(Duration::from_secs(3)).await;
     }).await.unwrap();
 }

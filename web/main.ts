@@ -23,6 +23,11 @@ import { cursorsByObject, cursorsFor, variableTargets } from './cursors';
 import type { Cursor } from './cursors';
 import { applyEdits, compileIssues } from './compilehelp';
 import type { CompileFix, CompileIssue, LineEdit } from './compilehelp';
+import { JavaLanguageClient } from './lsp';
+import { lintHelp } from './linthelp';
+import { checkable, spellingTokens } from './spell';
+import SpellWorker from './spell.worker?worker';
+import { registerJavaLanguageFeatures, toMarkers } from './lspmonaco';
 import { decodeProject, encodeProject, SHARE_PREFIX } from './share';
 import { identifiers, registerJavaCompletions } from './snippets';
 import { CONCEPTS, loadProgress, recordSolved, resetProgress } from './progress';
@@ -55,10 +60,10 @@ function relativeTime(time: number): string {
   return format.format(-Math.round(seconds / 60), 'minute');
 }
 
-type UiSettings = { arrows: boolean; inline: boolean };
+type UiSettings = { arrows: boolean; inline: boolean; spelling: boolean; hints: boolean };
 function loadUi(): UiSettings {
-  try { const value = JSON.parse(localStorage.getItem('tracelab.ui.v1') ?? '{}'); return { arrows: value.arrows !== false, inline: value.inline !== false }; }
-  catch { return { arrows: true, inline: true }; }
+  try { const value = JSON.parse(localStorage.getItem('tracelab.ui.v1') ?? '{}'); return { arrows: value.arrows !== false, inline: value.inline !== false, spelling: value.spelling !== false, hints: value.hints !== false }; }
+  catch { return { arrows: true, inline: true, spelling: true, hints: true }; }
 }
 function saveUi() { try { localStorage.setItem('tracelab.ui.v1', JSON.stringify(ui)); } catch { /* Preferences are optional. */ } }
 
@@ -160,6 +165,7 @@ $('#app').innerHTML = `
           <button role="menuitem" data-action="export-trace">${icon('history')}Export recorded trace</button>
           <div class="menu-separator" role="separator"></div>
           <button role="menuitem" data-action="settings">${icon('settings-2')}Project settings…</button>
+          <button role="menuitem" data-action="language-server">${icon('type')}Editor settings…</button>
           <button role="menuitem" data-action="shortcuts">${icon('keyboard')}Keyboard shortcuts</button>
           <button role="menuitem" data-action="about">${icon('info')}About TraceLab</button>
           <a role="menuitem" href="/">${icon('house')}TraceLab home</a>
@@ -236,6 +242,7 @@ $('#app').innerHTML = `
   </div>
   <footer class="statusbar">
     <button class="status-item" id="runner-status" data-action="about" title="About the runner"><span class="status-dot"></span><span id="runner-label">Connecting…</span></button>
+    <button class="status-item" id="lsp-status" data-action="language-server"><span class="status-dot"></span><span>Java: off</span></button>
     <span class="status-item" id="status-text"></span>
     <span class="status-spacer"></span>
     <span class="status-item" id="status-step"></span>
@@ -266,10 +273,125 @@ const editor = monaco.editor.create($('#editor'), {
   padding: { top: 12, bottom: 12 }, glyphMargin: true, folding: true, smoothScrolling: true,
   lineNumbersMinChars: 3, overviewRulerLanes: 0, renderLineHighlight: 'all', cursorBlinking: 'smooth',
   tabSize: 4, wordWrap: 'off', fixedOverflowWidgets: true, suggest: { showWords: true }, bracketPairColorization: { enabled: true },
+  inlayHints: { enabled: ui.hints ? 'on' : 'off' }, lightbulb: { enabled: monaco.editor.ShowLightbulbIconMode.OnCode },
 });
 decorations = editor.createDecorationsCollection();
 applyLayout(layout);
-registerJavaCompletions(monaco, () => identifiers(project.files.map(f => f.content)));
+registerJavaCompletions(monaco, () => identifiers(project.files.map(f => f.content)), () => lsp.ready);
+
+// ---------- Java language server (Eclipse JDT LS through the runner) ----------
+
+const lsp = new JavaLanguageClient();
+/** Project file name for an editable workspace model; null for recorded source. */
+function fileOfModel(model: monaco.editor.ITextModel): string | null {
+  for (const [key, value] of models) if (value === model) return key.startsWith('workspace/') ? key.slice('workspace/'.length) : null;
+  return null;
+}
+registerJavaLanguageFeatures(monaco, {
+  client: lsp,
+  fileOf: fileOfModel,
+  modelOf: file => project.files.some(f => f.name === file) ? getModel(file, false) : null,
+  reveal: (file, range) => {
+    if (traceSource || activeFile !== file) selectFile(file, false);
+    editor.setSelection(range); editor.revealRangeInCenterIfOutsideViewport(range); editor.focus();
+  },
+  editor: () => editor,
+});
+// Go to definition and references open the target file in the single editor.
+monaco.editor.registerEditorOpener({
+  openCodeEditor(_source, resource, selection) {
+    const model = monaco.editor.getModel(resource);
+    const file = model ? fileOfModel(model) : null;
+    if (!file) return false;
+    selectFile(file, false);
+    if (selection) {
+      const range = 'startLineNumber' in selection ? selection : new monaco.Range(selection.lineNumber, selection.column, selection.lineNumber, selection.column);
+      editor.setSelection(range); editor.revealRangeInCenterIfOutsideViewport(range);
+    }
+    editor.focus();
+    return true;
+  },
+});
+lsp.onDiagnostics = (file, diagnostics) => {
+  const model = models.get(`workspace/${file}`);
+  if (model) monaco.editor.setModelMarkers(model, 'java-ls', toMarkers(monaco, diagnostics, lintHelp));
+  scheduleProblems();
+};
+lsp.onState = () => {
+  renderLspStatus();
+  // The project may have changed while the server was starting.
+  if (lsp.ready) { lsp.sync(project.files); scheduleProblems(); for (const f of project.files) getModel(f.name, false); }
+};
+// Monaco cancels hover, completion and code-action requests as the cursor moves; those aren't errors.
+window.addEventListener('unhandledrejection', e => { if ((e.reason as Error | undefined)?.name === 'Canceled' || (e.reason as Error | undefined)?.message === 'Canceled') e.preventDefault(); });
+let lspTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleLspSync() { clearTimeout(lspTimer); lspTimer = setTimeout(() => { if (lsp.ready) lsp.sync(project.files); }, 250); }
+function connectLanguageServer() { if (lsp.state === 'off' || lsp.state === 'stopped') lsp.connect(project.files).then(() => renderLspStatus()); }
+// A second tab takes over the shared server when it becomes visible.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && lsp.ready) lsp.sync(project.files); });
+function renderLspStatus() {
+  const el = $('#lsp-status');
+  const label = { off: 'Java: off', starting: 'Java: starting…', ready: lsp.progress ? `Java: ${lsp.progress.toLowerCase()}` : 'Java: ready', unavailable: 'Java: basic', stopped: 'Java: stopped' }[lsp.state];
+  el.querySelector('span:last-child')!.textContent = label;
+  el.classList.toggle('offline', lsp.state === 'stopped');
+  el.classList.toggle('basic', lsp.state === 'unavailable' || lsp.state === 'off');
+  el.classList.toggle('pending', lsp.state === 'starting' || (lsp.ready && !!lsp.progress));
+  el.title = lsp.ready ? 'Java language server: completions with types, hovers, go to definition, rename, refactorings and errors as you type. Click for details.'
+    : lsp.state === 'unavailable' ? 'Basic editing only. Click to see how to turn on the Java language server.' : lsp.reason || 'Java language server';
+}
+// ---------- Spelling (comments, strings and identifier parts) ----------
+
+const DICTIONARY_KEY = 'tracelab.dictionary.v1';
+const userWords = new Set<string>((() => { try { return JSON.parse(localStorage.getItem(DICTIONARY_KEY) ?? '[]') as string[]; } catch { return []; } })());
+let spellWorker: Worker | null = null;
+let spellRequest = 0;
+const spellReplies = new Map<number, (value: any) => void>();
+function speller<T>(message: Record<string, unknown>): Promise<T> {
+  if (!spellWorker) {
+    spellWorker = new SpellWorker();
+    spellWorker.onmessage = e => { spellReplies.get(e.data.id)?.(e.data); spellReplies.delete(e.data.id); };
+  }
+  const id = ++spellRequest;
+  return new Promise<T>(resolve => { spellReplies.set(id, resolve); spellWorker!.postMessage({ ...message, id }); });
+}
+const spellTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function scheduleSpelling(file: string, delay = 700) { clearTimeout(spellTimers.get(file)); spellTimers.set(file, setTimeout(() => checkSpelling(file), delay)); }
+async function checkSpelling(file: string) {
+  const model = models.get(`workspace/${file}`);
+  if (!model || model.isDisposed()) return;
+  if (!ui.spelling) { monaco.editor.setModelMarkers(model, 'spelling', []); return; }
+  const version = model.getVersionId();
+  const tokens = checkable(spellingTokens(model.getValue()), userWords);
+  const { misspelled } = await speller<{ misspelled: string[] }>({ type: 'check', words: [...new Set(tokens.map(t => t.word))], extra: [] });
+  if (model.isDisposed() || model.getVersionId() !== version) return;
+  const bad = new Set(misspelled);
+  monaco.editor.setModelMarkers(model, 'spelling', tokens.filter(t => bad.has(t.word)).slice(0, 300).map(t => {
+    const start = model.getPositionAt(t.offset), end = model.getPositionAt(t.offset + t.word.length);
+    return { severity: monaco.MarkerSeverity.Info, source: 'Spelling', message: `“${t.word}” may be misspelled${t.kind === 'name' ? ' (part of a name)' : ''}.`, startLineNumber: start.lineNumber, startColumn: start.column, endLineNumber: end.lineNumber, endColumn: end.column };
+  }));
+}
+function recheckSpelling() { for (const f of project.files) scheduleSpelling(f.name, 50); }
+monaco.editor.registerCommand('tracelab.spell.add', (_accessor, word: string) => {
+  userWords.add(word.toLowerCase());
+  try { localStorage.setItem(DICTIONARY_KEY, JSON.stringify([...userWords])); } catch { /* The word is still accepted for this session. */ }
+  recheckSpelling();
+});
+monaco.languages.registerCodeActionProvider('java', {
+  async provideCodeActions(model, _range, context) {
+    const marker = context.markers.find(m => m.source === 'Spelling');
+    if (!marker) return { actions: [], dispose() {} };
+    const word = model.getValueInRange(marker);
+    const { suggestions } = await speller<{ suggestions: string[] }>({ type: 'suggest', word });
+    // Keep the original capitalization, so a fix inside an identifier stays a valid name.
+    const shape = (s: string) => /^[A-Z]/.test(word) ? s[0].toUpperCase() + s.slice(1) : s[0].toLowerCase() + s.slice(1);
+    const actions: monaco.languages.CodeAction[] = suggestions.filter(s => /^[A-Za-z]+$/.test(s)).slice(0, 3).map((s, i) => ({ title: `Change to “${shape(s)}”`, kind: 'quickfix', isPreferred: i === 0, diagnostics: [marker], edit: { edits: [{ resource: model.uri, textEdit: { range: marker, text: shape(s) }, versionId: model.getVersionId() }] } }));
+    actions.push({ title: `Add “${word}” to my dictionary`, kind: 'quickfix', diagnostics: [marker], command: { id: 'tracelab.spell.add', title: 'Add to dictionary', arguments: [word] } });
+    return { actions, dispose() {} };
+  },
+});
+
+let problemsTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleProblems() { clearTimeout(problemsTimer); problemsTimer = setTimeout(() => { if (consoleTab === 'diagnostics') renderConsole(); else renderProblemCount(); }, 150); }
 
 function renderTheme() {
   const choice = themeChoice();
@@ -335,6 +457,7 @@ function save(delayed = false) {
   $('#save-state').textContent = storageFailed ? (blocked ? 'Not saved: browser storage is blocked' : 'Not saved — export to keep changes') : doc.kind === 'example' ? 'Example · changes saved' : 'Saved';
   $('#save-state').classList.toggle('warning', storageFailed);
   renderDocChrome();
+  scheduleLspSync();
 }
 window.addEventListener('beforeunload', () => { if (saveTimer) save(); });
 function sourceKey() { return JSON.stringify({ files: project.files, mainClass: project.mainClass, checks: project.checks }); }
@@ -358,8 +481,10 @@ function getModel(file: string, historical: boolean) {
   if (!model) {
     model = monaco.editor.createModel(source.content, 'java', monaco.Uri.parse(`inmemory://tracelab/${key}`));
     models.set(key, model);
+    if (!historical) { monaco.editor.setModelMarkers(model, 'java-ls', toMarkers(monaco, lsp.diagnosticsFor(source.name), lintHelp)); scheduleSpelling(source.name, 1500); }
     if (!historical) model.onDidChangeContent(() => {
       if (changingModel) return;
+      scheduleSpelling(source.name);
       const target = project.files.find(f => f.name === source.name);
       if (target) { target.content = model!.getValue(); monaco.editor.setModelMarkers(model!, 'java-compiler', []); save(true); renderSourceBanner(); renderCheckResults(); renderStages(); updateDecorations(); scheduleLint(); }
     });
@@ -719,11 +844,27 @@ function renderTrace(followLine = false) {
   updateDecorations(); renderConsole(); icons(); scheduleArrows();
 }
 
+/**
+ * Problems to list: javac's diagnostics from the last run (while the code still matches it, or always without the
+ * language server), then the language server's findings as you type. Live errors that javac also reported are skipped.
+ */
+function problemList() {
+  const runDiagnostics = !dirtyTrace() || !lsp.ready ? run?.events.filter(e => e.kind === 'diagnostic') ?? [] : [];
+  const hasRunErrors = runDiagnostics.some(d => d.severity === 'error');
+  const live = lsp.ready ? project.files.flatMap(f => lsp.diagnosticsFor(f.name).filter(d => (d.severity ?? 1) <= 2 && !(hasRunErrors && (d.severity ?? 1) === 1)).map(d => ({ file: f.name, d }))) : [];
+  return { runDiagnostics, live };
+}
+function renderProblemCount() {
+  const { runDiagnostics, live } = problemList();
+  $('#problem-count').textContent = String(runDiagnostics.length + live.length);
+  $('#problem-count').classList.toggle('error', runDiagnostics.some(d => d.severity === 'error') || live.some(x => (x.d.severity ?? 1) === 1));
+  $('#problem-count').classList.toggle('warning', !$('#problem-count').classList.contains('error') && live.length > 0);
+}
+
 function renderConsole() {
   document.querySelectorAll<HTMLButtonElement>('.console-tabs [data-console]').forEach(b => { b.classList.toggle('active', b.dataset.console === consoleTab); b.setAttribute('aria-selected', String(b.dataset.console === consoleTab)); });
-  const diagnostics = run?.events.filter(e => e.kind === 'diagnostic') ?? [];
-  $('#problem-count').textContent = String(diagnostics.length);
-  $('#problem-count').classList.toggle('error', diagnostics.some(d => d.severity === 'error'));
+  const { runDiagnostics: diagnostics, live } = problemList();
+  renderProblemCount();
   $('#console-context').textContent = run && consoleTab === 'output' ? (currentEvent()?.kind === 'terminated' ? 'Final output' : 'Output received by this step') : '';
   const el = $('#console-content');
   if (consoleTab === 'input' && document.activeElement?.id === 'stdin') return;
@@ -734,13 +875,21 @@ function renderConsole() {
     // Each error shows the Tutor's plain-language title and its first suggested fix.
     const help = new Map(compileHelp().map(i => [`${i.file}:${i.line}:${errorKey(i.message)}`, i]));
     const shown = new Set<CompileIssue>();
-    el.innerHTML = diagnostics.length ? diagnostics.map(d => {
+    const fromRun = diagnostics.map(d => {
       const issue = d.severity === 'error' ? help.get(`${d.file}:${d.line}:${errorKey(d.message)}`) : undefined;
       const first = issue && !shown.has(issue);
       if (issue) shown.add(issue);
       const extra = issue && first ? `<div class="diagnostic-help"><span>${icon('lightbulb')}${esc(issue.title)}</span>${issue.fixes[0] && !fixesFolded() ? renderFix(issue.fixes[0], true) : ''}</div>` : '';
       return `<div class="diagnostic-item"><button class="diagnostic ${d.severity}" data-diagnostic="${esc(d.file)}" data-line="${d.line ?? 1}">${icon(d.severity === 'error' ? 'circle-x' : 'info')}<span><strong>${esc(d.message)}</strong><small>${esc(d.file)} · line ${d.line}, column ${d.column}</small></span></button>${extra}</div>`;
-    }).join('') : '<div class="console-empty">No problems in the last run.</div>';
+    }).join('');
+    const asYouType = live.map(({ file, d }) => {
+      const severity = (d.severity ?? 1) === 1 ? 'error' : 'warning';
+      const help = lintHelp(d.message);
+      return `<div class="diagnostic-item"><button class="diagnostic ${severity}" data-diagnostic="${esc(file)}" data-line="${d.range.start.line + 1}">${icon(severity === 'error' ? 'circle-x' : 'triangle-alert')}<span><strong>${esc(d.message)}</strong><small>${esc(file)} · line ${d.range.start.line + 1}, column ${d.range.start.character + 1}</small></span></button>${help ? `<div class="diagnostic-help"><span>${icon('lightbulb')}${esc(help)}</span></div>` : ''}</div>`;
+    }).join('');
+    el.innerHTML = fromRun || asYouType
+      ? `${fromRun && asYouType ? '<h4 class="problems-head">From the last run</h4>' : ''}${fromRun}${fromRun && asYouType ? '<h4 class="problems-head">As you type</h4>' : ''}${asYouType}`
+      : `<div class="console-empty">${lsp.ready ? 'No problems found as you type.' : 'No problems in the last run.'}</div>`;
   } else if (consoleTab === 'checks') {
     el.innerHTML = project.checks.length ? `<table class="test-table"><thead><tr><th>Test</th><th>Type</th><th>Input or call</th><th>Expected</th></tr></thead><tbody>${project.checks.map(c => { const d = describeTest(c); return `<tr><td>${esc(c.name)}</td><td>${esc(d.kind)}</td><td><code>${esc(d.given)}</code></td><td><code>${esc(d.expects)}</code></td></tr>`; }).join('')}</tbody></table>` : `<div class="console-empty">This project has no tests yet. Write one with Add test in the Tutor panel, or <button class="link-btn" data-action="generate-tests">generate tests from your methods</button>.</div>`;
   } else {
@@ -1746,8 +1895,23 @@ async function generateTestsDialog() {
   count(); icons();
 }
 
+function languageServerDialog() {
+  const features = 'Completions that know types and members (with automatic imports), parameter hints, hover information, go to definition (F12), find references (Shift+F12), rename across files (F2), refactorings such as extract variable or method (Ctrl+Shift+R), quick fixes (Ctrl+.), organize imports (Shift+Alt+O), formatting (Shift+Alt+F), and errors and warnings as you type.';
+  const body = lsp.state === 'unavailable'
+    ? `<p class="dialog-note">TraceLab is using basic editing: snippets, keywords and names from your files. ${esc(lsp.reason)}</p><p class="dialog-note">With the Eclipse Java language server you also get: ${features}</p><p class="dialog-note">Then restart TraceLab with <code>npm start</code>.</p>`
+    : `<p class="dialog-note"><strong>Status:</strong> ${esc({ off: 'Not started', starting: 'Starting (this takes 5–20 seconds)', ready: lsp.progress || 'Ready', stopped: `Stopped. ${lsp.reason}`, unavailable: '' }[lsp.state])}</p><p class="dialog-note">${features}</p><p class="dialog-note">The language server is Eclipse JDT LS, running on this computer next to the runner. It reads a copy of the open project in <code>.local/lsp</code>.</p>`;
+  const toggles = `<fieldset class="editor-toggles"><legend>Editor</legend><label><input type="checkbox" id="setting-spelling" ${ui.spelling ? 'checked' : ''} /> Check spelling in comments, text and names</label><label><input type="checkbox" id="setting-hints" ${ui.hints ? 'checked' : ''} /> Show parameter names next to literal arguments, like <code>max(a: 3, b: 5)</code></label></fieldset>`;
+  const restart = lsp.state === 'stopped' || lsp.state === 'off';
+  openDialog('Editor settings', `<h3 class="dialog-subhead">Java language server</h3>${body}${toggles}`, () => {
+    ui.spelling = $<HTMLInputElement>('#setting-spelling').checked; ui.hints = $<HTMLInputElement>('#setting-hints').checked; saveUi();
+    editor.updateOptions({ inlayHints: { enabled: ui.hints ? 'on' : 'off' } });
+    recheckSpelling();
+    if (restart && lsp.state !== 'unavailable') { connectLanguageServer(); renderLspStatus(); }
+  }, restart && lsp.state !== 'unavailable' ? 'Save and start the server' : 'Save');
+}
+
 function shortcutsDialog() {
-  const rows: [string, string][] = [['Ctrl + Enter', 'Run and record'], ['F10', 'Step over'], ['F11 or Alt + →', 'Step into'], ['Shift + F11', 'Step out'], ['Shift + F10', 'Step back over'], ['Alt + ←', 'Step back'], ['Ctrl + S', 'Save to this browser'], ['Ctrl + Space', 'Code completion'], ['Ctrl + F', 'Find in file'], ['F1', 'Editor command palette']];
+  const rows: [string, string][] = [['Ctrl + Enter', 'Run and record'], ['F10', 'Step over'], ['F11 or Alt + →', 'Step into'], ['Shift + F11', 'Step out'], ['Shift + F10', 'Step back over'], ['Alt + ←', 'Step back'], ['Ctrl + S', 'Save to this browser'], ['Ctrl + Space', 'Code completion'], ['Ctrl + .', 'Quick fix'], ['F2', 'Rename symbol'], ['F12', 'Go to definition'], ['Shift + F12', 'Find references'], ['Ctrl + Shift + R', 'Refactor'], ['Shift + Alt + O', 'Organize imports'], ['Shift + Alt + F', 'Format document'], ['Ctrl + Shift + O', 'Go to symbol'], ['Ctrl + F', 'Find in file'], ['F1', 'Editor command palette']];
   openDialog('Keyboard shortcuts', `<table class="shortcut-table">${rows.map(([keys, action]) => `<tr><td>${keys.split(' or ').map(k => k.split(' + ').map(p => `<kbd class="key">${esc(p)}</kbd>`).join(' + ')).join(' or ')}</td><td>${esc(action)}</td></tr>`).join('')}</table>`, () => {}, 'Done', { cancel: null });
 }
 
@@ -1794,6 +1958,7 @@ async function runAction(action: string) {
   else if (action === 'shortcuts') shortcutsDialog();
   else if (action === 'about') aboutDialog();
   else if (action === 'generate-tests') generateTestsDialog();
+  else if (action === 'language-server') languageServerDialog();
   else if (action === 'new-file') newFile();
   else if (action === 'show-tutor') { setLayout({ coach: true }); document.querySelector('.compile-help')?.scrollIntoView({ block: 'nearest' }); }
 }
@@ -1958,8 +2123,9 @@ document.addEventListener('keydown', e => {
 
 async function checkHealth() {
   try {
-    const health = await api<{ ok: boolean; workerReady: boolean }>('/health');
+    const health = await api<{ ok: boolean; workerReady: boolean; languageServer?: string }>('/health');
     runnerOnline = health.workerReady;
+    if (health.languageServer) connectLanguageServer();
     $('#runner-label').textContent = health.workerReady ? 'Local runner' : 'Runner not built';
   } catch {
     runnerOnline = false;

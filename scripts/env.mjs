@@ -33,8 +33,38 @@ export function javaHome() {
   throw new Error('A JDK 21+ is required. Set JAVA_HOME or TRACELAB_JAVA_HOME to its directory.');
 }
 
+/**
+ * Eclipse JDT Language Server for editor features: TRACELAB_JDTLS_HOME, a copy downloaded by
+ * `npm run setup:jdtls` into .tools/jdtls, or the one bundled with the VS Code Java extension.
+ * Returns the folder that contains plugins/ and config_*, or null.
+ */
+export function jdtlsHome() {
+  const valid = dir => dir && existsSync(join(dir, 'plugins')) && readdirSync(join(dir, 'plugins')).some(n => n.startsWith('org.eclipse.equinox.launcher_'));
+  if (valid(process.env.TRACELAB_JDTLS_HOME)) return process.env.TRACELAB_JDTLS_HOME;
+  if (valid(join(root, '.tools/jdtls'))) return join(root, '.tools/jdtls');
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  const version = name => (name.match(/(\d+)\.(\d+)\.(\d+)/) ?? []).slice(1).map(Number);
+  const newer = (a, b) => { const x = version(a), y = version(b); for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0); return 0; };
+  for (const editor of ['.vscode', '.kiro', '.vscode-insiders', '.cursor']) {
+    const extensions = join(home, editor, 'extensions');
+    if (!existsSync(extensions)) continue;
+    for (const ext of readdirSync(extensions).filter(n => n.startsWith('redhat.java-')).sort(newer)) {
+      if (valid(join(extensions, ext, 'server'))) return join(extensions, ext, 'server');
+    }
+  }
+  return null;
+}
+
 export function environment() {
   const env = { ...process.env, JAVA_HOME: javaHome() };
+  const jdtls = jdtlsHome();
+  if (jdtls && process.env.TRACELAB_LANGUAGE_SERVER !== 'off') {
+    env.TRACELAB_JDTLS_HOME = jdtls;
+    env.TRACELAB_JDTLS_JAVA = join(env.JAVA_HOME, 'bin', exe('java'));
+  } else {
+    delete env.TRACELAB_JDTLS_HOME;
+    delete env.TRACELAB_JDTLS_JAVA;
+  }
   if (existsSync(join(root, '.tools/cargo/bin', exe('cargo')))) {
     env.CARGO_HOME = join(root, '.tools/cargo');
     env.RUSTUP_HOME = join(root, '.tools/rustup');
