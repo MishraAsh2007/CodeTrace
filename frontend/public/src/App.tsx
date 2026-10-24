@@ -5,6 +5,7 @@ import type { ExecutionTrace } from "./components/visualization/trace";
 import type { EditorMarker } from "./components/editor/CodeEditor";
 import { type ApiError, runProgram } from "./api";
 import { type Language, STARTER_CODE } from "./types";
+import { externalAppUrl } from "./languageApps";
 
 // localStorage keys for autosaving the user's work across refreshes.
 const LS_CODE_KEY = "codetutor.code";
@@ -98,6 +99,13 @@ export default function App() {
   };
 
   const handleLanguageChange = (next: Language) => {
+    // Java/Python are separate apps: navigate the browser to that app instead
+    // of switching in-process. C is handled here.
+    const url = externalAppUrl(next);
+    if (url) {
+      window.location.href = url;
+      return;
+    }
     setLanguage(next);
     // Switching language loads its starter; the autosave effect persists both.
     setCode(STARTER_CODE[next]);

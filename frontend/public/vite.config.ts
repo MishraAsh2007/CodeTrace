@@ -6,6 +6,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
+    // The C app runs on 5175 so it doesn't collide with the Java app (5173)
+    // or the Python app (8000) when all three run together for the demo.
+    port: 5175,
   },
 });
