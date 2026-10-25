@@ -1,128 +1,117 @@
 # CodeTrace
 
-CodeTrace is an interactive learning and debugging platform that helps users understand how programs execute by visualizing memory, stack frames, pointers, and control flow in real time. Instead of reading raw output, learners can step through code line by line, inspect values, watch objects change over time, and diagnose common bugs with guided explanations.
+CodeTrace is an interactive learning and debugging platform that helps users understand how programs execute by visualizing memory, stack frames, pointers, and control flow in real time. It is designed to make debugging more understandable for students, beginners, and anyone learning how programs really behave under the hood.
 
-The repository contains multiple versions of the same core idea across different languages and implementations:
+This repository contains multiple versions of the same core idea across different languages and implementations:
 
 - Python visualizer for tracing Python execution and teaching debugging concepts
 - C-based execution and tracing implementation
 - Java browser IDE and debugger experience (TraceLab)
 - Shared cross-language concepts for memory visualization, tutoring, and program analysis
 
-## Why this project matters
-
-CodeTrace turns debugging into a visual teaching tool. It is designed for:
-
-- students learning how code actually runs
-- beginners who need to understand variables, scope, references, and heap memory
-- debugging exercises that benefit from state-by-state explanations
-- interactive programming tutoring with quizzes and guided hints
-
-## Core features
-
-Across the different branches, the application includes the following capabilities:
-
-- Step-by-step execution tracing
-- Breakpoints and runtime pauses
-- Memory and call-stack visualization
-- Heap/object diagrams with pointer arrows
-- Variable inspection and frame tracking
-- Error detection and suggested fixes
-- Built-in quiz and tutoring logic
-- Optional AI-powered explanations and guidance
-- Browser-based IDE experience for interactive learning
-
 ## Repository layout
 
 This repository is organized as a multi-branch project:
 
-- `main` — shared project overview and integration point
-- `python` — Python visualizer with Monaco-based editor and Rust backend
-- `C_ver` — C branch with backend/frontend implementation and tracing logic
-- `Java` — Java IDE version (TraceLab) with debugger, tutoring, and JDK-based execution
+- `main` — project overview and shared documentation
+- `python` — Python visualizer with Monaco editor and Rust backend
+- `C_ver` — C branch with backend/frontend execution and tracing logic
+- `Java` — Java browser IDE version (TraceLab)
 
-## Python branch overview
+## Local setup requirements
 
-The Python implementation is a Monaco-based Python IDE that traces code execution step by step and visualizes memory as frames, objects, and pointers. It includes:
+Before running CodeTrace locally, install the tools for the branch you want to use:
 
-- frontend in React + TypeScript + Vite
-- Rust server for API and runtime management
-- Python tracer layer based on OnlinePythonTutor-style logging
-- built-in quiz system and Kiro-like tutor
-- optional AI assistance through browser-based providers (Gemini, OpenAI, Anthropic)
+- Git
+- Node.js 20+ for the Python branch, Node.js 24+ for the Java branch
+- Python 3.11+ for the Python branch
+- Rust + Cargo (`https://rustup.rs`)
+- JDK 21+ for the Java branch
+- On Windows, the Visual Studio C++ build tools may be required for Rust builds
 
-Typical workflow:
+## Quick start
 
-1. Write or paste Python code
-2. Set breakpoints
-3. Run the program
-4. Step through execution and inspect state changes
-5. Ask the tutor to explain the current step or diagnose the bug
+### 1) Clone the repository
 
-## C branch overview
+```bash
+git clone https://github.com/MishraAsh2007/CodeTrace.git
+cd CodeTrace
+```
 
-The C branch focuses on a backend/frontend model for executing and tracing C programs. It includes:
+### 2) Switch to the branch you want to run
 
-- C parser and AST logic
-- interpreter/trace support
-- frontend visualization for stepping through execution
-- debugging concepts centered around memory, variables, and execution flow
+```bash
+git checkout python
+# or
+git checkout Java
+# or
+git checkout C_ver
+```
 
-This branch demonstrates how the same educational tracing model can be adapted to a lower-level language with explicit memory manipulation and pointer behavior.
+## Run the Python version
 
-## Java branch overview
+The Python branch is the easiest one to run locally.
 
-The Java implementation is a browser-based Java IDE called TraceLab. It is more advanced and includes:
-
-- Java compiler and JVM-based recording debugger
-- stack and heap inspection
-- real program execution with JDI/JVM integration
-- test generation and evaluation
-- compile error explanations and fix suggestions
-- tutor-driven learning loops with concept practice
-- AI assistant integration for code explanations
-
-This version is especially strong for teaching Java concepts such as arrays, references, recursion, object graphs, and bug diagnosis.
-
-## Example workflow
-
-A typical CodeTrace session works like this:
-
-1. User writes code in the editor
-2. Program runs with tracing enabled
-3. Execution pauses at points of interest
-4. The UI highlights the active line and current state
-5. Heap, stack, and pointer diagrams update
-6. Learner inspects values and asks for help
-7. Tutor explains the bug, suggests a fix, or asks a quiz question
-
-## Tech stack
-
-The repository spans multiple tech stacks, depending on the branch:
-
-- Frontend: TypeScript, React, Vite, Monaco Editor
-- Backend: Rust (Axum/Tokio), Node-based tooling
-- Language runtimes: Python, Java, C
-- AI integration: provider-based API access from the browser
-- Tracing: custom execution logging and visual memory encoding
-
-## Run instructions
-
-Depending on the branch you want to run:
-
-### Python version
+### Windows
 
 ```powershell
-.un.cmd
+.
+run.cmd
+```
+
+Or PowerShell:
+
+```powershell
+./run.ps1
 ```
 
 Then open:
 
 - http://localhost:8000
 
-### Java version
+The script builds the frontend and server, then starts the app.
 
-```sh
+### macOS / Linux / manual setup
+
+If you want to run it manually instead of using the provided scripts:
+
+```bash
+cd frontend
+npm install
+npm run build
+
+cd ../server
+cargo run --release
+```
+
+Then open the app in your browser at:
+
+- http://localhost:8000
+
+For frontend hot-reload while developing UI changes:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Then open:
+
+- http://localhost:5173
+
+## Run the Java version
+
+The Java branch is a separate browser-based IDE.
+
+Requirements:
+
+- Node.js 24+
+- Rust stable
+- JDK 21+
+
+Run:
+
+```bash
 npm ci
 npm run build
 npm start
@@ -132,9 +121,34 @@ Then open:
 
 - http://127.0.0.1:4317
 
-### C / Rust-based implementations
+For frontend hot reload:
 
-Use the branch-specific setup from that branch's README and project configuration, typically involving Rust + frontend build commands.
+```bash
+npm run dev
+```
+
+Then open:
+
+- http://127.0.0.1:5173
+
+## Run the C version
+
+The C branch is not the main default branch. Switch to `C_ver` and follow the project-specific setup instructions in that branch's README and project configuration files.
+
+## Useful notes
+
+- The Python branch uses a Rust server and a React + TypeScript frontend.
+- The Java branch uses a Rust runner with a browser-based Java IDE and JVM-based tracing.
+- The C version is designed for lower-level tracing and pointer-heavy debugging concepts.
+- If you are developing locally, the `run.cmd`/`run.ps1` scripts in the Python branch are the fastest way to get started.
+
+## Troubleshooting
+
+- If `npm` is not recognized, install Node.js and reopen the terminal.
+- If `cargo` is not recognized, install Rust from rustup and reopen the terminal.
+- If Python commands fail, verify Python 3.11+ is installed and on your PATH.
+- If Java commands fail, confirm JDK 21+ is installed and `JAVA_HOME` is set correctly.
+- If the app does not load, confirm the correct branch is checked out and that the required tools are installed.
 
 ## Project purpose
 
@@ -146,9 +160,5 @@ CodeTrace is best understood as an educational execution visualizer: a system th
 - pointer aliasing and references
 - runtime errors and their root causes
 - how to fix mistakes by understanding the program state
-
-## Summary
-
-CodeTrace is a family of teaching-focused debugging tools designed to make code execution understandable. Across Python, C, and Java, the project demonstrates a consistent philosophy: show execution visually, explain it clearly, and turn debugging into a guided learning experience.
 
 This repository is not just a code runner; it is a visual debugger, tutor, and concept explainer built for learning how programs behave from the inside out.
