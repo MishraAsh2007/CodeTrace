@@ -286,7 +286,7 @@ $('#app').innerHTML = `
     <span class="status-item" id="editor-position">Ln 1, Col 1</span>
     <span class="status-item">Spaces: 4</span><span class="status-item">UTF-8</span><span class="status-item" id="language-label">Java 21</span>
   </footer>
-  <input type="file" id="import-input" accept=".java,.zip,.json,application/zip,application/json" multiple hidden />
+  <input type="file" id="import-input" accept=".java,.c,.py,.zip,.json,application/zip,application/json" multiple hidden />
   <input type="file" id="import-folder" webkitdirectory multiple hidden />
   <div class="drop-overlay" id="drop-overlay" hidden><div>${icon('upload')}<strong id="drop-title">Drop to import</strong><span id="drop-detail">.java files, a folder, a zip or a TraceLab project</span></div></div>
   <dialog id="dialog" aria-labelledby="dialog-title"><form id="dialog-form" novalidate><div class="dialog-heading"><h2 id="dialog-title"></h2><button type="button" class="icon-btn" data-close-dialog aria-label="Close dialog">${icon('x')}</button></div><div id="dialog-body"></div><div class="dialog-error" id="dialog-error" role="alert"></div><div class="dialog-actions" id="dialog-actions"><button type="button" class="btn btn-secondary" id="dialog-cancel" data-close-dialog>Cancel</button><button type="submit" id="dialog-submit" class="btn btn-primary">Save</button></div></form></dialog>
@@ -591,6 +591,7 @@ function renderFiles() {
   $('#editor-tabs').innerHTML = available.map(f => `<button class="panel-tab ${f.name === activeFile ? 'active' : ''}" role="tab" aria-selected="${f.name === activeFile}" data-tab="${esc(f.name)}" title="${esc(f.name)}">${icon('file-code-2')}${esc(f.name.split('/').at(-1))}</button>`).join('')
     + (traceSource ? '<span class="tab-note">Recorded source · read-only</span>' : !javaProject() ? `<span class="tab-note">${esc(LANGUAGES[lang()].name)} · one file</span>` : `<span class="tab-actions"><button class="icon-btn small" data-action="new-file" title="New Java file" aria-label="New Java file">${icon('plus')}</button><button class="icon-btn small" data-action="add-files" title="Add files from your computer" aria-label="Add files from your computer">${icon('upload')}</button></span>`);
   $('#explorer-actions').hidden = !javaProject();
+  $('#explorer .drop-hint').textContent = javaProject() ? 'Drop .java files, a folder or a zip here to add them.' : 'Drop a .c or .py file, or a TraceLab export, to open a new project.';
   renderDocChrome();
   renderLint();
   $('#example-list').innerHTML = categories.map(c => {
@@ -2344,7 +2345,7 @@ function newProjectDialog() {
     <fieldset class="language-picker"><legend>Language</legend>${picker}<small id="language-note"></small></fieldset>
     <fieldset class="template-grid"><legend>Start from</legend>${cards}<label class="template-card"><input type="radio" name="template" value="paste" />${icon('clipboard-paste')}<span><strong>Paste code</strong><small id="paste-note">${esc(pasteText(initial)[0])}</small></span></label></fieldset>
     <div id="paste-area" hidden><label class="dialog-label"><span id="paste-label">${esc(pasteText(initial)[1])}</span><textarea id="paste-code" rows="10" spellcheck="false" placeholder="public class Main {&#10;    public static void main(String[] args) {&#10;        …&#10;    }&#10;}"></textarea></label><p class="paste-preview" id="paste-preview" aria-live="polite"></p></div>
-    <div class="import-row">${icon('upload')}<span>Have files already?</span><button type="button" class="link-btn" data-action="import">Import .java files or a zip</button><button type="button" class="link-btn" data-action="import-folder">Import a folder</button><button type="button" class="link-btn" data-action="gallery">Open an example</button></div>`, () => {
+    <div class="import-row">${icon('upload')}<span>Have files already?</span><button type="button" class="link-btn" data-action="import">Import source files or a zip</button><button type="button" class="link-btn" data-action="import-folder">Import a folder</button><button type="button" class="link-btn" data-action="gallery">Open an example</button></div>`, () => {
     const name = $<HTMLInputElement>('#new-project-name').value.trim() || 'My project';
     const language = (document.querySelector<HTMLInputElement>('input[name="language"]:checked')?.value ?? 'java') as Language;
     const choice = document.querySelector<HTMLInputElement>('input[name="template"]:checked')?.value ?? firstOf(language);
@@ -2773,7 +2774,7 @@ function shortcutsDialog() {
 }
 
 function aboutDialog() {
-  openDialog('About TraceLab', `<div class="about">${LOGO_SVG}<div><strong>TraceLab ${VERSION}</strong><p class="muted">Java IDE with a recording debugger and a built-in tutor.</p></div></div>
+  openDialog('About TraceLab', `<div class="about">${LOGO_SVG}<div><strong>TraceLab ${VERSION}</strong><p class="muted">Java, C and Python IDE with a recording debugger and a built-in tutor.</p></div></div>
     <dl class="about-list"><dt>Runner</dt><dd>${runnerOnline ? 'Connected' : 'Not connected'} · local service on 127.0.0.1:4317</dd><dt>Java</dt><dd>Compiled with javac --release 21, traced with the Java Debug Interface</dd><dt>C</dt><dd>TraceLab’s C interpreter for a teaching subset of C, with the C tutor’s hints</dd><dt>Python</dt><dd>${esc(pythonVersion ? `Python ${pythonVersion}` : 'Python 3.10 or newer (not found)')}, traced by Online Python Tutor’s pg_logger, with its question bank</dd><dt>Your code</dt><dd>Projects are saved in this browser. Share links keep the project in the link itself.</dd></dl>
     <div class="callout warning">${icon('shield-check')}<div><strong>Runs code on this computer</strong><p>This release runs programs through a local runner under your own account, with your normal file and network access. Only run code you trust.</p></div></div>`, () => {}, 'Close', { cancel: null });
 }

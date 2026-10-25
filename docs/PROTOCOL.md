@@ -4,7 +4,7 @@ The Rust service listens only on `127.0.0.1:4317`. API calls except health requi
 
 ## Endpoints
 
-`GET /api/health` returns runner availability and mode.
+`GET /api/health` returns runner availability and mode. The existing Java fields (`workerReady`, `languageServer`, `language`, `engine`) remain for compatibility. `languages` contains `java: {ready}`, `c: {ready, engine}` and `python: {ready, version, engine}`; missing Python does not prevent Java or C execution.
 
 `POST /api/runs` accepts:
 
@@ -22,21 +22,27 @@ The Rust service listens only on `127.0.0.1:4317`. API calls except health requi
 }
 ```
 
-`startAt` is optional and applies to `trace` mode only (other modes ignore it). `file` must be one of the request's files, `line` is 1–100,000, `hit` (default 1) is 1–1,000,000, and `condition` (default empty) is one line of at most 200 characters. The runner passes it to the worker as `start.txt` in the job directory (file, line, hit and condition on four lines). Until the start point fires, only breakpoints on that line are enabled (method entry/exit and the other line breakpoints are created but stay off), so the program runs at nearly full speed; nothing before it counts against `maxSteps`. It fires the `hit`-th time the line is about to run with the condition true; the frames already on the stack then get fresh activation IDs, and recording continues as usual. A line with no code moves to the next line with code in the same method (or, on a method's signature line, its first statement). An uncaught exception before the start point is recorded where it happens. A condition that can't be parsed ends the run with stop reason `bad-start` before compiling.
+`language` is optional and defaults to `"java"`; Java requests are returned without the field for compatibility. Set it to `"c"` or `"python"` for the other engines. Those requests require exactly one source file, with a simple basename (1–64 ASCII letters/digits/underscores, starting with a letter or underscore) and the matching `.c`/`.py` extension. Windows reserved names are rejected. Limits are 64 KiB source, 16 KiB input, 10–2,000 steps and 500–15,000 ms. `mainClass` is unused for these engines. They accept `mode: "trace"` or `"run"`; `"compile"` and `startAt` are rejected. For example:
+
+```json
+{"language":"python","files":[{"name":"example.py","content":"print(42)\n"}],"mainClass":"main","stdin":"","maxSteps":1000,"timeoutMs":15000,"mode":"trace"}
+```
+
+For Java, `startAt` is optional and applies to `trace` mode only (other modes ignore it). `file` must be one of the request's files, `line` is 1–100,000, `hit` (default 1) is 1–1,000,000, and `condition` (default empty) is one line of at most 200 characters. The runner passes it to the worker as `start.txt` in the job directory (file, line, hit and condition on four lines). Until the start point fires, only breakpoints on that line are enabled (method entry/exit and the other line breakpoints are created but stay off), so the program runs at nearly full speed; nothing before it counts against `maxSteps`. It fires the `hit`-th time the line is about to run with the condition true; the frames already on the stack then get fresh activation IDs, and recording continues as usual. A line with no code moves to the next line with code in the same method (or, on a method's signature line, its first statement). An uncaught exception before the start point is recorded where it happens. A condition that can't be parsed ends the run with stop reason `bad-start` before compiling.
 
 Condition grammar: `||`, `&&`, `!`, comparisons (`== != < <= > >=`), `+ - * / %`, unary minus, parentheses, numbers, `'c'`, `"text"`, `true`, `false`, `null`, names, `.field`, `.length` (arrays), `[index]`, and `.size()`, `.isEmpty()`, `.length()` (strings and the collections with views below). Names resolve to the paused frame's locals, then fields of `this`, then static fields of the frame's class, then user class names (for `Main.count`). Strings compare by text and boxed numbers by value. Evaluation reads values only. A name that isn't visible or an index out of range makes the condition false, and the first such problem is reported.
 
-`mode` is optional:
+For Java, `mode` is optional:
 
 - `trace` (default): compile, then run under JDI and record every step.
 - `run`: compile, then run on a plain JVM with the same input, output, heap and time limits, without recording (about twice as fast). The `terminated` event has `recorded: false` and `steps: 0`. An uncaught exception is parsed from the JVM's `Exception in thread …` line into `exception: {type, message, caught: false}` with stop reason `exception`. A program that exceeds the output limit is stopped immediately with stop reason `output-limit`. Used for tests and test generation.
 - `compile`: compile only. The run ends with stop reason `compiled` or `compile-error`. Used to check suggested compile fixes.
 
-It returns `{"id":"<opaque run id>"}` immediately. A busy runner returns HTTP 409. Paths are validated relative `.java` paths; entry classes are dot-separated Java identifiers. Requests are limited to 20 files, 64 KiB per file, 256 KiB total source, 16 KiB input and a 512 KiB JSON body.
+It returns `{"id":"<opaque run id>"}` immediately. A busy runner returns HTTP 409. For Java, paths are validated relative `.java` paths; entry classes are dot-separated Java identifiers, with limits of 20 files, 64 KiB per file, 256 KiB total source and 16 KiB input. All languages have a 512 KiB JSON body limit.
 
 `GET /api/runs/{id}?since=N` returns `{id,status,request,since,total,events}`. Status is `running` or `finished`. The immutable request is the exact source/input/configuration used for that run. Events are ordered by a monotonically increasing `sequence`; `events` contains only events with `sequence >= since` (default 0), and `total` is the number recorded so far. The browser polls with `since` set to the number of events it already holds, so each event is transferred once. A run is complete when `status` is `finished` and the client holds `total` events.
 
-`DELETE /api/runs/{id}` requests cancellation. The worker observes a cancellation sentinel. The Rust supervisor force-stops the process tree if the worker does not respond promptly. Existing trace events remain readable.
+`DELETE /api/runs/{id}` requests cancellation. The Java worker observes a cancellation sentinel; its Rust supervisor force-stops the process tree if the worker does not respond promptly. C checks a cancellation flag while interpreting. Python's worker process is killed. Existing published events remain readable; C retains its captured states, while Python loses its buffered trace on cancellation, timeout or an oversized worker response.
 
 ## Trace events
 
@@ -44,13 +50,16 @@ Every event has `schemaVersion: 1`, `runId`, `sequence`, and `kind`.
 
 - `status`: a human-readable progress `message`.
 - `diagnostic`: `severity`, relative `file`, one-based `line`/`column`, and compiler `message`.
-- `line`: `location: {file,line,phase:"before"}`, `threadId`, `frames`, `statics`, `heap`, capture truncation flags, and optional `returns`.
+- `line`: `location: {file,line,phase}`, `frames`, `statics`, `heap`, capture truncation flags, and optional `returns`. Java includes `threadId`. Java/Python line locations use `phase: "before"`; C uses `"after"`. C may include a human-readable `note` describing the statement.
 - `returns` (on `line`/`exception`): user methods that completed normally since the previous stop, oldest first: `{method, frameId, value}` or `{method, frameId, void: true}`. `frameId` matches the activation's frame `id`. Constructors and static initializers are omitted; methods exited by an exception produce no entry (JDWP does not report those exits).
 - `exception`: the same captured state, plus `exception: {type,message,caught}`. For a library exception, location is the nearest user-source frame; do not present it as the exact internal library throw location.
 - `output`: `stream` (`stdout` or `stderr`) and a text chunk. Receipt order is preserved, not exact source-line synchronization.
+- `native` (Python trace mode): `language: "python"` and `result`, the original tracer result used by the Python question bank. `web/pyquiz/adapter.ts` expands `compact-1` frame/heap tables and output-prefix lengths before passing it to the rules. Native trace step indexes correspond to normalized state indexes. This event itself is not a debugger step.
 - `terminated`: `stopReason`, `message`, and, when available, `steps`, `exitCode`, `outputTruncated`, `recorded` (false in `run` mode), `exception` (`run` mode only) and `start` (when the request had `startAt`): `{reached, file, line, message?}`. `line` is the line where recording started (after moving off a line without code); when `reached` is false, `message` says why: the file's classes never loaded, the line has no code, the line never ran, or it ran N times without the condition being true (with the first evaluation problem, such as a name that isn't visible).
 
-Stop reasons: `completed`, `compile-error`, `exception`, `runtime-error`, `step-limit`, `timeout`, `cancelled`, `unsupported-concurrency`, `trace-limit`, `worker-error`, `bad-start`, and, outside `trace` mode, `output-limit` (`run`) and `compiled` (`compile`).
+Stop reasons: `completed`, `compile-error`, `exception`, `runtime-error`, `step-limit`, `timeout`, `cancelled`, `unsupported-concurrency`, `trace-limit`, `worker-error`, `bad-start`, `output-limit`, `compiled` (Java compile mode), and `needs-input` (Python). C diagnostics/exceptions may include `errorKind`, the stable classification used by the C tutor; diagnostics also include `stage` (`lex`, `parse` or `runtime`). Python syntax errors become diagnostics; runtime exceptions become exception events. Python input values are echoed into output in both trace and plain-run modes.
+
+The detailed JDI identity, return and collection rules below describe Java. C and Python adapters use the same frame/value/heap shape, with engine-specific identities. Both cap displayed frames at 48, heap objects at 160 and collection elements at 64. C/Python `run` mode produces output and an outcome without recorded line states; Java-only method-test harnesses and LSP endpoints do not apply.
 
 Frames contain `id`, `method`, source `file`/`line`, typed `locals` (parameters carry `argument: true`), and an optional `truncated` flag. IDs are derived from method entry/exit activation tracking; after a caught exception unwinds frames, the worker realigns its activation stack with the real user frames at the next stop, so surviving frames keep their IDs. Objects use JDI identity, scoped to the run, so two references to the same object point to the same heap node. Objects are not pinned alive across stops (returned objects are pinned only until the next stop describes them). Trace data does not invoke methods on target objects. Exceptions that are thrown and caught entirely inside library code are not recorded.
 

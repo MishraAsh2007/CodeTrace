@@ -33,7 +33,7 @@ import { pythonFix, pythonQuestions, pythonResult } from '../web/pyquiz/adapter.
 import { applyRepair, planQuiz } from '../web/pyquiz/questionBank.ts';
 import { CASES as PY_CASES } from './pyquiz-cases.mjs';
 import { systemPrompt } from '../web/assistant.ts';
-import { singleFileProject } from '../web/importer.ts';
+import { importFiles, singleFileProject } from '../web/importer.ts';
 
 await buildWorker();
 await command('cargo', ['test', '--locked']);
@@ -1332,6 +1332,17 @@ public class Main {
       assert.deepEqual(await decodeProject(await encodeProject(project)), project, 'share links keep the language');
       const zip = await projectFromZip(await projectToZip(project), 'zip');
       assert.deepEqual([zip.project.language, zip.project.files], [language, project.files]);
+      const filename = language === 'c' ? 'solution.c' : 'solution.py';
+      const custom = { ...project, stdin: '7\n', maxSteps: 250, checks: [{ name: 'Output', stdin: '', expectedOutput: '1' }], files: [{ name: filename, content: project.files[0].content.trimEnd() }] };
+      assert.deepEqual((await projectFromZip(await projectToZip(custom), 'zip')).project, custom, 'zip imports preserve the source filename, exact text and settings');
+      const file = new File([custom.files[0].content], filename);
+      const loose = await importFiles([{ file, path: filename }], 'import');
+      assert.equal(loose.project.files[0].name, filename, 'loose source imports keep valid filenames');
+      assert.deepEqual(loose.notes, []);
+      const extra = { ...project, files: [...project.files, { name: filename, content: custom.files[0].content }] };
+      await assert.rejects(projectFromZip(await projectToZip(extra), 'zip'), /exactly one file/, 'a single-file project must not silently discard sources');
+      const nested = { ...project, files: [{ ...project.files[0], name: `nested/${filename}` }] };
+      await assert.rejects(projectFromZip(await projectToZip(nested), 'zip'), /not a valid/, 'unsupported source paths are reported');
     }
     const demosByLanguage = Object.groupBy(demos.filter(d => d.language), d => d.language);
     assert.deepEqual(Object.keys(demosByLanguage).sort(), ['c', 'python']);

@@ -87,7 +87,7 @@ async function readFileText(file: File): Promise<string> {
 }
 
 /**
- * Imports dropped or chosen files: a TraceLab project (.json), a .zip, or any number of .java files.
+ * Imports a TraceLab project (.json), a .zip, Java sources, or one C/Python source file.
  * Paths from folder uploads are used only to report where files came from.
  */
 export async function importFiles(input: { file: File; path: string }[], fallbackName: string): Promise<ImportResult> {
@@ -106,7 +106,9 @@ export async function importFiles(input: { file: File; path: string }[], fallbac
   const single = input.length === 1 ? fileLanguage(input[0].file.name) : null;
   if (single && single !== 'java') {
     const text = normalize(await readFileText(input[0].file));
-    return { project: singleFileProject(input[0].file.name.replace(/\.(c|py)$/i, '') || fallbackName, single, text), notes: [] };
+    const original = input[0].file.name;
+    const filename = validFileName(original, single) ? original : LANGUAGES[single].mainFile;
+    return { project: singleFileProject(original.replace(/\.(c|py)$/i, '') || fallbackName, single, text, filename), notes: filename === original ? [] : [`${original} was placed at ${filename} to use a supported file name.`] };
   }
   const java = input.filter(i => /\.java$/i.test(i.file.name));
   const skipped = input.length - java.length;
@@ -118,10 +120,10 @@ export async function importFiles(input: { file: File; path: string }[], fallbac
   return result;
 }
 
-/** A C or Python project with one file, `main.c` or `main.py`. */
-export function singleFileProject(name: string, language: Exclude<Language, 'java'>, text: string): Project {
+/** A C or Python project with one file, defaulting to `main.c` or `main.py`. */
+export function singleFileProject(name: string, language: Exclude<Language, 'java'>, text: string, filename = LANGUAGES[language].mainFile): Project {
   const content = normalize(text);
-  const project: Project = { version: 1, name: name.trim() || 'Imported project', example: '', mainClass: 'main', stdin: '', maxSteps: language === 'python' ? 1000 : 500, checks: [], language, files: [{ name: LANGUAGES[language].mainFile, content: content.endsWith('\n') ? content : `${content}\n` }] };
+  const project: Project = { version: 1, name: name.trim() || 'Imported project', example: '', mainClass: 'main', stdin: '', maxSteps: language === 'python' ? 1000 : 500, checks: [], language, files: [{ name: filename, content: content.endsWith('\n') ? content : `${content}\n` }] };
   const problem = limitProblem(project.files, language);
   if (problem) throw new Error(problem);
   return project;
@@ -153,11 +155,13 @@ export async function projectFromZip(data: Uint8Array, name: string): Promise<Im
     try { meta = JSON.parse(decoder.decode(manifest.data)); } catch { /* Not a C or Python export. */ }
     if (meta.language === 'c' || meta.language === 'python') {
       const prefix = manifest.path.slice(0, manifest.path.length - PROJECT_FILE.length);
-      const source = entries.find(e => e.path.startsWith(`${prefix}src/`) && fileLanguage(e.path) === meta.language);
-      if (source) {
-        const candidate = { ...singleFileProject(meta.name ?? name, meta.language, decoder.decode(source.data)), stdin: meta.stdin ?? '', maxSteps: meta.maxSteps ?? 500, checks: meta.checks ?? [] };
-        if (validateProject(candidate)) return { project: candidate, notes: [] };
-      }
+      const files = entries.filter(e => e.path.startsWith(`${prefix}src/`) && /\.(java|c|py)$/i.test(e.path))
+        .map(e => ({ name: e.path.slice(prefix.length + 4), content: normalize(decoder.decode(e.data)) }));
+      const candidate = { version: 1, name: meta.name ?? name, example: '', mainClass: 'main', language: meta.language, files, stdin: meta.stdin ?? '', maxSteps: meta.maxSteps ?? (meta.language === 'python' ? 1000 : 500), checks: meta.checks ?? [] };
+      const problem = limitProblem(files, meta.language);
+      if (problem) throw new Error(problem);
+      if (validateProject(candidate)) return { project: candidate, notes: [] };
+      throw new Error('This zip contains an invalid C or Python project.');
     }
   }
   const sources = entries.filter(e => /\.java$/i.test(e.path) && !e.path.split('/').some(part => part === '__MACOSX' || part.startsWith('.')));

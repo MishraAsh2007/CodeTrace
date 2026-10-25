@@ -1,6 +1,6 @@
 # TraceLab
 
-TraceLab is a Java IDE in the browser with a recording debugger and a built-in tutor. It runs your program on a real JVM, records every step, and lets you move forward and back through the call stack and heap. The Tutor asks questions drawn from your own run, then checks your fix against tests.
+TraceLab is a Java, C and Python IDE in the browser with a recording debugger and a built-in tutor. It lets you move forward and back through recorded stack and heap states, answer questions or reveal hints about your run, and check fixes against tests. Java runs on a real JVM; C uses a teaching interpreter; Python uses Python Tutor's tracer.
 
 The site has two parts:
 
@@ -11,7 +11,7 @@ The site has two parts:
 
 ## Run it
 
-Requirements: **Node.js 24+, Rust stable, and a full JDK 21+**. On Windows, Rust requires the MSVC C++ build tools. A JRE alone is insufficient.
+Requirements: **Node.js 24+, Rust stable, and a full JDK 21+**. Install **Python 3.10+** to run Python projects and the full test suite; no pip packages are needed. On Windows, Rust requires the MSVC C++ build tools. A JRE alone is insufficient.
 
 ```sh
 npm ci
@@ -23,11 +23,27 @@ Open **http://127.0.0.1:4317**. For frontend hot reload, run `npm run dev` and o
 
 This workspace has a local Rust toolchain under `.tools/`; the launch scripts use it automatically. JDK discovery checks `TRACELAB_JAVA_HOME`, `JAVA_HOME`, JDKs bundled with the VS Code Java extension, then `javac` on PATH. Student code is always compiled with `--release 21`.
 
+Python discovery checks `TRACELAB_PYTHON` (an interpreter executable), then `python`/`python3` on PATH. `/api/health` reports availability for each language. C needs no separate C compiler at runtime.
+
 **Java language server (optional, recommended).** Full editor features come from Eclipse JDT LS. TraceLab uses `TRACELAB_JDTLS_HOME`, a copy in `.tools/jdtls`, or the one inside the VS Code Java extension (`redhat.java`). Without either, run `npm run setup:jdtls` (downloads JDT LS 1.63.0, about 50 MB, and checks its SHA-256). The status bar shows **Java: ready** when it is running; without it the editor falls back to snippets and keyword completion. Set `TRACELAB_LANGUAGE_SERVER=off` to disable it. It starts in 5–20 s and uses up to 1 GB of memory.
+
+## Languages
+
+Choose a language in **New project**, import a `.c` or `.py` file, or open an example from the gallery's language filters. All languages use the existing editor, project library, debugger, themes, input/output panel, output tests, import/export and share links.
+
+| Language | Execution and teaching support | Scope |
+| --- | --- | --- |
+| Java | JDK 21/JDI, trace-grounded questions, checked compiler fixes, JDT LS, method tests, generated tests and practice | Multiple files and packages; all existing Java features retained |
+| C | Rust interpreter from `C_ver`, stack/heap snapshots, classified errors and progressive tutor hints | One `.c` file; teaching subset with functions, loops, arrays, pointers, structs and supported built-ins; not a complete C compiler |
+| Python | `pg_logger`/`pg_encoder` and the quiz/repair rules from `python` | One `.py` file, Python 3.10+, standard-library import allowlist inherited from the tracer |
+
+Python `input()` echoes supplied lines into the recorded output, matching the source branch; include those lines in expected-output tests. Missing input produces an explanation to add more input and rerun. C and Python support output tests; Java-specific language-server tools, method tests, generated tests, recording start points and practice remain available in Java projects.
+
+See [integration notes](docs/INTEGRATION.md) for source commits, file mappings and remaining engine limitations. The separate `python-version` branch is not used.
 
 ## Examples
 
-The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse examples**) has 21 programs. Every buggy example has tests that fail until it is fixed, and the Tutor offers an explain question and a repair question grounded in the recorded run. `npm test` checks that each buggy example fails a test, that applying the Tutor's correct repair makes every test pass, and that each concept tour passes.
+The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse examples**) includes the 21 Java programs below plus C and Python examples. Every buggy Java example has tests that fail until it is fixed, and the Tutor offers an explain question and a repair question grounded in the recorded run. `npm test` checks that each buggy Java example fails a test, that applying the Tutor's correct repair makes every test pass, and that each concept tour passes; it also checks the C tutor and Python question bank.
 
 | Category | Examples |
 | --- | --- |
@@ -40,9 +56,9 @@ The gallery (landing page, **Examples** view in the IDE, or **⋯ → Browse exa
 ## Your own projects
 
 - **Projects:** create as many as you like with **New project** in the top bar, the **+** in the activity bar, the project switcher, **⋯ → New project**, or the **My projects** view. Rename, duplicate, export or delete them in **My projects**. Everything is saved in the browser as you type (`/app/?new` opens the new-project dialog).
-- **Files:** **+** (new file) and **upload** (add files from your computer) sit at the right of the editor tabs and in the Explorer header. Both work in examples too.
+- **Files (Java):** **+** (new file) and **upload** (add files from your computer) sit at the right of the editor tabs and in the Explorer header. Both work in examples too. C and Python projects each hold one source file.
 - **Start from:** a template (blank program, reads input, class + Main, packages), pasted code, or files. Pasted code with several public classes is split into one file per class.
-- **Import:** choose or drop `.java` files, a folder, a `.zip`, or a TraceLab `.json` export. Files are placed by their `package` declaration and public class name, not by the folder they came from, so `src/main/java/com/x/App.java` becomes `com/x/App.java`. The class with a `main` method becomes the main class (preferring one named `Main`). Dropping files onto the Explorer adds them to the open project; dropping anywhere else creates a new one.
+- **Import:** choose or drop `.java` files, a Java folder/zip, one `.c` or `.py` file, or a TraceLab `.zip`/`.json` export. Java files are placed by their `package` declaration and public class name, not by the folder they came from, so `src/main/java/com/x/App.java` becomes `com/x/App.java`. The class with a `main` method becomes the main class (preferring one named `Main`). Dropping Java files onto a Java project's Explorer adds them to that project; importing C/Python creates a new project and keeps a valid source filename.
 - **Explorer:** packages show as folders, the main class has a ▶ badge, and any class with `main` can be made the entry point. If a file's path doesn't match its package or class name, the Explorer and editor show a warning with a one-click **Move**, because TraceLab only records classes whose paths match. Rename/move can also update the class name and package declaration.
 - **Examples are templates:** edits to an example are kept with that example, never mixed into your projects. **Save as my project** copies it into your projects and resets the example.
 - **Reset:** the **Reset** button in the top bar (also **⋯ → Reset to the starting code**) appears once you change something. For an example it restores the original; for a project it restores the code, input and tests from when you created it (projects created before this feature have no starting copy).
@@ -109,19 +125,21 @@ A Kiro subscription can't be used here: its API keys only authenticate the Kiro 
 - **IDE:** Monaco editor (with its find, command palette, hovers and quick fixes), semantic Java features through Eclipse JDT LS (see [Editor](#editor)), spelling, a project library, multiple files and packages with a package-tree Explorer, rename/move/delete, compiler diagnostics with explanations and checked fixes in the editor and Problems panel, snippets such as `sout`/`fori`, keyboard shortcuts, light/dark/system themes, resizable editor/debugger and bottom-panel splits, collapsible sidebar and Tutor, autosave, import/export, share links (the project travels in the URL fragment, which is not sent to the server), and trace export.
 - **Debugger:** real JDK 21 compilation and JDI capture; frames with stable activation IDs, parameters, return values, statics and exceptions; stack and heap columns with reference arrows; renderers for arrays (including 2D and `char[]`), strings, boxed values, records and enums (as objects), `ArrayList`, `LinkedList`, `ArrayDeque`, `PriorityQueue`, `Stack`/`Vector`, `HashMap`/`LinkedHashMap`/`TreeMap`, `HashSet`/`LinkedHashSet`/`TreeSet`, `List.of`/`Set.of`/`Map.of`, `Arrays.asList`, `Collections.unmodifiable…`/`empty…`/`singleton…`, `subList`, `EnumMap`/`EnumSet`, map `keySet()`/`values()`/`entrySet()` views and entries, iterators (what `next()` returns), `Optional`, `BitSet`, `StringBuilder`, atomics, `BigInteger`/`BigDecimal`, `UUID`, JDK enum constants and `java.time` values (as their text); pictures of data structures above the stack and heap, laid out to grow sideways and scroll, each foldable and with a larger view (Esc closes it): a **call tree** for recursive methods (each call with its arguments and result, growing as you step), **graphs** for adjacency lists, adjacency matrices, edge lists, `Map<K, List<K>>` and node objects with neighbor lists (columns by distance from the start; visited, queued and current nodes colored from the recorded `visited`/`dist`/`parent` arrays or sets and the queue or stack, and the path of recursive calls), **grids** for 2D arrays (row and column markers for `grid[r][c]`, a `visited[][]` grid shown as colors, walls, queued cells numbered), **trees** for classes with two or more child fields (in order), and **chains** for linked lists; changed/new highlighting; index markers that show where the code is in an array, list, string or 2D array (`values[i]`, `list.get(j)`, `word.charAt(word.length() - 1 - i)`, `grid[r][c]`, and the current element of a for-each loop), with an out-of-range index drawn as a dashed cell past the end and a hint such as `→ values[2] = 2` next to the index variable; a “Changes” strip narrating each step; step into/back, frame-aware **Over**, **Out** and **Back** (F10, Shift+F11, Shift+F10); scrubber, autoplay, filter and replay bookmarks.
 - **Tutor:** predict/explain/fix questions for array and string bounds, null fields and `Map.get` misses, division by zero, `NumberFormatException`, `ConcurrentModificationException`, non-terminating loops, runaway recursion, string identity, integer division, pass-by-value, aliasing (objects and arrays), return values, state changes and compiler errors (lossy conversion, missing symbols), and algorithms: which value `poll()`/`remove()`/`pop()` returns next (checked against the next step), how many calls a recursion makes, which call returns first, and which call starts next in a depth-first search. A question is shown only when the recorded run supports its premise. Repair questions highlight the line and jump to it for editing. Tests run in fresh JVMs; a failing test can be debugged directly; concepts practiced are tallied per browser.
-- **Runner:** step/time/output/trace limits, partial traces on limits, cancellation, one job at a time, incremental polling, job cleanup, and host/origin checks.
+- **Runner:** step/time/output/trace limits, cancellation, one job at a time, incremental polling, job cleanup, and host/origin checks. See below for language-specific trace retention.
 
 ## Semantics and limits
 
-**A step is recorded before its source line executes.** A line with several expressions is not split into expression-level steps. **Replay is recorded state, not reverse execution:** the program runs to completion or a limit first. Gutter bookmarks navigate the recording; they are not live breakpoints. Editing code pauses line highlights until you open the recorded source.
+**Java and Python line steps are recorded before their source line executes; C records after each statement.** The debugger labels the phase accordingly. A source line is not necessarily an expression-level step. **Replay is recorded state, not reverse execution:** the program runs to completion or a limit first. Gutter bookmarks navigate the recording; they are not live breakpoints. Editing code pauses line highlights until you open the recorded source.
 
 Output is read asynchronously, so a chunk may appear one step early or late; the console labels it “output received by this step.”
 
-Default limits: 500 steps (configurable 10–2,000), 15 s execution, 96 MiB heap, 32,768 output characters, 40 MiB trace, 48 frames, 160 objects, 32 locals per frame, 64 elements per array or collection, 24 fields per object, 48 traversal levels and 64 returns between two steps. The runner keeps the latest eight runs; the browser keeps the current and previous run. Capture costs about 3–4 ms per step for a heap of 60–70 objects.
+Java defaults: 500 steps (configurable 10–2,000), 15 s execution, 96 MiB heap, 32,768 output characters, 40 MiB trace, 48 frames, 160 objects, 32 locals per frame, 64 elements per array or collection, 24 fields per object, 48 traversal levels and 64 returns between two steps. The runner keeps the latest eight runs; the browser keeps the current and previous run. Java capture costs about 3–4 ms per step for a heap of 60–70 objects.
+
+C and Python also accept 10–2,000 steps and execution timeouts up to 15 s. Python projects default to 1,000 steps. Java's JVM heap limit does not apply to either engine. C retains recorded states when a runtime error or execution limit stops it. Python returns its trace when the worker finishes: a step-limit result retains its recorded states, but forcibly stopping Python for a wall-clock timeout, cancellation or oversized response loses that run's buffered trace.
 
 **Recording from a later point.** For a long program, right-click a line and choose **Start recording here** (or **Start recording here when…**, or Project settings → Recording start). The program runs at nearly full speed with only that line watched, then recording starts the first time (or the n-th time) the line is about to run with an optional condition true, such as `i == 50 && total > 100`. Conditions can use variables on that line, fields, array elements, `.length`, `.size()`, `.isEmpty()`, numbers, chars, strings (compared by text), `true`/`false`/`null`, arithmetic, comparisons, `!`, `&&` and `||`; they only read values. A line without code moves to the next line with code in the same method. Frames already running when recording starts are shown with all their values. If the line never runs or the condition is never true, the debugger says which, and how many times the line did run. The start point follows its line as you edit and is saved with the project.
 
-TraceLab never calls student methods such as `toString()` to display objects. Library internals are hidden except for the renderers above. Multi-threaded programs are not supported. Not yet included: Maven/Gradle dependencies, live breakpoints, expression stepping, test types beyond program output and method calls, collaboration, other languages, and a production sandbox. The Tutor, Need help, practice, compile help and the editor are deterministic and need no API key; only the optional assistant uses a model.
+The Java tracer never calls student methods such as `toString()` to display objects. Library internals are hidden except for the renderers above. Multi-threaded programs are not supported. Not yet included: Maven/Gradle dependencies, live breakpoints, expression stepping, test types beyond program output and method calls, collaboration, additional languages, and a production sandbox. The Tutor, Need help, practice, compile help and the editor are deterministic and need no API key; only the optional assistant uses a model.
 
 ## Tests
 
@@ -129,7 +147,7 @@ TraceLab never calls student methods such as `toString()` to display objects. Li
 npm test
 ```
 
-Builds the worker and runner, runs the Rust unit tests, then runs 62 integration checks against real JVM programs over HTTP: tracing semantics, collections, frame identity, limits, cancellation, API rejection, every gallery example and its repair, share links, source analysis, import/zip round trips, the project library, method-call tests (values, arrays, collections, exceptions, void and instance-method errors), every new-project template, plain-run and compile-only modes, index markers, compile help (each suggested fix for 28 javac errors must compile), test generation, spelling and warning explanations, the Java language server (completion, live problems, quick fixes, rename across files; skipped when none is installed), Need help visualizations, explain questions for other exception types, practice problems for every concept and variant, the AI assistant, AI-written practice and AI-suggested tests against a mock server, starter-test and clean-run explanations, tests for objects, statements and printed output, the new collection and JDK views, recording start points, larger captures, graph/call-tree/grid/chain views, algorithm questions, Reset, and the website/IDE/404 routes. Port 4317 must be free.
+Builds the worker and runner, runs the Rust unit tests, then runs integration checks against Java, C and Python programs over HTTP: tracing semantics, collections, frame identity, limits, cancellation, API rejection, every gallery example and its repair, share links, source analysis, import/zip round trips, the project library, method-call tests (values, arrays, collections, exceptions, void and instance-method errors), every new-project template, plain-run and compile-only modes, index markers, compile help (each suggested fix for 28 javac errors must compile), test generation, spelling and warning explanations, the Java language server (completion, live problems, quick fixes, rename across files; skipped when none is installed), Need help visualizations, explain questions for other exception types, practice problems for every concept and variant, the AI assistant, AI-written practice and AI-suggested tests against a mock server, starter-test and clean-run explanations, tests for objects, statements and printed output, the new collection and JDK views, recording start points, larger captures, graph/call-tree/grid/chain views, algorithm questions, Reset, and the website/IDE/404 routes. C checks cover pointers, structs, input, errors, hints and execution limits. Python checks cover trace conversion, input, errors, import restrictions, the original question-bank cases and executable repairs. Cross-language checks cover project validation, import/export and sharing. These checks use the API and local modules, without a browser. Port 4317 must be free.
 
 ## Structure
 
@@ -142,6 +160,8 @@ web/library.ts                            Browser project library and example ed
 web/javasource.ts, importer.ts, zip.ts    Java source analysis, imports/exports, dependency-free zip
 web/tests.ts, testgen.ts, templates.ts    Output and method-call tests, test generation, new-project templates
 web/compilehelp.ts                        javac error explanations and fixes
+web/languages.ts, ctutor.ts                Language metadata and C tutor hints
+web/pyquiz/                               Python question bank, repair rules and trace adapter
 web/cursors.ts                            Index markers for arrays, lists, strings and for-each loops
 web/help.ts, exceptions.ts, practice.ts    Need help views, exception guide, JVM-checked practice problems
 web/structures.ts                         Call trees, graphs, grids, trees and linked-list chains
@@ -153,10 +173,14 @@ web/examples.ts                           Example projects and gallery metadata
 web/public/screenshots/                   Product screenshots used by the site
 server/main.rs                            Rust HTTP API, job supervision, limits, static files
 server/lsp.rs, assist.rs                  Eclipse JDT LS bridge; optional AI assistant relay
+server/c/                                C interpreter and TraceLab event adapter
+server/python.rs                         Python worker supervision and TraceLab event adapter
 worker/TraceWorker.java                   Java compiler + JDI adapter, emits NDJSON
+worker/python/                           Python Tutor tracer, encoding and worker wrapper
 worker/AssistProxy.java                   HTTPS relay for the assistant
 scripts/                                  Tool discovery, build, launch and integration tests
 docs/PROTOCOL.md                          Execution API and trace contract
+docs/INTEGRATION.md                       Language branch provenance and integration scope
 HACKATHON_PLAN.md                         Research, Python Tutor comparison, roadmap and demo script
 ```
 
