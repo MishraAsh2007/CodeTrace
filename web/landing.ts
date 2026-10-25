@@ -1,7 +1,7 @@
 import { createIcons, ArrowRight, Bug, Footprints, Layers, ListChecks, Lightbulb, Share2, Sun, Moon, Monitor, Cpu, ShieldCheck, Code, Eye, FolderOpen, Play, CircleCheck, Spline, History } from 'lucide';
 import { demos } from './examples';
-import type { DemoCategory } from './examples';
 import { demoCard, filterBar, LOGO_SVG, visibleDemos } from './gallery';
+import type { GalleryFilter } from './gallery';
 import { applyTheme, onSystemThemeChange, resolvedTheme, setTheme, themeChoice } from './theme';
 import type { ThemeChoice } from './theme';
 import './tokens.css';
@@ -10,7 +10,7 @@ import './landing.css';
 const icon = (name: string) => `<i data-lucide="${name}" aria-hidden="true"></i>`;
 const icons = () => createIcons({ icons: { ArrowRight, Bug, Footprints, Layers, ListChecks, Lightbulb, Share2, Sun, Moon, Monitor, Cpu, ShieldCheck, Code, Eye, FolderOpen, Play, CircleCheck, Spline, History }, attrs: { 'stroke-width': 1.75 } });
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
-let filter: DemoCategory | 'all' = 'all';
+let filter: GalleryFilter = 'all';
 applyTheme();
 
 const features: [string, string, string][] = [
@@ -30,6 +30,7 @@ const steps: [string, string][] = [
 const faqs: [string, string][] = [
   ['Where does my code run?', 'In this release, programs run through the TraceLab runner on your own computer (127.0.0.1). The runner is not a sandbox: programs have the same file and network access as your account, so only run code you trust.'],
   ['Which Java versions are supported?', 'Programs are compiled with javac --release 21 and run on JDK 21 or newer. Standard library classes are available; Maven and Gradle dependencies are not yet supported.'],
+  ['Can I write C or Python?', 'Yes. New project offers C and Python templates, and the gallery has C and Python examples. C runs in TraceLab’s interpreter for a teaching subset of C (ints, chars, doubles, arrays, pointers, structs with malloc, printf and scanf), with hints for each kind of error. Python runs under Online Python Tutor’s tracer, with its own question bank and suggested fixes. Both use the same debugger, stack and heap views and tests.'],
   ['How are the tutor’s questions created?', 'From your recorded run and the exact source that produced it. A question is shown only when the recording supports its premise, for example the index that failed or the value a method returned. No AI model guesses at your code.'],
   ['Is there an AI assistant?', 'Optionally. You can connect a model you choose: Ollama on your own computer (free and private) or a hosted service with an OpenAI-compatible API, such as Gemini’s free tier. The assistant sees your code and the recording, and its answers are labelled as AI answers that can be wrong. Everything else works without it.'],
   ['Does TraceLab change how my program behaves?', 'TraceLab never calls your objects’ methods, such as toString, to display them. Recording does slow execution down, so programs that depend on timing or run many threads are not a good fit yet.'],
@@ -101,7 +102,7 @@ function renderTheme() {
   $<HTMLImageElement>('#hero-image').src = `/screenshots/ide-${theme}.webp`;
   icons();
 }
-$('#filters').addEventListener('click', e => { const b = (e.target as Element).closest<HTMLElement>('[data-filter]'); if (b) { filter = b.dataset.filter as DemoCategory | 'all'; renderDemos(); } });
+$('#filters').addEventListener('click', e => { const b = (e.target as Element).closest<HTMLElement>('[data-filter]'); if (b) { filter = b.dataset.filter as GalleryFilter; renderDemos(); } });
 $('#theme').addEventListener('click', () => { const order: ThemeChoice[] = ['system', 'light', 'dark']; setTheme(order[(order.indexOf(themeChoice()) + 1) % 3]); renderTheme(); });
 onSystemThemeChange(() => renderTheme());
 renderDemos(); renderTheme();

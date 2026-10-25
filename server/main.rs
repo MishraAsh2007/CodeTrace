@@ -13,7 +13,9 @@ use tokio::{io::{AsyncBufReadExt, AsyncReadExt, BufReader}, process::Command, sy
 use tower_http::services::{ServeDir, ServeFile};
 
 mod assist;
+mod c;
 mod lsp;
+mod python;
 
 const MAX_TRACE_BYTES: usize = 40 * 1024 * 1024;
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -24,6 +26,8 @@ struct SourceFile { name: String, content: String }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunRequest {
+    /// "java" (default), "c" (the embedded interpreter in server/c) or "python" (pg_logger, server/python.rs).
+    #[serde(default = "default_language", skip_serializing_if = "is_java")] language: String,
     files: Vec<SourceFile>,
     main_class: String,
     #[serde(default)] stdin: String,
@@ -42,6 +46,8 @@ struct StartAt {
     #[serde(default = "default_hit")] hit: u32,
 }
 fn default_hit() -> u32 { 1 }
+fn default_language() -> String { "java".into() }
+fn is_java(language: &String) -> bool { language == "java" }
 fn default_mode() -> String { "trace".into() }
 fn default_steps() -> usize { 500 }
 fn default_timeout() -> u64 { 8000 }
@@ -63,6 +69,7 @@ struct AppState {
     java: PathBuf,
     lsp: Arc<lsp::Lsp>,
     assist: Arc<assist::Assist>,
+    python: Arc<python::Python>,
 }
 
 type ApiError = (StatusCode, Json<Value>);
@@ -74,6 +81,33 @@ fn identifier(s: &str) -> bool {
 }
 
 fn validate(request: &RunRequest) -> Result<(), &'static str> {
+    match request.language.as_str() {
+        "java" => validate_java(request),
+        "c" | "python" => validate_single_file(request),
+        _ => Err("The language must be java, c or python."),
+    }
+}
+
+/// C and Python projects are one file, because both engines run a single source text.
+fn validate_single_file(request: &RunRequest) -> Result<(), &'static str> {
+    let extension = if request.language == "c" { ".c" } else { ".py" };
+    let [file] = request.files.as_slice() else { return Err("A C or Python project has exactly one source file."); };
+    let Some(stem) = file.name.strip_suffix(extension) else { return Err("The source file must end in .c for C or .py for Python."); };
+    let mut chars = stem.chars();
+    if stem.len() > 64 || !matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_') || !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("Use a simple file name such as main.c or main.py.");
+    }
+    if ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"].contains(&stem.to_ascii_uppercase().as_str()) { return Err("A source path uses a reserved system name."); }
+    if file.content.len() > 65_536 { return Err("Each source file is limited to 64 KiB."); }
+    if request.stdin.len() > 16_384 { return Err("Input is limited to 16 KiB."); }
+    if !(10..=2000).contains(&request.max_steps) { return Err("The trace budget must be between 10 and 2,000 steps."); }
+    if !(500..=15000).contains(&request.timeout_ms) { return Err("The time budget must be between 500 and 15,000 ms."); }
+    if !["trace", "run"].contains(&request.mode.as_str()) { return Err("C and Python runs use mode trace or run."); }
+    if request.start_at.is_some() { return Err("Recording start points are available for Java projects only."); }
+    Ok(())
+}
+
+fn validate_java(request: &RunRequest) -> Result<(), &'static str> {
     if request.files.is_empty() || request.files.len() > 20 { return Err("Provide between 1 and 20 Java source files."); }
     if request.main_class.len() > 200 || !request.main_class.split('.').all(identifier) { return Err("The entry class must be a Java class name, such as Main or demo.Main."); }
     if request.stdin.len() > 16_384 { return Err("Input is limited to 16 KiB."); }
@@ -131,7 +165,12 @@ async fn guard(req: Request, next: Next) -> Response {
 }
 
 async fn health(State(state): State<AppState>) -> Json<Value> {
-    Json(json!({"ok": true, "language": "Java 21", "mode": "local-trusted", "engine": "Rust + JDI", "workerReady": state.root.join(".local/worker/TraceWorker.class").exists(), "languageServer": state.lsp.status().await["state"]}))
+    Json(json!({"ok": true, "language": "Java 21", "mode": "local-trusted", "engine": "Rust + JDI", "workerReady": state.root.join(".local/worker/TraceWorker.class").exists(), "languageServer": state.lsp.status().await["state"],
+        "languages": {
+            "java": {"ready": state.root.join(".local/worker/TraceWorker.class").exists()},
+            "c": {"ready": true, "engine": "TraceLab's C interpreter (C subset)"},
+            "python": {"ready": state.python.ready(), "version": state.python.version, "engine": "pg_logger (Online Python Tutor)"},
+        }}))
 }
 
 async fn create_run(State(state): State<AppState>, Json(request): Json<RunRequest>) -> Result<Json<Value>, ApiError> {
@@ -249,6 +288,62 @@ async fn kill_tree(child: &mut tokio::process::Child) {
 }
 
 async fn execute(state: &AppState, request: &RunRequest, run: &SharedRun) -> Result<(), String> {
+    match request.language.as_str() {
+        "c" => execute_c(request, run).await,
+        "python" => execute_python(state, request, run).await,
+        _ => execute_java(state, request, run).await,
+    }
+}
+
+/// Appends converted events, stopping at the trace size limit like the Java path does.
+async fn append_all(run: &SharedRun, events: Vec<Value>) {
+    let mut bytes = 0;
+    for event in events {
+        bytes += serde_json::to_string(&event).map(|s| s.len()).unwrap_or(0);
+        if bytes > MAX_TRACE_BYTES && event["kind"] != "terminated" {
+            append(run, json!({"kind": "terminated", "stopReason": "trace-limit", "message": "Execution stopped. All available trace events have been preserved."})).await;
+            return;
+        }
+        append(run, event).await;
+    }
+}
+
+/// C: the interpreter runs on its own thread with a large stack (it recurses once per call and per
+/// nested expression), under the request's step and time limits.
+async fn execute_c(request: &RunRequest, run: &SharedRun) -> Result<(), String> {
+    let record = request.mode == "trace";
+    let file = request.files[0].clone();
+    let stdin = request.stdin.clone();
+    let cancel = run.lock().await.cancel.clone();
+    let limits = c::interp::Limits {
+        record,
+        max_states: request.max_steps,
+        // Statements plus loop checks: their 2,000-statement cap, or more for a larger step budget.
+        max_work: if record { (request.max_steps * 4).max(2000) } else { 20_000_000 },
+        deadline: Some(std::time::Instant::now() + Duration::from_millis(request.timeout_ms)),
+        max_output: 32_768,
+        cancel: Some(cancel),
+    };
+    let (send, receive) = tokio::sync::oneshot::channel();
+    std::thread::Builder::new().name("tracelab-c".into()).stack_size(256 << 20).spawn(move || {
+        let _ = send.send(c::events::events(&file.name, c::trace(&file.content, &stdin, limits), record));
+    }).map_err(|e| format!("Cannot start the C interpreter: {e}"))?;
+    let events = receive.await.map_err(|_| "The C interpreter stopped unexpectedly (an internal error). Try a smaller program, and please report it.".to_string())?;
+    append_all(run, events).await;
+    Ok(())
+}
+
+/// Python: pg_logger in a fresh worker process (see server/python.rs).
+async fn execute_python(state: &AppState, request: &RunRequest, run: &SharedRun) -> Result<(), String> {
+    let record = request.mode == "trace";
+    let cancel = run.lock().await.cancel.clone();
+    let file = &request.files[0];
+    let finish = state.python.run(&file.content, &request.stdin, &request.mode, request.max_steps, Duration::from_millis(request.timeout_ms), MAX_TRACE_BYTES, cancel).await?;
+    append_all(run, python::events(&file.name, finish, record)).await;
+    Ok(())
+}
+
+async fn execute_java(state: &AppState, request: &RunRequest, run: &SharedRun) -> Result<(), String> {
     let jobs = state.root.join(".local/jobs");
     tokio::fs::create_dir_all(&jobs).await.map_err(|e| e.to_string())?;
     let dir = tempfile::Builder::new().prefix("run-").tempdir_in(&jobs).map_err(|e| e.to_string())?;
@@ -339,7 +434,9 @@ async fn main() {
     let root = std::env::var_os("TRACELAB_ROOT").map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
     let java_home = std::env::var_os("JAVA_HOME").expect("Set JAVA_HOME to a JDK 21+ or start with npm start.");
     let state = AppState { runs: Arc::new(Mutex::new(HashMap::new())), slots: Arc::new(Semaphore::new(1)), root: root.clone(), java: PathBuf::from(&java_home).join("bin").join(if cfg!(windows) { "java.exe" } else { "java" }), lsp: lsp::Lsp::new(&root),
-        assist: assist::Assist::new(&root, PathBuf::from(&java_home).join("bin").join(if cfg!(windows) { "java.exe" } else { "java" })) };
+        assist: assist::Assist::new(&root, PathBuf::from(&java_home).join("bin").join(if cfg!(windows) { "java.exe" } else { "java" })),
+        python: Arc::new(python::Python::new(&root)) };
+    state.python.warm().await;
     let app = Router::new()
         .route("/api/health", get(health))
         .route("/api/runs", post(create_run))
@@ -359,7 +456,8 @@ async fn main() {
         .layer(middleware::from_fn(guard))
         .with_state(state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:4317").await.expect("Port 4317 is in use.");
-    println!("TraceLab: http://127.0.0.1:4317\nLocal trusted-code runner · Java 21 · Rust + JDI");
+    println!("TraceLab: http://127.0.0.1:4317\nLocal trusted-code runner · Java 21 · Rust + JDI · C interpreter · {}",
+        state.python.version.as_ref().map(|v| format!("Python {v}")).unwrap_or_else(|| "Python not found (set TRACELAB_PYTHON)".into()));
     axum::serve(listener, app).with_graceful_shutdown(async move {
         let _ = tokio::signal::ctrl_c().await;
         for run in state.runs.lock().await.values() { run.lock().await.cancel.store(true, Ordering::Relaxed); }
@@ -372,7 +470,19 @@ async fn main() {
 mod tests {
     use super::*;
     fn request(name: &str) -> RunRequest {
-        RunRequest { files: vec![SourceFile { name: name.into(), content: "class Main {}".into() }], main_class: "Main".into(), stdin: String::new(), max_steps: 100, timeout_ms: 1000, mode: "trace".into(), start_at: None }
+        RunRequest { language: "java".into(), files: vec![SourceFile { name: name.into(), content: "class Main {}".into() }], main_class: "Main".into(), stdin: String::new(), max_steps: 100, timeout_ms: 1000, mode: "trace".into(), start_at: None }
+    }
+    #[test] fn c_and_python_projects_are_one_simple_file() {
+        let single = |language: &str, names: &[&str]| { let mut req = request("Main.java"); req.language = language.into(); req.files = names.iter().map(|n| SourceFile { name: (*n).into(), content: String::new() }).collect(); req };
+        assert!(validate(&single("c", &["main.c"])).is_ok());
+        assert!(validate(&single("python", &["main.py"])).is_ok());
+        for bad in [single("c", &["main.py"]), single("c", &["main.c", "util.c"]), single("python", &["../main.py"]), single("python", &["dir/main.py"]), single("c", &["con.c"]), single("ruby", &["main.rb"])] { assert!(validate(&bad).is_err()); }
+        let mut start = single("c", &["main.c"]); start.start_at = Some(StartAt { file: "main.c".into(), line: 1, condition: String::new(), hit: 1 });
+        assert!(validate(&start).is_err());
+        let mut compile = single("python", &["main.py"]); compile.mode = "compile".into();
+        assert!(validate(&compile).is_err());
+        // Java requests serialize without a language field, as before.
+        assert!(serde_json::to_value(request("Main.java")).unwrap().get("language").is_none());
     }
     #[test] fn start_points_must_name_a_project_file_and_one_line() {
         let start = |file: &str, line: u32, condition: &str| { let mut req = request("Main.java"); req.start_at = Some(StartAt { file: file.into(), line, condition: condition.into(), hit: 1 }); req };

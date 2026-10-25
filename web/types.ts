@@ -12,7 +12,12 @@ export type Check = { name: string; stdin: string; expectedOutput: string; kind?
  * or confirmed by the student.
  */
 export type CheckOrigin = 'template' | 'generated' | 'ai';
-export type Project = { version: 1; name: string; example: string; files: SourceFile[]; mainClass: string; stdin: string; maxSteps: number; checks: Check[]; startAt?: StartAt };
+/**
+ * A project's language. Projects without one are Java. C and Python projects have one source file
+ * (`main.c`, `main.py`), output tests only, and no start point; `mainClass` is unused for them.
+ */
+export type Language = 'java' | 'c' | 'python';
+export type Project = { version: 1; name: string; example: string; files: SourceFile[]; mainClass: string; stdin: string; maxSteps: number; checks: Check[]; startAt?: StartAt; language?: Exclude<Language, 'java'> };
 export type TraceValue = { kind: 'null' | 'primitive' | 'reference'; type?: string; value?: string; ref?: string; omitted?: boolean };
 export type Variable = { name: string; type: string; value: TraceValue; argument?: boolean };
 export type Frame = { id: string; method: string; file: string; line: number; locals: Variable[]; truncated?: boolean };
@@ -31,8 +36,16 @@ export type StartAt = { file: string; line: number; condition?: string; hit?: nu
 export type Return = { method: string; frameId: string | null; value?: TraceValue; void?: boolean };
 export type TraceEvent = {
   schemaVersion: 1; sequence: number; runId: string;
-  kind: 'line' | 'exception' | 'output' | 'diagnostic' | 'terminated' | 'status';
-  location?: { file: string; line: number; phase: 'before' };
+  /** `native`: a Python run's raw pg_logger result, for the Python Tutor questions (see web/pyquiz). */
+  kind: 'line' | 'exception' | 'output' | 'diagnostic' | 'terminated' | 'status' | 'native';
+  /** `after` for C, whose interpreter records a state after each statement runs. */
+  location?: { file: string; line: number; phase: 'before' | 'after' };
+  /** C: the interpreter's note for the state, such as `Declared x`. */
+  note?: string;
+  /** C: the tutor's classification of an error (`index_out_of_bounds`, `parse_missing_semicolon`, …), and its stage. */
+  errorKind?: string; stage?: string;
+  /** On `native`. */
+  language?: Language; result?: unknown;
   frames?: Frame[]; statics?: Variable[]; heap?: HeapObject[]; returns?: Return[];
   framesTruncated?: boolean; heapTruncated?: boolean;
   exception?: { type: string; message: string; caught: boolean };
@@ -44,7 +57,7 @@ export type TraceEvent = {
 };
 /** `trace` records with the debugger (default); `run` runs without recording; `compile` only compiles. */
 export type RunMode = 'trace' | 'run' | 'compile';
-export type RunRequest = { files: SourceFile[]; mainClass: string; stdin: string; maxSteps: number; timeoutMs: number; mode?: RunMode; startAt?: StartAt };
+export type RunRequest = { files: SourceFile[]; mainClass: string; stdin: string; maxSteps: number; timeoutMs: number; mode?: RunMode; startAt?: StartAt; language?: Exclude<Language, 'java'> };
 export type Run = { id: string; status: 'running' | 'finished'; request: RunRequest; events: TraceEvent[] };
 export type QuestionKind = 'predict' | 'explain' | 'repair';
 export type Question = {
@@ -54,4 +67,8 @@ export type Question = {
   focus?: { file: string; line: number };
   /** Recorded source text quoted by the question. */
   code?: string;
+  /** Python Tutor questions: their topic label, such as “Recursion”. */
+  topic?: string;
+  /** Python Tutor repair questions: the program with the correct option applied, for Apply fix. */
+  patched?: string;
 };

@@ -1,3 +1,4 @@
+import { SAMPLES } from './pyquiz/samples.ts';
 import type { Project } from './types';
 
 export const examples: Project[] = [
@@ -544,9 +545,84 @@ public class Main {
   },
 );
 
+// C and Python programs. The Python ones are the python branch's samples.
+const single = (language: 'c' | 'python', name: string, example: string, content: string, checks: Project['checks']): Project =>
+  ({ version: 1, name, example, mainClass: 'main', stdin: '', maxSteps: language === 'python' ? 1000 : 500, language, files: [{ name: language === 'c' ? 'main.c' : 'main.py', content }], checks });
+examples.push(
+  single('c', 'C: one step too far', 'c-bounds', `#include <stdio.h>
+
+int sum(int *values, int count) {
+    int total = 0;
+    // Can this loop take one step too far?
+    for (int i = 0; i <= count; i++) {
+        total += values[i];
+    }
+    return total;
+}
+
+int main(void) {
+    int values[3] = {4, 7, 2};
+    printf("%d\\n", sum(values, 3));
+    return 0;
+}
+`, [{ name: 'Sums the array', stdin: '', expectedOutput: '13' }]),
+  single('c', 'C: a swap that doesn’t swap', 'c-swap', `#include <stdio.h>
+
+void swap(int a, int b) {
+    int temp = a;
+    a = b;
+    b = temp;
+}
+
+int main(void) {
+    int x = 1;
+    int y = 2;
+    swap(x, y);
+    printf("%d %d\\n", x, y);
+    return 0;
+}
+`, [{ name: 'Swaps x and y', stdin: '', expectedOutput: '2 1' }]),
+  single('c', 'C: a linked list with malloc', 'c-list', `#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *next;
+} Node;
+
+/* Puts a new node in front of the list and returns the new head. */
+Node *push(Node *head, int value) {
+    Node *node = malloc(sizeof(Node));
+    node->value = value;
+    node->next = head;
+    return node;
+}
+
+int main(void) {
+    Node *head = NULL;
+    for (int i = 1; i <= 3; i++) {
+        head = push(head, i * 10);
+    }
+    Node *current = head;
+    while (current != NULL) {
+        printf("%d ", current->value);
+        current = current->next;
+    }
+    printf("\\n");
+    return 0;
+}
+`, [{ name: 'Prints the list', stdin: '', expectedOutput: '30 20 10' }]),
+  single('python', 'Python: sum of pairs', 'py-pairs', SAMPLES.linked_list.code, [{ name: 'Pairs of 1, 2, 3', stdin: '', expectedOutput: 'sum: 8' }]),
+  single('python', 'Python: tree insert', 'py-bst', SAMPLES.bst.code, [{ name: 'Smallest value', stdin: '', expectedOutput: 'smallest: 1' }]),
+  single('python', 'Python: reverse a linked list', 'py-reverse', SAMPLES.reverse.code, [{ name: 'First three after reversing', stdin: '', expectedOutput: '[4, 3, 2]' }]),
+  single('python', 'Python: factorial', 'py-factorial', SAMPLES.recursion.code, [{ name: 'Factorial of 4', stdin: '', expectedOutput: '24' }]),
+);
+
 export type DemoCategory = 'runtime' | 'output' | 'hang' | 'compile' | 'tour';
 export type Demo = {
   id: string; category: DemoCategory;
+  /** C and Python demos; the others are Java. */
+  language?: 'c' | 'python';
   /** What the student sees go wrong, e.g. an exception name. */
   symptom: string;
   summary: string;
@@ -587,6 +663,13 @@ export const demos: Demo[] = [
   { id: 'bst', category: 'tour', symptom: 'Working program', summary: 'Build a binary search tree, drawn as a tree, then read it back in sorted order.', snippet: 'node.left = insert(node.left, value);', concepts: ['Binary trees', 'Recursion'], level: 'Intermediate' },
   { id: 'bfs', category: 'tour', symptom: 'Working program', summary: 'Breadth-first search with a queue finds how many edges each node is from the start.', snippet: 'int node = queue.remove();', concepts: ['Graphs', 'Queues', 'BFS'], level: 'Intermediate' },
   { id: 'dfs', category: 'tour', symptom: 'Working program', summary: 'Depth-first search follows one path as far as it goes; the call stack remembers the way back.', snippet: 'visit(next);', concepts: ['Graphs', 'Recursion', 'DFS'], level: 'Intermediate' },
+  { id: 'c-bounds', language: 'c', category: 'runtime', symptom: 'Index out of bounds', summary: 'A C function sums an array through a pointer, and the loop reads one cell past the end.', snippet: 'for (int i = 0; i <= count; i++)', concepts: ['C', 'Arrays', 'Off-by-one'], level: 'Beginner' },
+  { id: 'c-swap', language: 'c', category: 'output', symptom: 'Prints “1 2”, expected “2 1”', summary: 'A C swap function gets copies of the values. Pointers would let it change the caller’s variables.', snippet: 'void swap(int a, int b)', concepts: ['C', 'Pointers', 'Pass by value'], level: 'Beginner' },
+  { id: 'c-list', language: 'c', category: 'tour', symptom: 'Working program', summary: 'Build a linked list with malloc and walk it with a pointer, drawn as a chain.', snippet: 'node->next = head;', concepts: ['C', 'Structs', 'malloc'], level: 'Intermediate' },
+  { id: 'py-pairs', language: 'python', category: 'runtime', symptom: 'AttributeError', summary: 'A Python loop adds each node to the next one, and runs off the end of the linked list.', snippet: 'total += current.val + current.next.val', concepts: ['Python', 'Linked lists', 'None'], level: 'Beginner' },
+  { id: 'py-bst', language: 'python', category: 'runtime', symptom: 'AttributeError', summary: 'A recursive tree insert ignores what the recursive call returns, so nodes never get linked in.', snippet: 'insert(root.left, val)', concepts: ['Python', 'Binary trees', 'Recursion'], level: 'Intermediate' },
+  { id: 'py-reverse', language: 'python', category: 'tour', symptom: 'Working program', summary: 'Reverse a linked list in place by turning each node’s next pointer around.', snippet: 'current.next = prev', concepts: ['Python', 'Linked lists'], level: 'Intermediate' },
+  { id: 'py-factorial', language: 'python', category: 'tour', symptom: 'Working program', summary: 'Watch factorial’s frames stack up in Python, then return in reverse order.', snippet: 'return n * factorial(n - 1)', concepts: ['Python', 'Recursion'], level: 'Beginner' },
 ];
 
 /** Examples that intentionally contain a bug for the learning loop. */

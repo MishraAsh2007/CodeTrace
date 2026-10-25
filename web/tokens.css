@@ -166,3 +166,10 @@ kbd.key { display: inline-block; min-width: 20px; padding: 1px 6px; border: 1px 
 .filter-bar button:hover { border-color: var(--border-strong); color: var(--text); }
 .filter-bar button[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--surface); }
 .filter-bar button .count { opacity: .6; margin-left: 4px; }
+
+/* Language tags on gallery cards (C and Python demos) and the Explorer. */
+.language-tag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .3px; background: var(--surface-3); color: var(--text-2); flex-shrink: 0; }
+.language-tag.c { background: var(--info-soft); color: var(--info-text); }
+.language-tag.python { background: var(--warning-soft); color: var(--warning-text); }
+.demo-card-top .language-tag { margin-left: 6px; margin-right: auto; }
+.filter-divider { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--border); }

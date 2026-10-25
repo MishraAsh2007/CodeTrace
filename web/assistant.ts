@@ -1,7 +1,7 @@
 import { buildHelp, shortValue } from './help.ts';
 import { exceptionMessage, normalizeOutput, output, snapshots } from './learning.ts';
 import { displayMethod, heapIndex } from './narrate.ts';
-import type { Project, Question, Run } from './types';
+import type { Language, Project, Question, Run } from './types';
 
 /**
  * The optional AI assistant: what it is told, and a safe renderer for its answers. Facts about the program's
@@ -20,6 +20,15 @@ Rules:
 - Keep answers short: usually under 150 words. Use Markdown with \`code\` for identifiers and fenced \`\`\`java blocks for code.
 - The program is Java 21, single-threaded, using only the standard library.`;
 
+/** The rules for a C or Python project: the same tutor, with that language's runtime described. */
+export function systemPrompt(language: Language = 'java'): string {
+  if (language === 'java') return SYSTEM_PROMPT;
+  const runtime = language === 'c'
+    ? 'The program is C, run by TraceLab’s C interpreter, which supports a teaching subset: int, char, double, arrays, pointers, structs allocated with malloc, printf and scanf. It has no strings beyond literals, no pointer arithmetic, no switch, and free() does nothing. Recorded states are taken after each statement runs.'
+    : 'The program is Python 3, traced by Online Python Tutor’s pg_logger. Only some standard modules can be imported, and input() lines from the Input tab are echoed into the output.';
+  return SYSTEM_PROMPT.replace('a Java IDE', 'an IDE').replace(/```java/g, `\`\`\`${language}`).replace('The program is Java 21, single-threaded, using only the standard library.', runtime);
+}
+
 // Free tiers allow a few thousand tokens per minute (Groq: 8,000), so the context stays small.
 const MAX_FILE = 8000;
 const MAX_FILES = 14000;
@@ -35,7 +44,7 @@ function sourceSection(project: Project, activeFile: string): string {
     const numbered = file.content.split('\n').map((line, i) => `${String(i + 1).padStart(3)} | ${line}`).join('\n');
     const text = numbered.length > Math.min(MAX_FILE, budget) ? `${numbered.slice(0, Math.min(MAX_FILE, budget))}\n… (truncated)` : numbered;
     budget -= text.length;
-    parts.push(`### ${file.name}\n\`\`\`java\n${text}\n\`\`\``);
+    parts.push(`### ${file.name}\n\`\`\`${project.language ?? 'java'}\n${text}\n\`\`\``);
   }
   return parts.join('\n\n');
 }
@@ -50,7 +59,8 @@ export type AssistContext = {
 
 /** Everything the assistant is told about the program, as Markdown. */
 export function contextMessage(c: AssistContext): string {
-  const out: string[] = ['# CONTEXT', `Project “${c.project.name}”, main class \`${c.project.mainClass}\`.${c.project.stdin ? ` Standard input:\n\`\`\`\n${c.project.stdin.slice(0, 1500)}\n\`\`\`` : ' No standard input.'}`];
+  const about = c.project.language ? `a ${c.project.language === 'c' ? 'C' : 'Python'} program in \`${c.project.files[0]?.name}\`` : `main class \`${c.project.mainClass}\``;
+  const out: string[] = ['# CONTEXT', `Project “${c.project.name}”, ${about}.${c.project.stdin ? ` Standard input:\n\`\`\`\n${c.project.stdin.slice(0, 1500)}\n\`\`\`` : ' No standard input.'}`];
   out.push('## Source', sourceSection(c.project, c.activeFile));
   if (c.problems?.length) out.push('## Problems shown in the editor', c.problems.slice(0, 15).map(p => `- ${p.file}:${p.line}: ${p.message.split('\n')[0]}`).join('\n'));
   const run = c.run;
@@ -60,7 +70,8 @@ export function contextMessage(c: AssistContext): string {
     const end = run.events.at(-1);
     out.push('## Last recorded run', c.dirty ? 'Note: the code was edited after this run, so the recording may not match the source above.' : 'The recording matches the source above.');
     const diagnostics = run.events.filter(e => e.kind === 'diagnostic' && e.severity === 'error');
-    if (diagnostics.length) out.push(`javac rejected the program:\n${diagnostics.slice(0, 10).map(d => `- ${d.file}:${d.line}:${d.column}: ${d.message}`).join('\n')}`);
+    const checker = run.request.language === 'c' ? 'The C interpreter' : run.request.language === 'python' ? 'Python' : 'javac';
+    if (diagnostics.length) out.push(`${checker} rejected the program:\n${diagnostics.slice(0, 10).map(d => `- ${d.file}:${d.line}:${d.column}: ${d.message}`).join('\n')}`);
     else {
       out.push(`Stop reason: ${end?.stopReason ?? 'unknown'} after ${states.length} recorded steps.`);
       const failure = states.find(e => e.exception && !e.exception.caught);
@@ -74,7 +85,7 @@ export function contextMessage(c: AssistContext): string {
       const state = states[at];
       if (state?.frames?.length) {
         const heap = heapIndex(state);
-        out.push(`### Debugger is at step ${at + 1} of ${states.length}: before ${state.location?.file} line ${state.location?.line}`,
+        out.push(`### Debugger is at step ${at + 1} of ${states.length}: ${state.location?.phase === 'after' ? 'after' : 'before'} ${state.location?.file} line ${state.location?.line}`,
           state.frames.slice(0, 6).map(f => `- ${displayMethod(f.method)} (${f.file}:${f.line}): ${f.locals.filter(v => v.name !== 'args').slice(0, 10).map(v => `${v.name} = ${shortValue(v.value, heap)}`).join(', ') || 'no locals'}`).join('\n'));
         const help = buildHelp(run, { step: at, question: c.question });
         const table = help.visuals.find(v => v.kind === 'table');
@@ -93,14 +104,14 @@ export function contextMessage(c: AssistContext): string {
 }
 
 /** The messages for one turn: rules, context, the last few turns, then the new question. */
-export function buildMessages(context: string, history: ChatMessage[], question: string): ChatMessage[] {
+export function buildMessages(context: string, history: ChatMessage[], question: string, language: Language = 'java'): ChatMessage[] {
   const recent: ChatMessage[] = [];
   let budget = MAX_HISTORY;
   for (const m of history.filter(m => m.role !== 'system').slice(-8).reverse()) {
     if (m.content.length > budget) break;
     budget -= m.content.length; recent.unshift(m);
   }
-  return [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: context }, { role: 'assistant', content: 'I have the project, the recording and the current step. What would you like to know?' }, ...recent, { role: 'user', content: question }];
+  return [{ role: 'system', content: systemPrompt(language) }, { role: 'user', content: context }, { role: 'assistant', content: 'I have the project, the recording and the current step. What would you like to know?' }, ...recent, { role: 'user', content: question }];
 }
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));

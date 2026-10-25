@@ -36,10 +36,13 @@ function textOf(v: TraceValue | undefined, heap: Map<string, HeapObject>): strin
 }
 const isTrue = (v?: TraceValue) => v?.kind === 'primitive' && v.value === 'true';
 
+/** A field's type as an object type: C's `struct Node*` points at a `Node`. Java types have neither part. */
+const pointee = (type: string) => type.replace(/^struct\s+/, '').replace(/\s*\*$/, '');
+
 /** The value shown inside a node: its first field that isn't a reference to another node or a collection. */
 function nodeLabel(object: HeapObject, heap: Map<string, HeapObject>): string {
   for (const f of object.fields ?? []) {
-    if (f.type === object.type) continue;
+    if (pointee(f.type) === object.type) continue;
     const text = textOf(f.value, heap);
     if (text !== undefined) return text;
   }
@@ -88,7 +91,7 @@ export function treeViews(snapshot: TraceEvent, previous?: TraceEvent): TreeView
   for (const o of snapshot.heap ?? []) if (o.kind === 'object' && o.fields) byType.set(o.type, [...(byType.get(o.type) ?? []), o]);
   const views: TreeView[] = [];
   for (const [type, objects] of byType) {
-    const selfFields = (o: HeapObject) => (o.fields ?? []).filter(f => f.type === type);
+    const selfFields = (o: HeapObject) => (o.fields ?? []).filter(f => pointee(f.type) === type);
     if (objects.length < 2 || Math.max(...objects.map(o => selfFields(o).length)) < 2) continue;
     if (selfFields(objects[0]).every(f => LINK_NAMES.test(leaf(f.name)))) continue;
     const children = new Map<string, { id: string; edge: string }[]>();
@@ -614,10 +617,10 @@ export function chainViews(snapshot: TraceEvent, previous?: TraceEvent): ChainVi
   for (const v of snapshot.frames?.[0]?.locals ?? []) if (v.value.kind === 'reference' && v.name !== 'this') refs.set(v.value.ref!, [...(refs.get(v.value.ref!) ?? []), v.name]);
   for (const s of snapshot.statics ?? []) if (s.value.kind === 'reference') refs.set(s.value.ref!, [...(refs.get(s.value.ref!) ?? []), leaf(s.name)]);
   // Fields of other objects (a LinkedList class's head and tail) name nodes too.
-  for (const o of snapshot.heap ?? []) for (const f of o.fields ?? []) if (f.value.kind === 'reference' && heap.get(f.value.ref!)?.type !== o.type && f.type !== o.type) refs.set(f.value.ref!, [...(refs.get(f.value.ref!) ?? []), leaf(f.name)]);
+  for (const o of snapshot.heap ?? []) for (const f of o.fields ?? []) if (f.value.kind === 'reference' && heap.get(f.value.ref!)?.type !== o.type && pointee(f.type) !== o.type) refs.set(f.value.ref!, [...(refs.get(f.value.ref!) ?? []), leaf(f.name)]);
   const views: ChainView[] = [];
   for (const [type, objects] of byType) {
-    const self = (objects[0].fields ?? []).filter(f => f.type === type);
+    const self = (objects[0].fields ?? []).filter(f => pointee(f.type) === type);
     const next = self.find(f => /^(next|link|succ|forward|after|tail|rest)$/i.test(leaf(f.name))) ?? (self.length === 1 ? self[0] : undefined);
     if (!next || self.length > 2 || (self.length === 2 && !self.every(f => LINK_NAMES.test(leaf(f.name))))) continue;
     // A one-node list counts once something points at it; otherwise wait for two nodes.

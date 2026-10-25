@@ -9,10 +9,15 @@ export const PROGRAMMING_WORDS = new Set(`
 args argv arr arrs str strs num nums idx len tmp temp val vals cnt msg msgs err errs ctx obj objs src dst dest prev curr cur init max min avg calc chars enum enums impl int ints bool bools util utils config param params func funcs ptr ref refs regex println printf print sysout java javac jvm jdk jre todo fixme api apis url urls http https json xml html css ui id ids io lhs rhs iter itr elem elems pos dir dirs img btn ok fn eof stdin stdout stderr boolean booleans nullable getter getters setter setters enqueue dequeue deque deques hashmap hashmaps arraylist arraylists hashset treemap treeset linkedlist substring substrings tostring hashcode async lambda lambdas iterable iterator iterators comparator comparators runnable mutable immutable instanceof subclass subclasses superclass inline namespace foo bar baz qux fib factorial palindrome palindromes upto
 utf ascii unicode len2 nextint nextline nextdouble hasnext hasnextint charat indexof lastindexof startswith endswith tolowercase touppercase isempty isblank tochararray valueof parseint parsedouble arraycopy sqrt pow abs floor ceil putifabsent getordefault containskey keyset entryset addall removeif foreach stringbuilder bufferedreader inputstreamreader filereader filewriter printwriter localdate datetime bigint bigdecimal biginteger
 sb ch c2 lo hi mid tc dp dfs bfs gcd lcm ln mod div mul sub concat recursion recursive memo memoize memoization runtime classpath javadoc stacktrace npe tostr
+stdio stdlib malloc calloc realloc sizeof typedef struct structs scanf getchar putchar puts strlen strcmp strcpy strcat perror endif ifdef ifndef elif nullptr
+def elif kwargs isinstance enumerate dict dicts tuple tuples lst popleft appendleft heapq heappush heappop deque defaultdict nonlocal lambda init repr dunder nxt
 `.split(/\s+/).filter(Boolean));
 
-/** Comments, string literals and identifiers with their offsets in the source. */
-export function spellingTokens(src: string): SpellToken[] {
+/**
+ * Comments, string literals and identifiers with their offsets in the source. `python` reads `#` comments
+ * and single-quoted strings; Java and C share the C-style rules.
+ */
+export function spellingTokens(src: string, python = false): SpellToken[] {
   const tokens: SpellToken[] = [];
   const words = (text: string, base: number, kind: 'comment' | 'string') => {
     // Skip URLs, paths and format specifiers inside text.
@@ -23,8 +28,11 @@ export function spellingTokens(src: string): SpellToken[] {
   let i = 0;
   while (i < n) {
     const c = src[i];
-    if (c === '/' && src[i + 1] === '/') { const j = src.indexOf('\n', i); const end = j < 0 ? n : j; words(src.slice(i + 2, end), i + 2, 'comment'); i = end; }
-    else if (c === '/' && src[i + 1] === '*') { const j = src.indexOf('*/', i + 2); const end = j < 0 ? n : j; words(src.slice(i + 2, end), i + 2, 'comment'); i = end + 2; }
+    if (python && c === '#') { const j = src.indexOf('\n', i); const end = j < 0 ? n : j; words(src.slice(i + 1, end), i + 1, 'comment'); i = end; continue; }
+    if (python && (src.startsWith("'''", i))) { let j = i + 3; while (j < n && !src.startsWith("'''", j)) j += src[j] === '\\' ? 2 : 1; words(src.slice(i + 3, j), i + 3, 'string'); i = j + 3; continue; }
+    if (python && c === "'") { let j = i + 1; while (j < n && src[j] !== "'" && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1; words(src.slice(i + 1, j), i + 1, 'string'); i = j + 1; continue; }
+    if (!python && c === '/' && src[i + 1] === '/') { const j = src.indexOf('\n', i); const end = j < 0 ? n : j; words(src.slice(i + 2, end), i + 2, 'comment'); i = end; }
+    else if (!python && c === '/' && src[i + 1] === '*') { const j = src.indexOf('*/', i + 2); const end = j < 0 ? n : j; words(src.slice(i + 2, end), i + 2, 'comment'); i = end + 2; }
     else if (src.startsWith('"""', i)) { let j = i + 3; while (j < n && !src.startsWith('"""', j)) j += src[j] === '\\' ? 2 : 1; words(src.slice(i + 3, j), i + 3, 'string'); i = j + 3; }
     else if (c === '"') { let j = i + 1; while (j < n && src[j] !== '"' && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1; words(src.slice(i + 1, j), i + 1, 'string'); i = j + 1; }
     else if (c === "'") { let j = i + 1; while (j < n && src[j] !== "'" && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1; i = j + 1; }

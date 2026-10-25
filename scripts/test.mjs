@@ -28,6 +28,12 @@ import { createServer } from 'node:http';
 import { buildMessages, contextMessage, renderMarkdown } from '../web/assistant.ts';
 import { templates } from '../web/templates.ts';
 import { readZip, writeZip } from '../web/zip.ts';
+import { cErrorOf, hintsForError } from '../web/ctutor.ts';
+import { pythonFix, pythonQuestions, pythonResult } from '../web/pyquiz/adapter.ts';
+import { applyRepair, planQuiz } from '../web/pyquiz/questionBank.ts';
+import { CASES as PY_CASES } from './pyquiz-cases.mjs';
+import { systemPrompt } from '../web/assistant.ts';
+import { singleFileProject } from '../web/importer.ts';
 
 await buildWorker();
 await command('cargo', ['test', '--locked']);
@@ -48,9 +54,11 @@ async function api(path, options = {}) {
   return response.json();
 }
 function request(project, extra = {}) {
-  return { files: project.files, mainClass: project.mainClass, stdin: project.stdin, maxSteps: project.maxSteps, timeoutMs: 8000, ...extra };
+  return { ...(project.language ? { language: project.language } : {}), files: project.files, mainClass: project.mainClass, stdin: project.stdin, maxSteps: project.maxSteps, timeoutMs: 8000, ...extra };
 }
 const oneFile = content => ({ files: [{ name: 'Main.java', content }], mainClass: 'Main', stdin: '', maxSteps: 300, timeoutMs: 8000 });
+/** A C or Python run request for one file. */
+const single = (language, content, extra = {}) => ({ language, files: [{ name: language === 'c' ? 'main.c' : 'main.py', content }], mainClass: 'main', stdin: '', maxSteps: 500, timeoutMs: 8000, ...extra });
 async function wait(id) {
   for (let i = 0; i < 400; i++) {
     const data = await api(`/api/runs/${id}`);
@@ -496,8 +504,12 @@ public class Main {
     for (const template of templates) {
       const project = template.create(template.name);
       assert.ok(validateProject(project), template.id);
-      assert.deepEqual([...fileIssues(project.files).keys()], [], `${template.id} paths match`);
-      assert.ok(mainClasses(project.files).includes(project.mainClass), `${template.id} main class exists`);
+      assert.equal(project.language ?? 'java', template.language, template.id);
+      if (template.language === 'java') {
+        assert.deepEqual([...fileIssues(project.files).keys()], [], `${template.id} paths match`);
+        assert.ok(mainClasses(project.files).includes(project.mainClass), `${template.id} main class exists`);
+      }
+      if (!project.checks.length) assert.equal(reason(await execute(request(project))), 'completed', `${template.id} runs`);
       for (const check of project.checks) {
         const outcome = evaluateTest(await execute(requestForTest(project, check, request(project))), check);
         assert.equal(outcome.passed, true, `${template.id} / ${check.name}: ${outcome.detail}`);
@@ -1182,6 +1194,158 @@ public class Main {
     assert.equal(validateProject({ ...examples[0], files: [null] }), false);
     assert.equal(validateProject({ ...examples[0], checks: [null] }), false);
     assert.equal(validateProject(structuredClone(examples[0])), true);
+  });
+  await test('C runs: states after each statement, frames and pointers, errors where they happen, and the C tutor’s hints', async () => {
+    const bounds = await execute(request(example('c-bounds')));
+    assert.equal(reason(bounds), 'exception');
+    const failure = bounds.events.find(e => e.kind === 'exception');
+    assert.deepEqual([failure.location.line, failure.location.phase, failure.errorKind, failure.exception.type], [7, 'after', 'index_out_of_bounds', 'Index out of bounds']);
+    assert.deepEqual(failure.frames.map(f => [f.method, f.line]), [['sum', 7], ['main', 14]], 'innermost first, the caller at the line of the call');
+    assert.equal(failure.frames[0].locals.find(v => v.name === 'i').value.value, '3');
+    assert.equal(failure.frames[1].locals.find(v => v.name === 'values').type, 'int[3]');
+    const array = failure.heap.find(o => o.kind === 'array');
+    assert.deepEqual(array.elements.map(e => e.value), ['4', '7', '2']);
+    assert.equal(failure.frames[0].locals.find(v => v.name === 'values').value.ref, array.id, 'the pointer parameter refers to main’s array');
+    const hints = hintsForError(cErrorOf(bounds));
+    assert.equal(hints.title, 'Array index out of bounds');
+    assert.match(hints.hints[0].text, /length 3 has valid indices 0 to 2/);
+    assert.deepEqual(questionsFor(bounds), [], 'C runs get hints, not Java questions');
+    const states = snapshots(bounds);
+    assert.ok(states.slice(0, -1).every(s => s.location?.phase === 'after'));
+    assert.match(evaluateTest(await execute(request(example('c-bounds'), { mode: 'run' })), example('c-bounds').checks[0]).detail, /Index out of bounds: array index 3 out of bounds/);
+
+    const parse = await execute(single('c', 'int main(void) {\n    int x = 5\n    return 0;\n}\n'));
+    assert.equal(reason(parse), 'compile-error');
+    const diagnostic = parse.events.find(e => e.kind === 'diagnostic');
+    assert.deepEqual([diagnostic.file, diagnostic.line, diagnostic.errorKind, diagnostic.stage], ['main.c', 3, 'parse_missing_semicolon', 'parse']);
+    assert.equal(hintsForError(cErrorOf(parse)).title, 'Missing semicolon');
+
+    const loop = await execute(single('c', 'int main(void) {\n    while (1) {}\n    return 0;\n}\n', { maxSteps: 50 }));
+    assert.equal(reason(loop), 'step-limit');
+    assert.equal(snapshots(loop).length, 51, 'exactly the step budget, then the end');
+    assert.equal(cErrorOf(loop).kind, 'infinite_loop');
+    const plainLoop = await execute(single('c', 'int main(void) {\n    while (1) {}\n    return 0;\n}\n', { mode: 'run', timeoutMs: 1500 }));
+    assert.ok(['step-limit', 'timeout'].includes(reason(plainLoop)), reason(plainLoop));
+
+    const swapped = structuredClone(example('c-swap'));
+    swapped.files[0].content = swapped.files[0].content.replace('void swap(int a, int b) {\n    int temp = a;\n    a = b;\n    b = temp;', 'void swap(int *a, int *b) {\n    int temp = *a;\n    *a = *b;\n    *b = temp;').replace('swap(x, y);', 'swap(&x, &y);');
+    const pointers = await execute(request(swapped));
+    assert.equal(output(pointers, 'stdout').trim(), '2 1');
+    const inSwap = snapshots(pointers).find(s => s.frames?.[0]?.method === 'swap');
+    assert.equal(inSwap.frames[0].locals[0].value.value, '&x in main', 'a pointer to a variable reads &x');
+
+    const list = await execute(request(example('c-list')));
+    assert.equal(reason(list), 'completed');
+    const end = snapshots(list).filter(s => s.frames).at(-1);
+    const chain = chainViews(end)[0];
+    assert.deepEqual(chain.chains[0].nodes.map(n => n.label), ['30', '20', '10']);
+    const pushes = snapshots(list).flatMap(s => s.returns ?? []).filter(r => r.method === 'push');
+    assert.equal(pushes.length, 3, 'returns are reported per call');
+    assert.notEqual(pushes[0].frameId, pushes[1].frameId, 'each call has its own frame id');
+    const stop = await api('/api/runs', { method: 'POST', body: JSON.stringify(single('c', 'int main(void) { int i = 0; while (1) { i = i + 1; } return 0; }', { mode: 'run', timeoutMs: 15000 })) });
+    await sleep(200);
+    await api(`/api/runs/${stop.id}`, { method: 'DELETE' });
+    assert.equal(reason(await wait(stop.id)), 'cancelled');
+  });
+  await test('Python runs: pg_logger steps become TraceLab events one for one, with Python values, errors and input', async () => {
+    const pairs = await execute(request(example('py-pairs')));
+    assert.equal(reason(pairs), 'exception');
+    const result = pythonResult(pairs);
+    const states = snapshots(pairs);
+    assert.equal(states.length, result.trace.length + 1, 'one snapshot per raw step, then the end');
+    assert.ok(result.trace.every((step, i) => states[i].location.line === step.line));
+    const failure = states[result.error_step];
+    assert.deepEqual([failure.exception.type, failure.exception.caught, failure.location.line], ['AttributeError', false, 20]);
+    assert.deepEqual(failure.frames.map(f => f.method), ['sum_of_pairs', '<module>']);
+    assert.equal(failure.frames[1].line, 26, 'the module frame shows the line of the call');
+    const node = failure.heap.find(o => o.type === 'Node');
+    assert.deepEqual(node.fields.map(f => f.name), ['next', 'val']);
+    assert.ok(chainViews(failure).length, 'the linked list is drawn as a chain');
+    const questions = questionsFor(pairs);
+    assert.ok(questions.length && questions.every(q => q.id.startsWith('py:') && q.concept.startsWith('python:') && q.topic));
+    const repair = questions.find(q => q.kind === 'repair' && q.patched);
+    assert.ok(repair, questions.map(q => q.id).join(', '));
+    const fixed = await execute(request({ ...example('py-pairs'), files: [{ name: 'main.py', content: repair.patched }] }));
+    assert.equal(reason(fixed), 'completed');
+    assert.equal(output(fixed, 'stdout').trim(), 'sum: 8');
+    assert.equal(pythonFix(pairs).diff.patched, repair.patched, 'the suggested fix is the repair question’s answer');
+    const returned = snapshots(await execute(request(example('py-factorial')))).flatMap(s => s.returns ?? []);
+    assert.deepEqual(returned.map(r => r.value.value), ['1', '2', '6', '24']);
+
+    const syntax = await execute(single('python', 'x = 3\nif x > 1\n    print(x)\n'));
+    assert.equal(reason(syntax), 'compile-error');
+    const diagnostic = syntax.events.find(e => e.kind === 'diagnostic');
+    assert.deepEqual([diagnostic.line, diagnostic.message.split(':')[0]], [2, 'SyntaxError']);
+    assert.ok(questionsFor(syntax).some(q => q.kind === 'repair' && q.step === -1));
+
+    const greet = await execute(single('python', 'name = input("Name? ")\nprint("Hi", name)\n', { stdin: 'Ada\n' }));
+    assert.equal(output(greet, 'stdout'), 'Name? Ada\nHi Ada\n', 'pg_logger echoes input like a terminal');
+    const plainGreet = await execute(single('python', 'name = input("Name? ")\nprint("Hi", name)\n', { stdin: 'Ada\n', mode: 'run' }));
+    assert.equal(output(plainGreet, 'stdout'), output(greet, 'stdout'), 'plain runs (tests) print the same');
+    assert.equal(reason(await execute(single('python', 'a = input()\nb = input()\n', { stdin: 'one' }))), 'needs-input');
+    const loop = await execute(single('python', 'while True:\n    pass\n', { maxSteps: 40 }));
+    assert.equal(reason(loop), 'step-limit');
+    assert.equal(snapshots(loop).length, 41, 'the step budget, then the end');
+    const flood = await execute(single('python', 'while True:\n    print("x" * 80)\n', { maxSteps: 2000 }));
+    assert.equal(reason(flood), 'output-limit');
+    const blocked = await execute(single('python', 'import os\nprint(os.getcwd())\n'));
+    assert.equal(blocked.events.find(e => e.exception)?.exception.type, 'ImportError', 'imports are limited, as in Python Tutor');
+    const caught = await execute(single('python', 'try:\n    1 / 0\nexcept ZeroDivisionError:\n    print("caught")\n'));
+    assert.equal(reason(caught), 'completed');
+    assert.ok(snapshots(caught).some(s => s.exception?.caught === true));
+  });
+  await test('Python Tutor questions (the python branch’s self-check): expected concepts, valid questions, and repairs that fix the program', async () => {
+    const problems = [];
+    const run = async (code, stdin = []) => pythonResult(await execute(single('python', code, { stdin: stdin.join('\n'), maxSteps: 1000 })));
+    for (const c of PY_CASES) {
+      const result = await run(c.code, c.stdin);
+      const plan = planQuiz(result, c.code);
+      if ((plan.needsAi ? 'ai' : 'local') !== c.expect) problems.push(`${c.name}: expected ${c.expect}`);
+      const concepts = new Set(plan.questions.map(q => q.concept));
+      for (const want of c.concepts ?? []) if (!concepts.has(want)) problems.push(`${c.name}: no "${want}" question (got ${[...concepts].join(', ')})`);
+      for (const q of plan.questions) {
+        if (q.options.length !== 3 || new Set(q.options).size !== 3 || q.correct < 0 || q.correct > 2) problems.push(`${c.name}/${q.id}: bad options`);
+        if (q.step >= result.trace.length || (q.step < 0 && result.trace.length > 0)) problems.push(`${c.name}/${q.id}: step ${q.step} out of range`);
+        if (/\$\{|undefined|NaN|\[object/.test(q.context + q.prompt + q.options.join('') + q.explanation)) problems.push(`${c.name}/${q.id}: unfilled text`);
+        if (q.kind !== 'repair') continue;
+        if (!q.edit) { problems.push(`${c.name}/${q.id}: repair without an edit`); continue; }
+        const fixed = await run(applyRepair(c.code, q.edit, q.options[q.correct]), c.stdin);
+        if (fixed.status !== 'ok') { problems.push(`${c.name}/${q.id}: the correct option gives ${fixed.status} (${fixed.message})`); continue; }
+        for (let i = 0; i < q.options.length; i++) {
+          if (i === q.correct) continue;
+          const wrong = await run(applyRepair(c.code, q.edit, q.options[i]), c.stdin);
+          if (wrong.status === 'ok' && wrong.stdout === fixed.stdout) problems.push(`${c.name}/${q.id}: wrong option ${q.options[i]} also fixes it`);
+        }
+      }
+    }
+    assert.deepEqual(problems, []);
+  });
+  await test('C and Python projects: validation, examples, import and export, spelling and the assistant', async () => {
+    for (const language of ['c', 'python']) {
+      const project = singleFileProject('Mine', language, language === 'c' ? 'int main(void) { return 0; }' : 'print(1)');
+      assert.ok(validateProject(project), language);
+      assert.equal(validateProject({ ...project, files: [...project.files, { name: `other.${language === 'c' ? 'c' : 'py'}`, content: '' }] }), false, 'one file');
+      assert.equal(validateProject({ ...project, files: [{ name: 'Main.java', content: '' }] }), false, 'the file matches the language');
+      assert.equal(validateProject({ ...project, startAt: { file: project.files[0].name, line: 1 } }), false, 'no start points');
+      assert.equal(validateProject({ ...project, checks: [{ name: 'm', stdin: '', expectedOutput: '1', kind: 'call', target: 'Main', call: 'f()' }] }), false, 'output tests only');
+      assert.equal(validateProject({ ...project, language: 'ruby' }), false);
+      assert.deepEqual(await decodeProject(await encodeProject(project)), project, 'share links keep the language');
+      const zip = await projectFromZip(await projectToZip(project), 'zip');
+      assert.deepEqual([zip.project.language, zip.project.files], [language, project.files]);
+    }
+    const demosByLanguage = Object.groupBy(demos.filter(d => d.language), d => d.language);
+    assert.deepEqual(Object.keys(demosByLanguage).sort(), ['c', 'python']);
+    for (const d of demos.filter(d => d.language)) assert.equal(example(d.id).language, d.language, d.id);
+    assert.equal(validateProject({ ...examples[0], language: undefined }), true, 'Java projects need no language');
+    const tokens = spellingTokens('# a misspeled coment\nx = 7 // 2\ns = \'wrng\'\n', true).map(t => t.word);
+    assert.ok(tokens.includes('misspeled') && tokens.includes('wrng') && !tokens.includes('7'), tokens.join(' '));
+    assert.ok(spellingTokens('int x = a // comnent\n').some(t => t.word === 'comnent'), 'C and Java comments are unchanged');
+    assert.match(systemPrompt('python'), /Python 3, traced by Online Python Tutor/);
+    assert.match(systemPrompt('c'), /C interpreter/);
+    assert.equal(systemPrompt('java'), systemPrompt(), 'the Java prompt is unchanged');
+    const context = contextMessage({ project: example('py-pairs'), activeFile: 'main.py', run: null, step: 0, dirty: false });
+    assert.match(context, /a Python program in `main.py`/);
+    assert.match(context, /```python/);
   });
   console.log(`\n${total} integration checks passed.`);
 } finally {

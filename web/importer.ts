@@ -1,7 +1,8 @@
 import { analyzeJava, expectedPath, preferredMain, splitTopLevelTypes } from './javasource.ts';
+import { fileLanguage, LANGUAGES, SINGLE_FILE } from './languages.ts';
 import { validateProject } from './learning.ts';
 import { readZip, writeZip } from './zip.ts';
-import type { Project, SourceFile } from './types';
+import type { Language, Project, SourceFile } from './types';
 
 /** Server limits, mirrored so problems are reported before a run. */
 export const LIMITS = { files: 20, fileBytes: 65536, totalBytes: 262144 };
@@ -15,12 +16,20 @@ export type RawFile = { path: string; text: string };
 const normalize = (text: string) => text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
 const bytes = (text: string) => new TextEncoder().encode(text).length;
 
-export function validFileName(name: string): boolean {
+export function validFileName(name: string, language: Language = 'java'): boolean {
+  if (language !== 'java') return SINGLE_FILE.test(name) && name.endsWith(LANGUAGES[language].extension) && !RESERVED.test(name.split('.')[0]);
   return FILE_PATTERN.test(name) && name.length <= 180 && !name.replace(/\.java$/, '').split('/').some(part => RESERVED.test(part));
 }
 
 /** Checks a file set against the runner's limits. Returns a message, or null when it is fine. */
-export function limitProblem(files: SourceFile[]): string | null {
+export function limitProblem(files: SourceFile[], language: Language = 'java'): string | null {
+  if (language !== 'java') {
+    // C and Python projects are one file, such as main.c.
+    if (files.length !== 1) return `A ${LANGUAGES[language].name} project has exactly one file.`;
+    if (!validFileName(files[0].name, language)) return `${files[0].name} is not a valid ${LANGUAGES[language].name} file name. Use a simple name such as ${LANGUAGES[language].mainFile}.`;
+    if (bytes(files[0].content) > LIMITS.fileBytes) return `${files[0].name} is larger than 64 KiB.`;
+    return null;
+  }
   if (!files.length) return 'The project has no Java files.';
   if (files.length > LIMITS.files) return `A project can have up to ${LIMITS.files} Java files; this one has ${files.length}.`;
   const big = files.find(f => bytes(f.content) > LIMITS.fileBytes);
@@ -93,14 +102,29 @@ export async function importFiles(input: { file: File; path: string }[], fallbac
     if (input[0].file.size > 4 * 1024 * 1024) throw new Error('Zip files are limited to 4 MiB.');
     return projectFromZip(new Uint8Array(await input[0].file.arrayBuffer()), input[0].file.name.replace(/\.zip$/i, ''));
   }
+  // One C or Python file becomes a project of that language.
+  const single = input.length === 1 ? fileLanguage(input[0].file.name) : null;
+  if (single && single !== 'java') {
+    const text = normalize(await readFileText(input[0].file));
+    return { project: singleFileProject(input[0].file.name.replace(/\.(c|py)$/i, '') || fallbackName, single, text), notes: [] };
+  }
   const java = input.filter(i => /\.java$/i.test(i.file.name));
   const skipped = input.length - java.length;
-  if (!java.length) throw new Error('Choose .java files, a folder that contains them, a .zip, or a TraceLab .json project.');
+  if (!java.length) throw new Error('Choose .java files, a folder that contains them, a .zip, a TraceLab .json project, or one .c or .py file.');
   if (java.length > 200) throw new Error('That is more than 200 Java files; TraceLab projects hold up to 20.');
   const raw = await Promise.all(java.map(async i => ({ path: i.path || i.file.name, text: await readFileText(i.file) })));
   const result = projectFromSources(folderName(java.map(i => i.path)) ?? suggestedName(raw) ?? fallbackName, raw);
   if (skipped) result.notes.push(`${skipped} file${skipped === 1 ? ' was' : 's were'} not Java source and ${skipped === 1 ? 'was' : 'were'} skipped.`);
   return result;
+}
+
+/** A C or Python project with one file, `main.c` or `main.py`. */
+export function singleFileProject(name: string, language: Exclude<Language, 'java'>, text: string): Project {
+  const content = normalize(text);
+  const project: Project = { version: 1, name: name.trim() || 'Imported project', example: '', mainClass: 'main', stdin: '', maxSteps: language === 'python' ? 1000 : 500, checks: [], language, files: [{ name: LANGUAGES[language].mainFile, content: content.endsWith('\n') ? content : `${content}\n` }] };
+  const problem = limitProblem(project.files, language);
+  if (problem) throw new Error(problem);
+  return project;
 }
 
 /** A name for loose files: the main class, or the shared package. */
@@ -120,9 +144,22 @@ function folderName(paths: string[]): string | undefined {
 /** Reads a zip: a TraceLab export restores its tests and settings; any other zip contributes its .java files. */
 export async function projectFromZip(data: Uint8Array, name: string): Promise<ImportResult> {
   const entries = await readZip(data, { maxEntries: 200, maxEntry: LIMITS.fileBytes, maxTotal: 2 * 1024 * 1024 },
-    path => /\.java$/i.test(path) || path.split('/').at(-1) === PROJECT_FILE);
+    path => /\.(java|c|py)$/i.test(path) || path.split('/').at(-1) === PROJECT_FILE);
   const decoder = new TextDecoder();
   const manifest = entries.find(e => e.path.split('/').at(-1) === PROJECT_FILE);
+  // A C or Python project exported from TraceLab: its one file is under src/.
+  if (manifest) {
+    let meta: Partial<Project> = {};
+    try { meta = JSON.parse(decoder.decode(manifest.data)); } catch { /* Not a C or Python export. */ }
+    if (meta.language === 'c' || meta.language === 'python') {
+      const prefix = manifest.path.slice(0, manifest.path.length - PROJECT_FILE.length);
+      const source = entries.find(e => e.path.startsWith(`${prefix}src/`) && fileLanguage(e.path) === meta.language);
+      if (source) {
+        const candidate = { ...singleFileProject(meta.name ?? name, meta.language, decoder.decode(source.data)), stdin: meta.stdin ?? '', maxSteps: meta.maxSteps ?? 500, checks: meta.checks ?? [] };
+        if (validateProject(candidate)) return { project: candidate, notes: [] };
+      }
+    }
+  }
   const sources = entries.filter(e => /\.java$/i.test(e.path) && !e.path.split('/').some(part => part === '__MACOSX' || part.startsWith('.')));
   if (!sources.length) throw new Error('This zip has no .java files.');
   const raw = sources.map(e => ({ path: e.path, text: decoder.decode(e.data) }));
@@ -142,7 +179,8 @@ export async function projectFromZip(data: Uint8Array, name: string): Promise<Im
 export async function projectToZip(project: Project): Promise<Uint8Array> {
   const encoder = new TextEncoder();
   const { files, ...meta } = project;
-  const readme = `${project.name}\n\nExported from TraceLab. Source files are in src/.\nCompile and run:  javac -d out $(find src -name "*.java") && java -cp out ${project.mainClass}\nImport this zip into TraceLab to restore its tests.\n`;
+  const run = project.language === 'c' ? `cc -o main src/${files[0].name} && ./main` : project.language === 'python' ? `python src/${files[0].name}` : `javac -d out $(find src -name "*.java") && java -cp out ${project.mainClass}`;
+  const readme = `${project.name}\n\nExported from TraceLab. Source files are in src/.\n${project.language === 'python' ? 'Run' : 'Compile and run'}:  ${run}\nImport this zip into TraceLab to restore its tests.\n`;
   return writeZip([
     { path: PROJECT_FILE, data: encoder.encode(JSON.stringify(meta, null, 2)) },
     { path: 'README.txt', data: encoder.encode(readme) },

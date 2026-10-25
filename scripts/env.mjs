@@ -55,8 +55,25 @@ export function jdtlsHome() {
   return null;
 }
 
+/**
+ * Python 3.10+ for Python projects: TRACELAB_PYTHON, then `python` and `python3` on the PATH.
+ * Returns null when none works; Java and C projects don't need it.
+ */
+export function pythonCommand() {
+  const candidates = [process.env.TRACELAB_PYTHON, ...(windows ? ['python', 'python3'] : ['python3', 'python'])].filter(Boolean);
+  for (const candidate of candidates) {
+    // The absolute path, so the runner doesn't depend on its own PATH.
+    const result = spawnSync(candidate, ['-c', 'import sys; print(sys.version_info[0], sys.version_info[1], sys.executable)'], { encoding: 'utf8', windowsHide: true });
+    const [major, minor, ...rest] = (result.stdout ?? '').trim().split(' ');
+    if (result.status === 0 && Number(major) === 3 && Number(minor) >= 10 && rest.length) return rest.join(' ');
+  }
+  return null;
+}
+
 export function environment() {
   const env = { ...process.env, JAVA_HOME: javaHome() };
+  const python = pythonCommand();
+  if (python) env.TRACELAB_PYTHON = python;
   const jdtls = jdtlsHome();
   if (jdtls && process.env.TRACELAB_LANGUAGE_SERVER !== 'off') {
     env.TRACELAB_JDTLS_HOME = jdtls;

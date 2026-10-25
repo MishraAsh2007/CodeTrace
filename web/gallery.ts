@@ -11,7 +11,8 @@ export const demoName = (demo: Demo) => examples.find(e => e.example === demo.id
 
 /** One gallery card. `href` makes it a link (landing page); otherwise a button with data-open-demo (IDE). */
 export function demoCard(demo: Demo, arrow: string, href?: string): string {
-  const inner = `<div class="demo-card-top"><span class="chip ${chipFor[demo.category]}">${esc(demo.symptom)}</span><span class="level">${esc(demo.level)}</span></div>
+  const language = demo.language ? `<span class="language-tag ${demo.language}">${demo.language === 'c' ? 'C' : 'Python'}</span>` : '';
+  const inner = `<div class="demo-card-top"><span class="chip ${chipFor[demo.category]}">${esc(demo.symptom)}</span>${language}<span class="level">${esc(demo.level)}</span></div>
     <h3>${esc(demoName(demo))}</h3><p>${esc(demo.summary)}</p>
     <code class="demo-snippet" title="${esc(demo.snippet)}">${esc(demo.snippet)}</code>
     <div class="demo-tags">${demo.concepts.map(c => `<span>${esc(c)}</span>`).join('')}</div>
@@ -21,9 +22,14 @@ export function demoCard(demo: Demo, arrow: string, href?: string): string {
     : `<button class="demo-card" data-category="${demo.category}" data-open-demo="${esc(demo.id)}">${inner}</button>`;
 }
 
-export function filterBar(active: DemoCategory | 'all'): string {
-  const count = (id: DemoCategory | 'all') => id === 'all' ? demos.length : demos.filter(d => d.category === id).length;
-  return [{ id: 'all' as const, label: 'All' }, ...categories].map(c => `<button data-filter="${c.id}" aria-pressed="${active === c.id}">${esc(c.label)}<span class="count">${count(c.id)}</span></button>`).join('');
+/** Gallery filters: everything, a category, or a language. */
+export type GalleryFilter = DemoCategory | 'all' | 'java' | 'c' | 'python';
+const LANGUAGE_FILTERS = [{ id: 'java' as const, label: 'Java' }, { id: 'c' as const, label: 'C' }, { id: 'python' as const, label: 'Python' }];
+const matches = (demo: Demo, filter: GalleryFilter) => filter === 'all' || demo.category === filter || (demo.language ?? 'java') === filter;
+
+export function filterBar(active: GalleryFilter): string {
+  const button = (c: { id: GalleryFilter; label: string }) => `<button data-filter="${c.id}" aria-pressed="${active === c.id}">${esc(c.label)}<span class="count">${demos.filter(d => matches(d, c.id)).length}</span></button>`;
+  return [{ id: 'all' as const, label: 'All' }, ...categories].map(button).join('') + `<span class="filter-divider" aria-hidden="true"></span>${LANGUAGE_FILTERS.map(button).join('')}`;
 }
 
-export function visibleDemos(active: DemoCategory | 'all'): Demo[] { return active === 'all' ? demos : demos.filter(d => d.category === active); }
+export function visibleDemos(active: GalleryFilter): Demo[] { return demos.filter(d => matches(d, active)); }

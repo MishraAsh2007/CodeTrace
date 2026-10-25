@@ -2,6 +2,8 @@ import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 // editor.api alone has no editor features; edcore.main adds them (suggestions, hovers, quick fixes, find, F1 commands).
 import 'monaco-editor/esm/vs/editor/edcore.main';
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution';
+import 'monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution';
+import 'monaco-editor/esm/vs/basic-languages/python/python.contribution';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import { createIcons, Play, Square, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Plus, FileCode2, Download, Upload, Check, X, Terminal, ArrowUpRight, BookOpen, Bug, Lightbulb, Settings2, Pause, RotateCcw, ArrowRight, CircleHelp, Search, Bookmark, CornerDownRight, CornerLeftUp, Undo2, Redo2, Share2, Spline, Type, Pencil, Equal, Flag, Trophy, Wrench, Target, Microscope, PanelLeft, PanelRight, PanelBottom, PanelRightClose, ChevronDown, Files, FlaskConical, Sun, Moon, Monitor, Ellipsis, FilePlus2, ShieldCheck, Keyboard, Info, ListChecks, LayoutGrid, CircleCheck, CircleX, LoaderCircle, ExternalLink, House, History, Trash2, Folder, FolderOpen, FolderKanban, Package, Copy, FileArchive, ClipboardPaste, Save, Boxes, ListPlus, TriangleAlert, ArrowUp, ArrowDown, FileJson, CirclePlay, Braces, WandSparkles, Dumbbell, ArrowLeft, MessagesSquare, Send, Sparkles, GitFork, Maximize2, Minimize2, Network, Grid3x3, ListTree, Link, FlagTriangleRight } from 'lucide';
 import { categories, copyExample, demoFor, demos, exampleIndex, examples } from './examples';
@@ -9,8 +11,9 @@ import type { DemoCategory } from './examples';
 import { exceptionMessage, expandEvents, failingCheck, normalizeOutput, originNote, output, questionsFor, sameSource, snapshots, validateProject, valueText } from './learning';
 import { Library, StorageFullError } from './library';
 import type { DocRef } from './library';
-import { droppedFiles, importFiles, limitProblem, projectFromSources, projectToZip, validFileName } from './importer';
+import { droppedFiles, importFiles, limitProblem, projectFromSources, projectToZip, singleFileProject, validFileName } from './importer';
 import { analyzeJava, fileIssues, mainClasses, preferredMain, renameType, setPackage, testTargets } from './javasource';
+import type { FileIssue } from './javasource';
 import { batchOutcome, batchRequest, batchResults, describeTest, evaluateTest, harnessErrorDetail, isCallTest, isHarnessFile, qualifyCall, requestForTest, testExpression, testProblems, valuesMatch } from './tests';
 import type { BatchCase, BatchResult, TestOutcome } from './tests';
 import { aiTestMessages, caseToCheck, packageOf, parseAiTests, planTests } from './testgen';
@@ -45,7 +48,11 @@ import type { SidebarView } from './layout';
 import { applyTheme, onSystemThemeChange, resolvedTheme, setTheme, themeChoice } from './theme';
 import type { ThemeChoice } from './theme';
 import { categoryLabel, demoCard, demoName, filterBar, LOGO_SVG, visibleDemos } from './gallery';
-import type { Check as TestCase, Frame, HeapObject, Project, Question, Run, RunRequest, SourceFile, TraceEvent, TraceValue, Variable } from './types';
+import type { GalleryFilter } from './gallery';
+import { fileLanguage, isJava, languageOf, LANGUAGES } from './languages';
+import { cErrorOf, hintsForError } from './ctutor';
+import { PYTHON_CONCEPTS, pythonFix } from './pyquiz/adapter';
+import type { Check as TestCase, Frame, HeapObject, Language, Project, Question, Run, RunRequest, SourceFile, TraceEvent, TraceValue, Variable } from './types';
 import './tokens.css';
 import './style.css';
 
@@ -113,8 +120,19 @@ let speed = 700;
 let consoleTab = 'output';
 let watchFilter = '';
 let traceSource = false;
-let galleryFilter: DemoCategory | 'all' = 'all';
+let galleryFilter: GalleryFilter = 'all';
+/** C tutor hints revealed for the current run (their panel starts with one). */
+let cHintsShown = 1;
+/** The project's language; C and Python projects hide Java-only tools. */
+const lang = (): Language => languageOf(project);
+const javaProject = () => isJava(project);
+/** Files the Java language server mirrors: none for C and Python projects. */
+const lspFiles = () => javaProject() ? project.files : [];
+/** Concept labels for progress, including the Python Tutor's. */
+const conceptNames: Record<string, string> = { ...CONCEPTS, ...PYTHON_CONCEPTS };
 let runnerOnline = false;
+/** The runner's Python, or null when Python projects can't run. */
+let pythonVersion: string | null = null;
 const ui = loadUi();
 const layout = loadLayout();
 let questions: Question[] = [];
@@ -196,7 +214,7 @@ $('#app').innerHTML = `
     </nav>
     <aside class="sidebar" aria-label="Sidebar">
       <section data-view-panel="explorer" class="side-view" id="explorer">
-        <div class="side-header"><h2>Explorer</h2><div><button id="new-file" class="icon-btn small" title="New Java file" aria-label="New Java file">${icon('file-plus-2')}</button><button data-action="add-files" class="icon-btn small" title="Add files to this project" aria-label="Add files to this project">${icon('upload')}</button></div></div>
+        <div class="side-header"><h2>Explorer</h2><div id="explorer-actions"><button id="new-file" class="icon-btn small" title="New Java file" aria-label="New Java file">${icon('file-plus-2')}</button><button data-action="add-files" class="icon-btn small" title="Add files to this project" aria-label="Add files to this project">${icon('upload')}</button></div></div>
         <div class="tree-root" id="tree-root">${icon('chevron-down')}<span id="folder-name"></span></div>
         <div id="file-list" class="file-list" role="tree" aria-label="Project files"></div>
         <div class="drop-hint">Drop .java files, a folder or a zip here to add them.</div>
@@ -266,7 +284,7 @@ $('#app').innerHTML = `
     <span class="status-spacer"></span>
     <span class="status-item" id="status-step"></span>
     <span class="status-item" id="editor-position">Ln 1, Col 1</span>
-    <span class="status-item">Spaces: 4</span><span class="status-item">UTF-8</span><span class="status-item">Java 21</span>
+    <span class="status-item">Spaces: 4</span><span class="status-item">UTF-8</span><span class="status-item" id="language-label">Java 21</span>
   </footer>
   <input type="file" id="import-input" accept=".java,.zip,.json,application/zip,application/json" multiple hidden />
   <input type="file" id="import-folder" webkitdirectory multiple hidden />
@@ -339,17 +357,19 @@ lsp.onDiagnostics = (file, diagnostics) => {
 lsp.onState = () => {
   renderLspStatus();
   // The project may have changed while the server was starting.
-  if (lsp.ready) { lsp.sync(project.files); scheduleProblems(); for (const f of project.files) getModel(f.name, false); }
+  if (lsp.ready) { lsp.sync(lspFiles()); scheduleProblems(); for (const f of project.files) getModel(f.name, false); }
 };
 // Monaco cancels hover, completion and code-action requests as the cursor moves; those aren't errors.
 window.addEventListener('unhandledrejection', e => { if ((e.reason as Error | undefined)?.name === 'Canceled' || (e.reason as Error | undefined)?.message === 'Canceled') e.preventDefault(); });
 let lspTimer: ReturnType<typeof setTimeout> | undefined;
-function scheduleLspSync() { clearTimeout(lspTimer); lspTimer = setTimeout(() => { if (lsp.ready) lsp.sync(project.files); }, 250); }
-function connectLanguageServer() { if (lsp.state === 'off' || lsp.state === 'stopped') lsp.connect(project.files).then(() => renderLspStatus()); }
+function scheduleLspSync() { clearTimeout(lspTimer); lspTimer = setTimeout(() => { if (lsp.ready) lsp.sync(lspFiles()); }, 250); }
+function connectLanguageServer() { if (lsp.state === 'off' || lsp.state === 'stopped') lsp.connect(lspFiles()).then(() => renderLspStatus()); }
 // A second tab takes over the shared server when it becomes visible.
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && lsp.ready) lsp.sync(project.files); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && lsp.ready) lsp.sync(lspFiles()); });
 function renderLspStatus() {
   const el = $('#lsp-status');
+  // The Java language server has nothing to do in C and Python projects.
+  el.hidden = !javaProject();
   const label = { off: 'Java: off', starting: 'Java: starting…', ready: lsp.progress ? `Java: ${lsp.progress.toLowerCase()}` : 'Java: ready', unavailable: 'Java: basic', stopped: 'Java: stopped' }[lsp.state];
   el.querySelector('span:last-child')!.textContent = label;
   el.classList.toggle('offline', lsp.state === 'stopped');
@@ -380,7 +400,7 @@ async function checkSpelling(file: string) {
   if (!model || model.isDisposed()) return;
   if (!ui.spelling) { monaco.editor.setModelMarkers(model, 'spelling', []); return; }
   const version = model.getVersionId();
-  const tokens = checkable(spellingTokens(model.getValue()), userWords);
+  const tokens = checkable(spellingTokens(model.getValue(), fileLanguage(file) === 'python'), userWords);
   const { misspelled } = await speller<{ misspelled: string[] }>({ type: 'check', words: [...new Set(tokens.map(t => t.word))], extra: [] });
   if (model.isDisposed() || model.getVersionId() !== version) return;
   const bad = new Set(misspelled);
@@ -498,7 +518,7 @@ function getModel(file: string, historical: boolean) {
   const key = historical && run ? `${run.id}/${source.name}` : `workspace/${source.name}`;
   let model = models.get(key);
   if (!model) {
-    model = monaco.editor.createModel(source.content, 'java', monaco.Uri.parse(`inmemory://tracelab/${key}`));
+    model = monaco.editor.createModel(source.content, LANGUAGES[fileLanguage(source.name) ?? 'java'].monaco, monaco.Uri.parse(`inmemory://tracelab/${key}`));
     models.set(key, model);
     if (!historical) { monaco.editor.setModelMarkers(model, 'java-ls', toMarkers(monaco, lsp.diagnosticsFor(source.name), lintHelp)); scheduleSpelling(source.name, 1500); }
     if (!historical) model.onDidChangeContent(event => {
@@ -526,6 +546,11 @@ function selectFile(name: string, historical = traceSource) {
 
 /** Explorer tree: files grouped into package folders, with main-class and path-problem markers. */
 function renderTree(): string {
+  if (!javaProject()) {
+    // C and Python projects are one file: no packages, main class or moves.
+    const file = project.files[0];
+    return `<div class="file-row ${file.name === activeFile && !traceSource ? 'active' : ''}" role="treeitem" aria-selected="${file.name === activeFile && !traceSource}" style="--depth:0"><button data-file="${esc(file.name)}" title="${esc(file.name)}">${icon('file-code-2')}<span>${esc(file.name)}</span><span class="language-tag ${lang()}">${esc(LANGUAGES[lang()].name)}</span></button></div>`;
+  }
   const issues = fileIssues(project.files);
   const mains = new Set(mainClasses(project.files));
   type Node = { folders: Map<string, Node>; files: string[] };
@@ -564,16 +589,28 @@ function renderFiles() {
   $('#file-list').innerHTML = renderTree();
   // Adding files works from the tab bar too, so it doesn't depend on the sidebar being open.
   $('#editor-tabs').innerHTML = available.map(f => `<button class="panel-tab ${f.name === activeFile ? 'active' : ''}" role="tab" aria-selected="${f.name === activeFile}" data-tab="${esc(f.name)}" title="${esc(f.name)}">${icon('file-code-2')}${esc(f.name.split('/').at(-1))}</button>`).join('')
-    + (traceSource ? '<span class="tab-note">Recorded source · read-only</span>' : `<span class="tab-actions"><button class="icon-btn small" data-action="new-file" title="New Java file" aria-label="New Java file">${icon('plus')}</button><button class="icon-btn small" data-action="add-files" title="Add files from your computer" aria-label="Add files from your computer">${icon('upload')}</button></span>`);
+    + (traceSource ? '<span class="tab-note">Recorded source · read-only</span>' : !javaProject() ? `<span class="tab-note">${esc(LANGUAGES[lang()].name)} · one file</span>` : `<span class="tab-actions"><button class="icon-btn small" data-action="new-file" title="New Java file" aria-label="New Java file">${icon('plus')}</button><button class="icon-btn small" data-action="add-files" title="Add files from your computer" aria-label="Add files from your computer">${icon('upload')}</button></span>`);
+  $('#explorer-actions').hidden = !javaProject();
   renderDocChrome();
   renderLint();
   $('#example-list').innerHTML = categories.map(c => {
     const items = demos.filter(d => d.category === c.id);
-    return `<div class="example-group"><h3>${esc(c.label)}</h3>${items.map(d => `<button class="example-item ${project.example === d.id ? 'active' : ''}" data-open-demo="${esc(d.id)}" title="${esc(d.summary)}"><span class="example-dot ${c.id}"></span><span class="example-text"><span>${esc(demoName(d))}</span><small>${esc(d.symptom)}</small></span></button>`).join('')}</div>`;
+    return `<div class="example-group"><h3>${esc(c.label)}</h3>${items.map(d => `<button class="example-item ${project.example === d.id ? 'active' : ''}" data-open-demo="${esc(d.id)}" title="${esc(d.summary)}"><span class="example-dot ${c.id}"></span><span class="example-text"><span>${esc(demoName(d))}</span><small>${d.language ? `${esc(LANGUAGES[d.language].name)} · ` : ''}${esc(d.symptom)}</small></span></button>`).join('')}</div>`;
   }).join('') + `<button class="btn btn-secondary btn-block" data-action="gallery">${icon('layout-grid')}Open gallery</button>`;
   $('#checks-count').textContent = String(project.checks.length);
   $('#tests-count').textContent = String(project.checks.length);
+  renderLanguageChrome();
   icons();
+}
+
+/** Parts of the window that depend on the project's language. Java projects keep their original wording. */
+function renderLanguageChrome() {
+  const java = javaProject();
+  $('#language-label').textContent = LANGUAGES[lang()].label;
+  $('#generate-tests').hidden = !java;
+  $('#tests-blurb').textContent = java ? 'Each test runs your current code in a fresh JVM and checks its output or a method’s result.' : 'Each test runs your current program with the test’s input and checks what it prints.';
+  $('#run').title = java ? 'Compile, run and record (Ctrl+Enter)' : 'Run and record (Ctrl+Enter)';
+  renderLspStatus();
 }
 
 /** Topbar and sidebar state that depends on which document is open. */
@@ -616,7 +653,7 @@ let lintTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleLint() { clearTimeout(lintTimer); lintTimer = setTimeout(() => { renderLint(); $('#file-list').innerHTML = renderTree(); icons(); }, 500); }
 /** Warns when a file's path does not match its package and public class, with a one-click move. */
 function renderLint() {
-  const issues = fileIssues(project.files);
+  const issues = javaProject() ? fileIssues(project.files) : new Map<string, FileIssue>();
   for (const file of project.files) {
     const issue = issues.get(file.name);
     const model = models.get(`workspace/${file.name}`);
@@ -669,7 +706,7 @@ function updateDecorations() {
   const event = currentEvent();
   const aligned = !dirtyTrace() || traceSource;
   if (event?.location && event.kind !== 'terminated' && event.location.file === activeFile && aligned) {
-    marks.push({ range: new monaco.Range(event.location.line, 1, event.location.line, 1), options: { isWholeLine: true, className: event.exception ? 'trace-line-error' : 'trace-line', glyphMarginClassName: event.exception ? 'trace-glyph error' : 'trace-glyph', glyphMarginHoverMessage: { value: event.exception ? 'The exception was thrown here' : 'Paused before this line runs' } } });
+    marks.push({ range: new monaco.Range(event.location.line, 1, event.location.line, 1), options: { isWholeLine: true, className: event.exception ? 'trace-line-error' : 'trace-line', glyphMarginClassName: event.exception ? 'trace-glyph error' : 'trace-glyph', glyphMarginHoverMessage: { value: event.exception ? (event.errorKind ? 'The program stopped here' : 'The exception was thrown here') : event.location.phase === 'after' ? 'This line just ran' : 'Paused before this line runs' } } });
   }
   const focus = questions[questionIndex]?.focus;
   if (focus && focus.file === activeFile && aligned) {
@@ -799,6 +836,9 @@ function renderStory(states: TraceEvent[]): string {
   return `<section class="step-story" aria-label="Changes since the previous step"><div class="story-label" title="Changes between the stop ${esc(where)} and this one">Changes</div><div class="story-body"><ul>${shown.map(li).join('')}</ul>${more.length ? `<details class="story-more"><summary>${more.length} more</summary><ul>${more.map(li).join('')}</ul></details>` : ''}</div></section>`;
 }
 
+/** A frame's name: Python's module level reads "Global frame", as in Python Tutor. */
+function frameTitle(method: string): string { return method === '<module>' ? 'Global frame' : displayMethod(method); }
+
 function renderFrame(frame: Frame, index: number, previous: TraceEvent | undefined, event: TraceEvent | undefined, ctx: RenderContext) {
   const returns = index === 0 ? (event?.returns ?? []) : [];
   const states = currentStates();
@@ -806,7 +846,7 @@ function renderFrame(frame: Frame, index: number, previous: TraceEvent | undefin
   const returnNotes = returns.map(r => `<div class="return-note">${icon('corner-left-up')}<span>${esc(returnedCall(states, at, r.frameId, r.method, ctx.previousHeap))} ${r.void ? 'finished' : 'returned'}</span>${r.value ? renderValue(r.value, undefined, ctx) : ''}</div>`).join('');
   const prior = previous?.frames?.find(f => f.id === frame.id);
   const isNew = !!previous && !prior;
-  return `<details class="frame ${index === 0 ? 'current' : ''} ${isNew ? 'new-frame' : ''}" open><summary><span class="frame-name">${index === 0 ? '<span class="frame-active-dot"></span>' : ''}${esc(displayMethod(frame.method))}<span class="method-parens">()</span></span><span class="frame-location">${esc(frame.file)}:${frame.line}</span></summary><div class="frame-variables">${returnNotes}${renderVariables(frame.locals, prior?.locals, ctx, false, frame.id) || '<div class="no-vars">No local variables in scope</div>'}${frame.truncated ? '<div class="array-caption">Locals truncated</div>' : ''}</div></details>`;
+  return `<details class="frame ${index === 0 ? 'current' : ''} ${isNew ? 'new-frame' : ''}" open><summary><span class="frame-name">${index === 0 ? '<span class="frame-active-dot"></span>' : ''}${esc(frameTitle(frame.method))}${frame.method === '<module>' ? '' : '<span class="method-parens">()</span>'}</span><span class="frame-location">${esc(frame.file)}:${frame.line}</span></summary><div class="frame-variables">${returnNotes}${renderVariables(frame.locals, prior?.locals, ctx, false, frame.id) || '<div class="no-vars">No local variables in scope</div>'}${frame.truncated ? '<div class="array-caption">Locals truncated</div>' : ''}</div></details>`;
 }
 
 // ---------- Structure views: recursion, graphs, grids, trees and linked lists ----------
@@ -947,11 +987,18 @@ const STOP_LABELS: Record<string, [string, string]> = {
   'step-limit': ['Step limit reached', 'warning'], timeout: ['Time limit reached', 'warning'], cancelled: ['Stopped', 'warning'],
   'unsupported-concurrency': ['Multiple threads', 'warning'], 'trace-limit': ['Trace too large', 'warning'], 'worker-error': ['Runner error', 'error'],
   'bad-start': ['Start condition error', 'error'],
+  // C and Python runs.
+  'output-limit': ['Output limit reached', 'warning'], 'needs-input': ['Needs more input', 'warning'],
 };
 
 function renderEmptyDebugger(reason: string | undefined) {
   const start = run?.request.startAt;
-  if (running) return `<div class="empty-state"><span class="empty-icon spin">${icon('loader-circle')}</span><h3>${start ? 'Running until the start point…' : 'Recording your program…'}</h3><p>${start ? `The program runs without recording until ${esc(describeStart(start))}, then TraceLab records every line from there.` : 'TraceLab compiles your code with javac, runs it on a real JVM, and records every line it executes.'}</p></div>`;
+  if (running) return `<div class="empty-state"><span class="empty-icon spin">${icon('loader-circle')}</span><h3>${start ? 'Running until the start point…' : 'Recording your program…'}</h3><p>${start ? `The program runs without recording until ${esc(describeStart(start))}, then TraceLab records every line from there.` : esc(LANGUAGES[lang()].engine)}</p></div>`;
+  if (reason === 'needs-input') return `<div class="empty-state"><span class="empty-icon">${icon('keyboard')}</span><h3>The program is waiting for input</h3><p>${esc(run?.events.at(-1)?.message ?? '')}</p><div class="empty-actions"><button class="btn btn-primary" data-console-open="input">${icon('pencil')}Open Input</button></div></div>`;
+  if (reason === 'compile-error' && !javaProject()) {
+    const python = lang() === 'python';
+    return `<div class="empty-state"><span class="empty-icon error">${icon('circle-x')}</span><h3>${python ? 'Python couldn’t read the program' : 'The C program has an error'}</h3><p>${python ? 'A syntax error stops Python before the first line runs. The Tutor asks about it and can suggest the fix.' : 'The interpreter stopped before running anything. The Tutor has hints for this kind of error, one at a time.'}</p><div class="empty-actions"><button class="btn btn-primary" data-action="show-tutor">${icon('lightbulb')}Show the Tutor</button><button class="btn btn-secondary" data-console-open="diagnostics">Show problems</button></div></div>`;
+  }
   const end = run?.events.findLast(e => e.kind === 'terminated');
   if (reason === 'bad-start') return `<div class="empty-state"><span class="empty-icon error">${icon('flag-triangle-right')}</span><h3>The start condition can’t be read</h3><p>${esc(end?.message ?? '')}</p><div class="empty-actions"><button class="btn btn-primary" data-action="start-at">${icon('pencil')}Edit the start point</button><button class="btn btn-secondary" data-action="clear-start">Record from the start</button></div></div>`;
   if (end?.start && !end.start.reached) return `<div class="empty-state"><span class="empty-icon">${icon('flag-triangle-right')}</span><h3>Recording never started</h3><p>${esc(end.start.message ?? '')} The program ran to the end; see its output below.</p><div class="empty-actions"><button class="btn btn-primary" data-action="start-at">${icon('pencil')}Edit the start point</button><button class="btn btn-secondary" data-action="clear-start">Record from the start</button></div></div>`;
@@ -969,8 +1016,10 @@ function renderTrace(followLine = false) {
   const [label, tone] = running ? ['Recording', 'info'] : !run ? ['Idle', ''] : STOP_LABELS[reason ?? ''] ?? ['Recorded', ''];
   const status = $('#run-status');
   status.textContent = label; status.className = `status-chip ${tone}`;
+  // C states are recorded after a statement runs; the interpreter's note says what it just did.
+  const where = event?.exception ? (event.errorKind ? 'Stopped at' : 'Exception at') : event?.location?.phase === 'after' ? 'After' : 'Before';
   $('#trace-summary').innerHTML = event?.location
-    ? `<span class="where ${event.exception ? 'error' : ''}">${event.exception ? 'Exception at' : 'Before'} <strong>${esc(event.location.file)}:${event.location.line}</strong> in ${esc(displayMethod(event.frames?.[0]?.method ?? ''))}</span>`
+    ? `<span class="where ${event.exception ? 'error' : ''}">${where} <strong>${esc(event.location.file)}:${event.location.line}</strong> in ${esc(frameTitle(event.frames?.[0]?.method ?? ''))}${event.note ? ` <span class="trace-note" title="What the interpreter just did">${esc(event.note)}</span>` : ''}</span>`
     : `<span class="where">${esc(run && event?.message ? event.message : '')}</span>`;
   const canvas = $('#memory-canvas');
   const scroll = canvas.scrollTop;
@@ -1047,7 +1096,8 @@ function renderConsole() {
   const el = $('#console-content');
   if (consoleTab === 'input' && document.activeElement?.id === 'stdin') return;
   if (consoleTab === 'input') {
-    el.innerHTML = `<label class="input-label" for="stdin">Standard input<span>Sent to the program on the next run, then closed.</span></label><textarea id="stdin" spellcheck="false">${esc(project.stdin)}</textarea>`;
+    const note = lang() === 'python' ? 'Each line is what one input() call returns. Python Tutor echoes it into the output, as a terminal does.' : 'Sent to the program on the next run, then closed.';
+    el.innerHTML = `<label class="input-label" for="stdin">Standard input<span>${esc(note)}</span></label><textarea id="stdin" spellcheck="false">${esc(project.stdin)}</textarea>`;
     $('#stdin').addEventListener('input', e => { project.stdin = (e.target as HTMLTextAreaElement).value; save(); });
   } else if (consoleTab === 'diagnostics') {
     // Each error shows the Tutor's plain-language title and its first suggested fix.
@@ -1057,7 +1107,10 @@ function renderConsole() {
       const issue = d.severity === 'error' ? help.get(`${d.file}:${d.line}:${errorKey(d.message)}`) : undefined;
       const first = issue && !shown.has(issue);
       if (issue) shown.add(issue);
-      const extra = issue && first ? `<div class="diagnostic-help"><span>${icon('lightbulb')}${esc(issue.title)}</span>${issue.fixes[0] && !fixesFolded() ? renderFix(issue.fixes[0], true) : ''}</div>` : '';
+      // C errors are named by the C tutor (its first hint is in the Tutor panel).
+      const cTitle = d.errorKind ? hintsForError({ message: d.message ?? '', line: d.line, kind: d.errorKind, stage: d.stage })?.title : undefined;
+      const extra = issue && first ? `<div class="diagnostic-help"><span>${icon('lightbulb')}${esc(issue.title)}</span>${issue.fixes[0] && !fixesFolded() ? renderFix(issue.fixes[0], true) : ''}</div>`
+        : cTitle ? `<div class="diagnostic-help"><span>${icon('lightbulb')}${esc(cTitle)}</span><button class="link-btn" data-action="show-tutor">Hints in the Tutor</button></div>` : '';
       return `<div class="diagnostic-item"><button class="diagnostic ${d.severity}" data-diagnostic="${esc(d.file)}" data-line="${d.line ?? 1}">${icon(d.severity === 'error' ? 'circle-x' : 'info')}<span><strong>${esc(d.message)}</strong><small>${esc(d.file)} · line ${d.line}, column ${d.column}</small></span></button>${extra}</div>`;
     }).join('');
     const asYouType = live.map(({ file, d }) => {
@@ -1067,9 +1120,9 @@ function renderConsole() {
     }).join('');
     el.innerHTML = fromRun || asYouType
       ? `${fromRun && asYouType ? '<h4 class="problems-head">From the last run</h4>' : ''}${fromRun}${fromRun && asYouType ? '<h4 class="problems-head">As you type</h4>' : ''}${asYouType}`
-      : `<div class="console-empty">${lsp.ready ? 'No problems found as you type.' : 'No problems in the last run.'}</div>`;
+      : `<div class="console-empty">${lsp.ready && javaProject() ? 'No problems found as you type.' : 'No problems in the last run.'}</div>`;
   } else if (consoleTab === 'checks') {
-    el.innerHTML = project.checks.length ? `<table class="test-table"><thead><tr><th>Test</th><th>Type</th><th>Input or call</th><th>Expected</th></tr></thead><tbody>${project.checks.map(c => { const d = describeTest(c); return `<tr><td>${esc(c.name)}</td><td>${esc(d.kind)}</td><td><code>${esc(d.given)}</code></td><td><code>${esc(d.expects)}</code></td></tr>`; }).join('')}</tbody></table>` : `<div class="console-empty">This project has no tests yet. Write one with Add test in the Tutor panel, or <button class="link-btn" data-action="generate-tests">generate tests from your methods</button>.</div>`;
+    el.innerHTML = project.checks.length ? `<table class="test-table"><thead><tr><th>Test</th><th>Type</th><th>Input or call</th><th>Expected</th></tr></thead><tbody>${project.checks.map(c => { const d = describeTest(c); return `<tr><td>${esc(c.name)}</td><td>${esc(d.kind)}</td><td><code>${esc(d.given)}</code></td><td><code>${esc(d.expects)}</code></td></tr>`; }).join('')}</tbody></table>` : `<div class="console-empty">This project has no tests yet. Write one with Add test in the Tutor panel${javaProject() ? `, or <button class="link-btn" data-action="generate-tests">generate tests from your methods</button>` : ', or run the program and save its output as a test'}.</div>`;
   } else {
     const sequence = currentEvent()?.sequence ?? Infinity;
     const stdout = run ? output(run, 'stdout', sequence) : '';
@@ -1094,10 +1147,11 @@ function renderStages() {
 }
 
 function renderProgress() {
-  const entries = Object.entries(progress).filter(([concept]) => CONCEPTS[concept]);
-  $('#progress-card').innerHTML = entries.length ? `<div class="card-title">${icon('trophy')}<h3>Concepts practiced</h3><button id="reset-progress" class="link-btn" title="Clear practice history in this browser">Reset</button></div><div class="concept-chips">${entries.map(([concept, p]) => hasPractice(concept)
-    ? `<button class="concept-chip" data-practice="${esc(concept)}" title="${p.answered} answered · ${p.firstTry} correct on the first try. Click to practice.">${esc(CONCEPTS[concept])}<b>${p.firstTry}/${p.answered}</b></button>`
-    : `<span class="concept-chip" title="${p.answered} answered · ${p.firstTry} correct on the first try">${esc(CONCEPTS[concept])}<b>${p.firstTry}/${p.answered}</b></span>`).join('')}</div>` : '';
+  const entries = Object.entries(progress).filter(([concept]) => conceptNames[concept]);
+  // Practice problems run on the JVM, so chips are buttons only in Java projects.
+  $('#progress-card').innerHTML = entries.length ? `<div class="card-title">${icon('trophy')}<h3>Concepts practiced</h3><button id="reset-progress" class="link-btn" title="Clear practice history in this browser">Reset</button></div><div class="concept-chips">${entries.map(([concept, p]) => hasPractice(concept) && javaProject()
+    ? `<button class="concept-chip" data-practice="${esc(concept)}" title="${p.answered} answered · ${p.firstTry} correct on the first try. Click to practice.">${esc(conceptNames[concept])}<b>${p.firstTry}/${p.answered}</b></button>`
+    : `<span class="concept-chip" title="${p.answered} answered · ${p.firstTry} correct on the first try">${esc(conceptNames[concept])}<b>${p.firstTry}/${p.answered}</b></span>`).join('')}</div>` : '';
   icons();
 }
 
@@ -1108,11 +1162,12 @@ function renderCoach() {
   const demo = demoFor(project.example);
   const mismatchCard = runVerdict();
   if (!q) {
+    const languageHelp = cHintsCard() || pythonFixCard();
     const brief = demo && demo.category !== 'tour' && !run
       ? `<div class="brief"><span class="chip ${({ runtime: 'danger', output: 'warning', hang: 'violet', compile: 'info', tour: 'accent' } as const)[demo.category]}">${esc(categoryLabel(demo.category))}</span><h3>${esc(project.name)}</h3><p>${esc(demo.summary)}</p><dl><dt>Symptom</dt><dd>${esc(demo.symptom)}</dd><dt>Look at</dt><dd><code>${esc(demo.snippet)}</code></dd></dl><p class="muted">Run the program. The Tutor will ask about what actually happened, then help you choose a fix.</p><button class="btn btn-primary btn-block" data-run>${icon('play')}Run program</button></div>`
       : mismatchCard && run && !running ? ''
       : `<div class="empty-coach">${icon('lightbulb')}<h3>${run ? (running ? 'Recording…' : 'No questions for this run') : 'Questions appear after you run'}</h3><p>${run ? 'TraceLab asks only about things it can confirm from the recorded run, such as exceptions, values that changed, references and return values. Step through the trace and compare it with your tests.' : 'Run your program and the Tutor will ask about what it actually did: predict a value, explain an error, then choose a fix and test it.'}</p>${!run ? `<button class="btn btn-secondary" data-action="gallery">${icon('layout-grid')}Try an example</button>` : ''}</div>`;
-    const help = compileHelpCard();
+    const help = compileHelpCard() || languageHelp;
     el.innerHTML = `${mismatchCard}${help || brief}${supportActions()}${renderHelpPanel()}`;
     renderStages(); icons();
     return;
@@ -1120,10 +1175,67 @@ function renderCoach() {
   const answer = questionAnswers[q.id];
   const correct = answer === q.correct;
   const label = { predict: 'Predict', explain: 'Explain', repair: 'Fix' }[q.kind];
-  const editCta = correct && q.kind === 'repair' && q.focus ? `<button id="edit-focus" class="btn btn-secondary btn-block">${icon('wrench')}Edit ${esc(q.focus.file)}, line ${q.focus.line}</button>` : '';
+  // Python Tutor repairs know the whole fixed program, so the fix can be applied directly.
+  const applyCta = correct && q.kind === 'repair' && q.patched && !dirtyTrace() ? `<button class="btn btn-primary btn-block" data-apply-patch="question">${icon('wrench')}Apply this fix and run</button>` : '';
+  const editCta = applyCta + (correct && q.kind === 'repair' && q.focus ? `<button id="edit-focus" class="btn btn-secondary btn-block">${icon('wrench')}Edit ${esc(q.focus.file)}, line ${q.focus.line}</button>` : '');
   const inspect = q.step >= 0 || q.focus ? `<button id="go-question" class="link-btn">${icon('microscope')}${q.step >= 0 ? 'Show this moment' : 'Show the line'}${q.focus ? ` · line ${q.focus.line}` : ''}</button>` : '';
-  el.innerHTML = `${mismatchCard}<article class="question-card ${q.kind}"><header class="question-top"><span class="question-type">${label}</span><span class="question-count">${questionIndex + 1} of ${questions.length}</span></header><h3>${esc(q.title)}</h3><p class="question-context">${rich(q.context)}</p>${inspect}<h4>${rich(q.prompt)}</h4><div class="answer-options" role="group" aria-label="Answers">${q.options.map((option, index) => `<button class="answer-option ${answer === index ? (correct ? 'correct' : 'incorrect') : ''}" data-answer="${index}" aria-pressed="${answer === index}"><span class="option-key">${String.fromCharCode(65 + index)}</span><span>${rich(option)}</span>${answer === index ? icon(correct ? 'circle-check' : 'circle-x') : ''}</button>`).join('')}</div>${answer !== undefined ? `<div class="answer-feedback ${correct ? 'correct' : ''}" role="status"><strong>${correct ? 'Correct — that matches the recorded run.' : 'Not quite.'}</strong><p>${correct ? rich(q.explanation) : 'Compare your answer with the recorded values. Try again, or reveal a hint.'}</p>${editCta}</div>` : ''}<footer class="question-footer"><button id="hint" class="link-btn" ${hintsShown >= q.hints.length ? 'disabled' : ''}>${icon('lightbulb')}${hintsShown < q.hints.length ? `Hint (${hintsShown + 1} of ${q.hints.length})` : 'No more hints'}</button>${questions.length > 1 ? `<button id="next-question" class="link-btn">${questionIndex === questions.length - 1 ? 'First question' : 'Next question'}${icon('arrow-right')}</button>` : ''}</footer>${q.hints.slice(0, hintsShown).map(h => `<div class="hint">${rich(h)}</div>`).join('')}${supportActions(q)}</article>${compileHelpCard()}${renderHelpPanel()}`;
+  el.innerHTML = `${mismatchCard}<article class="question-card ${q.kind}"><header class="question-top"><span class="question-type">${label}</span>${q.topic ? `<span class="question-topic">${esc(q.topic)}</span>` : ''}<span class="question-count">${questionIndex + 1} of ${questions.length}</span></header><h3>${esc(q.title)}</h3><p class="question-context">${rich(q.context)}</p>${inspect}<h4>${rich(q.prompt)}</h4><div class="answer-options" role="group" aria-label="Answers">${q.options.map((option, index) => `<button class="answer-option ${answer === index ? (correct ? 'correct' : 'incorrect') : ''}" data-answer="${index}" aria-pressed="${answer === index}"><span class="option-key">${String.fromCharCode(65 + index)}</span><span>${rich(option)}</span>${answer === index ? icon(correct ? 'circle-check' : 'circle-x') : ''}</button>`).join('')}</div>${answer !== undefined ? `<div class="answer-feedback ${correct ? 'correct' : ''}" role="status"><strong>${correct ? 'Correct — that matches the recorded run.' : 'Not quite.'}</strong><p>${correct ? rich(q.explanation) : 'Compare your answer with the recorded values. Try again, or reveal a hint.'}</p>${editCta}</div>` : ''}<footer class="question-footer"><button id="hint" class="link-btn" ${hintsShown >= q.hints.length ? 'disabled' : ''}>${icon('lightbulb')}${hintsShown < q.hints.length ? `Hint (${hintsShown + 1} of ${q.hints.length})` : 'No more hints'}</button>${questions.length > 1 ? `<button id="next-question" class="link-btn">${questionIndex === questions.length - 1 ? 'First question' : 'Next question'}${icon('arrow-right')}</button>` : ''}</footer>${q.hints.slice(0, hintsShown).map(h => `<div class="hint">${rich(h)}</div>`).join('')}${supportActions(q)}</article>${compileHelpCard()}${pythonFixCard()}${renderHelpPanel()}`;
   renderStages(); icons();
+}
+
+// ---------- C and Python help ----------
+
+/** The C tutor's hints for the error a C run stopped with, revealed one at a time (C_ver's Tutor panel). */
+function cHintsCard(): string {
+  if (!run || running) return '';
+  const error = cErrorOf(run);
+  const content = error ? hintsForError(error) : null;
+  if (!error || !content) return '';
+  const file = run.request.files[0].name;
+  const shown = content.hints.slice(0, Math.max(1, cHintsShown));
+  const left = content.hints.length - shown.length;
+  const stage = error.stage === 'lex' || error.stage === 'parse' ? 'Before the program ran' : 'While the program ran';
+  return `<section class="compile-help c-hints" aria-label="Hints"><div class="card-title">${icon('lightbulb')}<h3>${esc(content.title)}</h3></div>
+    <p class="muted">${esc(stage)}${error.line ? ` · <button class="link-btn" data-diagnostic="${esc(file)}" data-line="${error.line}">${esc(file)}, line ${error.line}</button>` : ''}: <code>${esc(error.message)}</code></p>
+    <ol class="hint-steps">${shown.map(h => `<li><span class="hint-label">${esc(h.label)}</span><p>${rich(h.text)}</p></li>`).join('')}</ol>
+    ${left ? `<button class="btn btn-secondary btn-compact" id="c-more-hint">${icon('lightbulb')}Show another hint (${left} left)</button>` : '<p class="muted">That’s all my hints. Try the fix, then run again.</p>'}
+    ${dirtyTrace() ? '<div class="callout subtle">The code changed since this run. Run again to see whether the error is gone.</div>' : ''}</section>`;
+}
+
+/** The Python Tutor's suggested fix for a run that ended in an error (python's Fix panel). */
+function pythonFixCard(): string {
+  if (!run || running || dirtyTrace()) return '';
+  const fix = pythonFix(run);
+  if (!fix) return '';
+  const file = run.request.files[0].name;
+  const diff = fix.diff ? `<div class="fix"><div class="fix-diff" aria-label="Change">${fix.diff.before.map(l => `<code class="del">${esc(l)}</code>`).join('')}${fix.diff.after.map(l => `<code class="ins">${esc(l)}</code>`).join('') || '<code class="ins">(lines removed)</code>'}</div><div class="fix-row"><button class="btn btn-secondary btn-compact" data-apply-patch="fix" ${running || checking ? 'disabled' : ''} title="Apply this change and run again">${icon('wrench')}Apply fix</button><span class="fix-status">Line ${fix.diff.lines.join(', ')}</span></div></div>` : '';
+  const body = fix.diff ? (fixesFolded() ? `<details class="fix-reveal"><summary>Show the suggested fix</summary>${diff}</details>` : diff)
+    : `<p class="fix-none">No automatic fix for this one; the reason above says what to change. <button class="link-btn" data-ask="${esc(`My program stopped with "${fix.error}"${fix.errorLine ? ` on line ${fix.errorLine}` : ''}. Why did that happen, and how do I fix it?`)}">Ask the assistant</button></p>`;
+  return `<section class="compile-help py-fix"><div class="card-title">${icon('wrench')}<h3>Suggested fix</h3></div><article class="compile-issue"><header>${icon('circle-x')}<div><h4>${esc(fix.error)}</h4>${fix.errorLine ? `<button class="link-btn" data-diagnostic="${esc(file)}" data-line="${fix.errorLine}">${esc(file)} · line ${fix.errorLine}</button>` : ''}</div></header>${fix.reason ? `<p>${esc(fix.reason)}</p>` : ''}${body}</article></section>`;
+}
+
+/** Replaces the program with a fixed version as one undoable edit (only the lines that differ), then runs it. */
+async function applyPatched(patched: string) {
+  if (running || checking) return;
+  if (dirtyTrace()) { toast('The code changed since this run. Run again to refresh the suggested fix.', 'error'); return; }
+  const file = project.files[0];
+  const model = getModel(file.name, false);
+  const a = model.getValue().split('\n'), b = patched.split('\n');
+  let lo = 0;
+  while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
+  let ea = a.length, eb = b.length;
+  while (ea > lo && eb > lo && a[ea - 1] === b[eb - 1]) { ea--; eb--; }
+  // Changed lines are replaced in place; a pure insertion or deletion replaces the whole text.
+  const lines = ea > lo && eb > lo;
+  const range = lines ? new monaco.Range(lo + 1, 1, ea, model.getLineMaxColumn(ea)) : model.getFullModelRange();
+  const text = lines ? b.slice(lo, eb).join('\n') : patched;
+  selectFile(file.name, false);
+  model.pushStackElement();
+  model.pushEditOperations([], [{ range, text }], () => null);
+  model.pushStackElement();
+  editor.revealLineInCenter(lo + 1); editor.setPosition({ lineNumber: lo + 1, column: 1 });
+  toast('Applied the suggested fix. Running again…', 'success');
+  await startRun();
 }
 
 /** Tests the student owns: everything except tests that came with a template. */
@@ -1161,7 +1273,7 @@ function runVerdict(): string {
   const what = printed ? ` and printed ${printed.split('\n').length === 1 ? `${shown(printed.length > 60 ? `${printed.slice(0, 57)}…` : printed)}` : `${printed.split('\n').length} lines`}` : '';
   const neutral = questions.length ? '<p class="muted">The questions below are about how the program works. They don’t mean something is wrong.</p>' : '';
   if (failed.length) return `${starterNote}<div class="callout warning">${icon('circle-x')}<div><strong>${failed.length} of ${checkResults.length} tests fail</strong><p>The program itself ran without errors. See the Tests card below for what each failing test expected, and use Debug this test to record it. ${esc(originNote(failed[0].check))}</p></div></div>`;
-  if (!own.length) return `${starterNote}<div class="callout subtle verdict">${icon('circle-check')}<div><strong>No errors in this run</strong><p>The program finished${what}. ${starterFailures.length ? 'No other tests' : 'No tests'} say what it should print or return, so TraceLab can’t tell whether the result is what you intended: that part is up to you, or to a test.</p><div class="callout-actions">${renderSaveOffer() ? `<button class="btn btn-secondary btn-compact" data-save-run-test>${icon('save')}Save this output as a test</button>` : ''}<button class="btn btn-ghost btn-compact" data-action="generate-tests">${icon('wand-sparkles')}Generate tests</button><button class="btn btn-ghost btn-compact" data-action="add-test">${icon('list-plus')}Write a test</button></div>${neutral}</div></div>`;
+  if (!own.length) return `${starterNote}<div class="callout subtle verdict">${icon('circle-check')}<div><strong>No errors in this run</strong><p>The program finished${what}. ${starterFailures.length ? 'No other tests' : 'No tests'} say what it should print or return, so TraceLab can’t tell whether the result is what you intended: that part is up to you, or to a test.</p><div class="callout-actions">${renderSaveOffer() ? `<button class="btn btn-secondary btn-compact" data-save-run-test>${icon('save')}Save this output as a test</button>` : ''}${javaProject() ? `<button class="btn btn-ghost btn-compact" data-action="generate-tests">${icon('wand-sparkles')}Generate tests</button>` : ''}<button class="btn btn-ghost btn-compact" data-action="add-test">${icon('list-plus')}Write a test</button></div>${neutral}</div></div>`;
   if (allChecksPassed()) return `${starterNote}<div class="callout success verdict">${icon('circle-check')}<div><strong>No problems found</strong><p>The program finished without errors, and all ${checkResults.length} test${checkResults.length === 1 ? '' : 's'} pass. Tests check the cases they describe, not every possible input.</p>${neutral}</div></div>`;
   return `${starterNote}<div class="callout subtle verdict">${icon('circle-check')}<div><strong>No errors in this run</strong><p>The program finished${what}. Run the tests to check it against what it should do.</p><div class="callout-actions"><button class="btn btn-secondary btn-compact" data-action="run-tests">${icon('play')}Run tests</button></div>${neutral}</div></div>`;
 }
@@ -1171,6 +1283,8 @@ function runVerdict(): string {
 let helpOpen = false;
 /** The concept to practice for a question, or for what the run did when there is no question. */
 function practiceConcept(q?: Question): string | null {
+  // Practice problems are Java programs checked on the JVM.
+  if (!javaProject() || (run && !isJava(run.request))) return null;
   if (q && (hasPractice(q.concept) || assist.configured)) return q.concept;
   if (!run) return null;
   const thrown = currentStates().find(e => e.exception && !e.exception.caught)?.exception?.type ?? '';
@@ -1335,7 +1449,7 @@ async function askAssistant(text: string) {
   chat.turns.push(answer);
   chat.busy = true; renderAssistant();
   try {
-    const { id } = await api<{ id: string }>('/assist/chat', { method: 'POST', body: JSON.stringify({ messages: buildMessages(assistContext(), history, text.trim()) }) });
+    const { id } = await api<{ id: string }>('/assist/chat', { method: 'POST', body: JSON.stringify({ messages: buildMessages(assistContext(), history, text.trim(), lang()) }) });
     chat.jobId = id;
     for (;;) {
       await new Promise(r => setTimeout(r, 200));
@@ -1467,7 +1581,8 @@ function renderCheckResults() {
 
 /** Explanations and suggested fixes for the current run's javac errors (computed once per run). */
 function compileHelp(): CompileIssue[] {
-  if (!run || running) return [];
+  // javac's errors only: C and Python errors get their own tutors' help.
+  if (!run || running || !isJava(run.request)) return [];
   if (helpCache.run !== run) helpCache = { run, issues: run.events.some(e => e.kind === 'diagnostic' && e.severity === 'error') ? compileIssues(run.request.files, run.events) : [] };
   return helpCache.issues;
 }
@@ -1648,10 +1763,10 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   return response.json() as Promise<T>;
 }
-function requestFor(stdin = project.stdin): RunRequest { return { files: structuredClone(project.files), mainClass: project.mainClass, stdin, maxSteps: project.maxSteps, timeoutMs: 15000 }; }
+function requestFor(stdin = project.stdin): RunRequest { return { ...(project.language ? { language: project.language } : {}), files: structuredClone(project.files), mainClass: project.mainClass, stdin, maxSteps: project.maxSteps, timeoutMs: 15000 }; }
 /** The request for Run: like requestFor, plus the recording start point if one is set. */
 function traceRequest(): RunRequest {
-  const start = usableStart(project.startAt, project.files);
+  const start = javaProject() ? usableStart(project.startAt, project.files) : undefined;
   return start ? { ...requestFor(), startAt: { file: start.file, line: start.line, condition: start.condition ?? '', hit: start.hit ?? 1 } } : requestFor();
 }
 function setBusy() {
@@ -1678,10 +1793,11 @@ async function collect(request: RunRequest, onUpdate?: (value: Run) => void): Pr
   throw new Error('The runner did not finish in time, so the run was stopped.');
 }
 
-function resetQuestions() { questions = []; questionIndex = 0; questionAnswers = {}; questionAttempts = {}; solvedQuestions = new Set(); hintsShown = 0; helpOpen = false; practice = null; }
+function resetQuestions() { questions = []; questionIndex = 0; questionAnswers = {}; questionAttempts = {}; solvedQuestions = new Set(); hintsShown = 0; helpOpen = false; practice = null; cHintsShown = 1; }
 
 /** Checks the main class before a run, switching automatically when exactly one class has main. */
 function ensureMainClass(): boolean {
+  if (!javaProject()) return true;
   const mains = mainClasses(project.files);
   if (mains.includes(project.mainClass) || !mains.length) return true;
   if (mains.length === 1 || mains.some(m => m.split('.').at(-1) === 'Main')) {
@@ -1698,7 +1814,7 @@ function ensureMainClass(): boolean {
 async function startRun(override?: RunRequest) {
   if (running || checking) return;
   if (!runnerOnline) { toast('The Java runner isn’t connected. Start it with npm start, then try again.', 'error'); checkHealth(); return; }
-  const problem = limitProblem(project.files);
+  const problem = limitProblem(project.files, lang());
   if (problem) { toast(problem, 'error'); return; }
   if (!override && !ensureMainClass()) return;
   // Background fix checks hold the runner's only job slot for about half a second each.
@@ -1755,7 +1871,7 @@ function applyDiagnostics() {
 async function verify() {
   if (running || checking || !project.checks.length) return;
   if (!runnerOnline) { toast('The Java runner isn’t connected. Start it with npm start, then try again.', 'error'); checkHealth(); return; }
-  const problem = limitProblem(project.files);
+  const problem = limitProblem(project.files, lang());
   if (problem) { toast(problem, 'error'); return; }
   if (project.checks.some(c => !isCallTest(c)) && !ensureMainClass()) return;
   await settleFixChecks();
@@ -2011,7 +2127,9 @@ async function handleImport(files: { file: File; path: string }[], mode: 'new' |
   if (!files.length) return;
   try {
     const { project: imported, notes } = await importFiles(files, 'Imported project');
-    if (mode === 'add') { addFilesToProject(imported.files, notes); return; }
+    // Files can be added only to Java projects; C and Python projects are one file, so those become new projects.
+    if (mode === 'add' && javaProject() && !imported.language) { addFilesToProject(imported.files, notes); return; }
+    if (mode === 'add') notes.unshift(javaProject() ? 'C and Python files open as their own project.' : `${LANGUAGES[lang()].name} projects have one file, so this opened as a new project.`);
     if (createAndOpen(imported)) toast(`Imported “${imported.name}”: ${imported.files.length} file${imported.files.length === 1 ? '' : 's'}${imported.mainClass && mainClasses(imported.files).includes(imported.mainClass) ? `, main class ${imported.mainClass}` : ''}.${notes.length ? ` ${notes.join(' ')}` : ''}`, 'success');
   } catch (error) { toast(error instanceof Error ? error.message : 'Those files could not be imported.', 'error'); }
 }
@@ -2115,6 +2233,7 @@ const FILE_KINDS: Record<string, (name: string) => string> = {
 
 function newFile(folder = '') {
   if (running || checking) { toast('Wait for the run to finish before changing files.'); return; }
+  if (!javaProject()) { toast(`${LANGUAGES[lang()].name} projects have one file, ${project.files[0].name}.`); return; }
   const prefix = folder ? `${folder.replace(/\//g, '.')}.` : '';
   openDialog('New Java file', `<label class="dialog-label">Name<input id="file-name" value="${esc(prefix)}" placeholder="Helper or util.Helper" maxlength="180" autocomplete="off" /><small>Add a package with dots or slashes, for example <code>util.Helper</code>.</small></label><label class="dialog-label">Kind<select id="file-kind"><option value="class">Class</option><option value="main">Class with main method</option><option value="interface">Interface</option><option value="enum">Enum</option><option value="record">Record</option></select></label>`, () => {
     const name = toFilePath($<HTMLInputElement>('#file-name').value);
@@ -2134,6 +2253,19 @@ function newFile(folder = '') {
 }
 
 function settingsDialog() {
+  if (!javaProject()) {
+    const info = LANGUAGES[lang()];
+    const engine = lang() === 'c'
+      ? 'C programs run in TraceLab’s C interpreter, which supports a teaching subset of C: int, char, double, arrays, pointers, structs made with malloc, printf and scanf. Each step records the stack and up to 160 heap objects and 64 array cells.'
+      : 'Python programs run under Online Python Tutor’s tracer (pg_logger) with Python 3. Only some standard modules can be imported, and open() is not available. Each step records up to 160 objects and 64 items per list or dict.';
+    openDialog('Project settings', `<label class="dialog-label">Project name<input id="setting-name" value="${esc(project.name)}" maxlength="120" /></label><div class="dialog-label">Language<span class="dialog-inline">${esc(info.name)} · ${esc(project.files[0].name)}</span></div><label class="dialog-label">Step limit<input id="setting-steps" type="number" min="10" max="2000" value="${project.maxSteps}" /><small>Recording stops after this many steps (10–2,000). The steps recorded so far stay available.</small></label><p class="dialog-note">${esc(engine)} Runs have a 15-second time limit.</p>`, () => {
+      const maxSteps = Number($<HTMLInputElement>('#setting-steps').value);
+      if (!Number.isInteger(maxSteps) || maxSteps < 10 || maxSteps > 2000) throw new Error('Choose a step limit from 10 to 2,000.');
+      project.maxSteps = maxSteps; project.name = $<HTMLInputElement>('#setting-name').value.trim() || 'Untitled project';
+      save(); renderFiles(); renderSourceBanner(); renderCheckResults();
+    });
+    return;
+  }
   const mains = mainClasses(project.files);
   const options = [...new Set([...mains, project.mainClass])];
   openDialog('Project settings', `<label class="dialog-label">Project name<input id="setting-name" value="${esc(project.name)}" maxlength="120" /></label><label class="dialog-label">Main class<select id="setting-main">${options.map(m => `<option value="${esc(m)}" ${m === project.mainClass ? 'selected' : ''}>${esc(m)}${mains.includes(m) ? '' : ' (no main method found)'}</option>`).join('')}</select><small>${mains.length ? `Run starts in this class’s <code>main</code> method. ${mains.length} class${mains.length === 1 ? ' has' : 'es have'} one.` : 'No class has a <code>public static void main(String[] args)</code> method yet.'}</small></label><label class="dialog-label">Step limit<input id="setting-steps" type="number" min="10" max="2000" value="${project.maxSteps}" /><small>Recording stops after this many line steps (10–2,000). The steps recorded so far stay available.</small></label><div class="dialog-label">Recording start<span class="dialog-inline">${project.startAt ? `From ${esc(describeStart(project.startAt))}` : 'From the start of main'}<button type="button" class="btn btn-secondary btn-compact" data-action="start-at">${icon('flag-triangle-right')}Change…</button></span><small>To record a long program from the interesting part, start recording at a line, optionally when a condition is true. You can also right-click a line in the editor.</small></div><p class="dialog-note">Runs use Java 21 with a 15-second time limit. Each step captures up to 48 frames, 160 objects and 64 elements per array or collection.</p>`, () => {
@@ -2149,6 +2281,7 @@ function settingsDialog() {
 // ---------- Recording start point ----------
 
 function setStartAt(start: NonNullable<Project['startAt']>) {
+  if (!javaProject()) { toast('Recording start points are available in Java projects. C and Python runs record from the first line.'); return; }
   project.startAt = { file: start.file, line: start.line, ...(start.condition ? { condition: start.condition } : {}), ...(start.hit && start.hit > 1 ? { hit: start.hit } : {}) };
   save(); updateDecorations(); renderStartChip();
   toast(`The next run records from ${describeStart(project.startAt)}. Earlier lines run without being recorded.`, 'success');
@@ -2167,6 +2300,7 @@ function renderStartChip() {
   icons();
 }
 function startAtDialog(file = project.startAt?.file ?? activeFile, line = project.startAt?.file === file && project.startAt ? project.startAt.line : editor.getPosition()?.lineNumber ?? 1) {
+  if (!javaProject()) { toast('Recording start points are available in Java projects. C and Python runs record from the first line.'); return; }
   const current = project.startAt?.file === file && project.startAt.line === line ? project.startAt : undefined;
   openDialog('Start recording at a line', `<p class="dialog-note">A long program can use up the step budget before it reaches the part you care about. With a start point, the program runs normally until this line is about to run, and recording starts there. Variables and objects that exist at that moment are all shown.</p>
     <div class="dialog-row"><label class="dialog-label">File<select id="start-file">${project.files.map(f => `<option value="${esc(f.name)}" ${f.name === file ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label>
@@ -2200,16 +2334,27 @@ function startAtDialog(file = project.startAt?.file ?? activeFile, line = projec
 function newProjectDialog() {
   if (running || checking) { toast('Stop the current run before creating a project.'); return; }
   closeMenu();
-  const cards = templates.map((t, i) => `<label class="template-card"><input type="radio" name="template" value="${t.id}" ${i === 0 ? 'checked' : ''} />${icon(t.icon)}<span><strong>${esc(t.name)}</strong><small>${esc(t.description)}</small></span></label>`).join('');
+  // Templates are grouped by language; the picker shows one language's templates at a time.
+  const initial = lang();
+  const firstOf = (language: Language) => templates.find(t => t.language === language)!.id;
+  const cards = templates.map(t => `<label class="template-card" data-language="${t.language}" ${t.language === initial ? '' : 'hidden'}><input type="radio" name="template" value="${t.id}" ${t.id === firstOf(initial) ? 'checked' : ''} />${icon(t.icon)}<span><strong>${esc(t.name)}</strong><small>${esc(t.description)}</small></span></label>`).join('');
+  const picker = (['java', 'c', 'python'] as Language[]).map(l => `<label class="language-choice"><input type="radio" name="language" value="${l}" ${l === initial ? 'checked' : ''} /><span>${esc(LANGUAGES[l].name)}</span></label>`).join('');
+  const pasteText = (language: Language) => language === 'java' ? ['Paste one or more Java classes. TraceLab creates the files.', 'Java source'] : [`Paste a ${LANGUAGES[language].name} program. It becomes ${LANGUAGES[language].mainFile}.`, `${LANGUAGES[language].name} source`];
   openDialog('New project', `<label class="dialog-label">Project name<input id="new-project-name" value="${esc(library.uniqueName('My project'))}" maxlength="120" autocomplete="off" /></label>
-    <fieldset class="template-grid"><legend>Start from</legend>${cards}<label class="template-card"><input type="radio" name="template" value="paste" />${icon('clipboard-paste')}<span><strong>Paste code</strong><small>Paste one or more Java classes. TraceLab creates the files.</small></span></label></fieldset>
-    <div id="paste-area" hidden><label class="dialog-label">Java source<textarea id="paste-code" rows="10" spellcheck="false" placeholder="public class Main {&#10;    public static void main(String[] args) {&#10;        …&#10;    }&#10;}"></textarea></label><p class="paste-preview" id="paste-preview" aria-live="polite"></p></div>
+    <fieldset class="language-picker"><legend>Language</legend>${picker}<small id="language-note"></small></fieldset>
+    <fieldset class="template-grid"><legend>Start from</legend>${cards}<label class="template-card"><input type="radio" name="template" value="paste" />${icon('clipboard-paste')}<span><strong>Paste code</strong><small id="paste-note">${esc(pasteText(initial)[0])}</small></span></label></fieldset>
+    <div id="paste-area" hidden><label class="dialog-label"><span id="paste-label">${esc(pasteText(initial)[1])}</span><textarea id="paste-code" rows="10" spellcheck="false" placeholder="public class Main {&#10;    public static void main(String[] args) {&#10;        …&#10;    }&#10;}"></textarea></label><p class="paste-preview" id="paste-preview" aria-live="polite"></p></div>
     <div class="import-row">${icon('upload')}<span>Have files already?</span><button type="button" class="link-btn" data-action="import">Import .java files or a zip</button><button type="button" class="link-btn" data-action="import-folder">Import a folder</button><button type="button" class="link-btn" data-action="gallery">Open an example</button></div>`, () => {
     const name = $<HTMLInputElement>('#new-project-name').value.trim() || 'My project';
-    const choice = document.querySelector<HTMLInputElement>('input[name="template"]:checked')?.value ?? 'blank';
+    const language = (document.querySelector<HTMLInputElement>('input[name="language"]:checked')?.value ?? 'java') as Language;
+    const choice = document.querySelector<HTMLInputElement>('input[name="template"]:checked')?.value ?? firstOf(language);
     if (choice === 'paste') {
       const code = $<HTMLTextAreaElement>('#paste-code').value;
-      if (!code.trim()) throw new Error('Paste some Java code first.');
+      if (!code.trim()) throw new Error(`Paste some ${LANGUAGES[language].name} code first.`);
+      if (language !== 'java') {
+        if (createAndOpen(singleFileProject(name, language, code))) toast(`Created “${project.name}” with ${LANGUAGES[language].mainFile}.`, 'success');
+        return;
+      }
       const { project: created, notes } = projectFromSources(name, [{ path: '', text: code }]);
       if (createAndOpen(created)) toast(`Created “${project.name}” with ${created.files.map(f => f.name).join(', ')}.${notes.length ? ` ${notes.join(' ')}` : ''}`, 'success');
       return;
@@ -2217,10 +2362,27 @@ function newProjectDialog() {
     const template = templates.find(t => t.id === choice)!;
     if (createAndOpen(template.create(name))) toast(`Created “${project.name}”. Press Run to try it.`, 'success');
   }, 'Create project', { wide: true });
+  const chosenLanguage = () => (document.querySelector<HTMLInputElement>('input[name="language"]:checked')?.value ?? 'java') as Language;
+  const notes: Record<Language, string> = {
+    java: 'Java 21 on a real JVM, with the Java language server, method tests and practice problems.',
+    c: 'A teaching subset of C in TraceLab’s interpreter: pointers, arrays and structs made with malloc. One file; hints for each kind of error.',
+    python: 'Python 3 traced like Python Tutor, with its question bank and suggested fixes. One file.',
+  };
+  const showLanguage = (language: Language) => {
+    for (const card of document.querySelectorAll<HTMLElement>('#dialog-body .template-card[data-language]')) card.hidden = card.dataset.language !== language;
+    const checked = document.querySelector<HTMLInputElement>('input[name="template"]:checked');
+    if (!checked || (checked.value !== 'paste' && templates.find(t => t.id === checked.value)?.language !== language)) document.querySelector<HTMLInputElement>(`input[name="template"][value="${firstOf(language)}"]`)!.checked = true;
+    $('#paste-note').textContent = pasteText(language)[0]; $('#paste-label').textContent = pasteText(language)[1];
+    $<HTMLTextAreaElement>('#paste-code').placeholder = language === 'c' ? '#include <stdio.h>\n\nint main(void) {\n    …\n}' : language === 'python' ? 'def main():\n    …\n\nmain()' : 'public class Main {\n    public static void main(String[] args) {\n        …\n    }\n}';
+    $('#language-note').textContent = notes[language];
+    $('#paste-area').hidden = document.querySelector<HTMLInputElement>('input[name="template"]:checked')?.value !== 'paste';
+    preview();
+  };
   const preview = () => {
     const code = $<HTMLTextAreaElement>('#paste-code').value;
     const el = $('#paste-preview');
     if (!code.trim()) { el.textContent = ''; return; }
+    if (chosenLanguage() !== 'java') { el.innerHTML = `${icon('check')}<span>Creates <code>${esc(LANGUAGES[chosenLanguage()].mainFile)}</code></span>`; el.className = 'paste-preview ok'; icons(); return; }
     try {
       const { project: draft, notes } = projectFromSources('preview', [{ path: '', text: code }]);
       const mains = mainClasses(draft.files);
@@ -2230,12 +2392,15 @@ function newProjectDialog() {
     icons();
   };
   $('#dialog-body').addEventListener('change', e => {
-    if ((e.target as HTMLInputElement).name !== 'template') return;
-    const paste = (e.target as HTMLInputElement).value === 'paste';
+    const input = e.target as HTMLInputElement;
+    if (input.name === 'language') { showLanguage(input.value as Language); return; }
+    if (input.name !== 'template') return;
+    const paste = input.value === 'paste';
     $('#paste-area').hidden = !paste;
     if (paste) $<HTMLTextAreaElement>('#paste-code').focus();
   });
   $('#paste-code').addEventListener('input', preview);
+  showLanguage(initial);
   setTimeout(() => $<HTMLInputElement>('#new-project-name').select());
 }
 
@@ -2247,7 +2412,7 @@ function testFields(test: DraftTest, index: number, targets: ReturnType<typeof t
   const call = test.kind === 'call';
   return `<article class="test-editor" data-index="${index}">
     <header><input class="test-name" data-field="name" value="${esc(test.name)}" maxlength="120" aria-label="Test name" placeholder="Test name" />
-      <div class="segmented-text" role="radiogroup" aria-label="Test type"><button type="button" role="radio" data-kind="output" aria-checked="${!call}">Program output</button><button type="button" role="radio" data-kind="call" aria-checked="${call}">Method call</button></div>
+      ${javaProject() ? `<div class="segmented-text" role="radiogroup" aria-label="Test type"><button type="button" role="radio" data-kind="output" aria-checked="${!call}">Program output</button><button type="button" role="radio" data-kind="call" aria-checked="${call}">Method call</button></div>` : ''}
       <div class="test-tools"><button type="button" class="icon-btn small" data-test-move="-1" title="Move up" aria-label="Move up" ${index === 0 ? 'disabled' : ''}>${icon('arrow-up')}</button><button type="button" class="icon-btn small" data-test-move="1" title="Move down" aria-label="Move down">${icon('arrow-down')}</button><button type="button" class="icon-btn small" data-test-copy title="Duplicate" aria-label="Duplicate test">${icon('copy')}</button><button type="button" class="icon-btn small" data-test-delete title="Delete" aria-label="Delete test">${icon('trash-2')}</button></div></header>
     ${call ? `<div class="test-grid call">
         <label>Class<select data-field="target">${targets.map(t => `<option value="${esc(t.qualified)}" ${t.qualified === test.target ? 'selected' : ''}>${esc(t.qualified)}</option>`).join('') || '<option value="">No classes found</option>'}</select></label>
@@ -2272,7 +2437,9 @@ function testsDialog(initial?: DraftTest, note?: string) {
     $('#test-count').textContent = `${drafts.length} of 20`;
     icons();
   };
-  openDialog('Tests', `${note ? `<div class="callout warning">${icon('triangle-alert')}<div>${note}</div></div>` : ''}<p class="dialog-note">Tests run your current code in a fresh JVM. Use program-output tests for what <code>main</code> prints, and method-call tests to check one method’s return value.</p><div id="test-list" class="test-list"></div><div class="test-add"><button type="button" class="btn btn-secondary" data-add-test="output">${icon('plus')}Output test</button><button type="button" class="btn btn-secondary" data-add-test="call">${icon('braces')}Method test</button><span class="muted" id="test-count"></span></div>`, () => {
+  const intro = javaProject() ? 'Tests run your current code in a fresh JVM. Use program-output tests for what <code>main</code> prints, and method-call tests to check one method’s return value.'
+    : `Tests run your current program with each test’s input and compare what it prints.${lang() === 'python' ? ' Python Tutor echoes each <code>input()</code> line into the output, so expected output includes the input lines.' : ''}`;
+  openDialog('Tests', `${note ? `<div class="callout warning">${icon('triangle-alert')}<div>${note}</div></div>` : ''}<p class="dialog-note">${intro}</p><div id="test-list" class="test-list"></div><div class="test-add"><button type="button" class="btn btn-secondary" data-add-test="output">${icon('plus')}Output test</button>${javaProject() ? `<button type="button" class="btn btn-secondary" data-add-test="call">${icon('braces')}Method test</button>` : ''}<span class="muted" id="test-count"></span></div>`, () => {
     const problems: string[] = [];
     for (const card of document.querySelectorAll<HTMLElement>('#test-list .test-editor')) {
       const test = drafts[Number(card.dataset.index)];
@@ -2401,8 +2568,9 @@ type GenRow = {
 
 async function generateTestsDialog() {
   if (running || checking || genTask) return;
+  if (!javaProject()) { toast('Generate tests calls Java methods. For C and Python, run the program and save its output as a test, or write one with Add test.'); return; }
   if (!runnerOnline) { toast('The Java runner isn’t connected. Start it with npm start, then try again.', 'error'); checkHealth(); return; }
-  const problem = limitProblem(project.files);
+  const problem = limitProblem(project.files, lang());
   if (problem) { toast(problem, 'error'); return; }
   const room = 20 - project.checks.length;
   if (room <= 0) { toast('This project already has 20 tests, the maximum. Remove some first.', 'error'); return; }
@@ -2606,7 +2774,7 @@ function shortcutsDialog() {
 
 function aboutDialog() {
   openDialog('About TraceLab', `<div class="about">${LOGO_SVG}<div><strong>TraceLab ${VERSION}</strong><p class="muted">Java IDE with a recording debugger and a built-in tutor.</p></div></div>
-    <dl class="about-list"><dt>Runner</dt><dd>${runnerOnline ? 'Connected' : 'Not connected'} · local service on 127.0.0.1:4317</dd><dt>Java</dt><dd>Compiled with javac --release 21, traced with the Java Debug Interface</dd><dt>Your code</dt><dd>Projects are saved in this browser. Share links keep the project in the link itself.</dd></dl>
+    <dl class="about-list"><dt>Runner</dt><dd>${runnerOnline ? 'Connected' : 'Not connected'} · local service on 127.0.0.1:4317</dd><dt>Java</dt><dd>Compiled with javac --release 21, traced with the Java Debug Interface</dd><dt>C</dt><dd>TraceLab’s C interpreter for a teaching subset of C, with the C tutor’s hints</dd><dt>Python</dt><dd>${esc(pythonVersion ? `Python ${pythonVersion}` : 'Python 3.10 or newer (not found)')}, traced by Online Python Tutor’s pg_logger, with its question bank</dd><dt>Your code</dt><dd>Projects are saved in this browser. Share links keep the project in the link itself.</dd></dl>
     <div class="callout warning">${icon('shield-check')}<div><strong>Runs code on this computer</strong><p>This release runs programs through a local runner under your own account, with your normal file and network access. Only run code you trust.</p></div></div>`, () => {}, 'Close', { cancel: null });
 }
 
@@ -2686,7 +2854,7 @@ $<HTMLFormElement>('#assist-form').onsubmit = e => { e.preventDefault(); const i
 $('#assist-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $<HTMLFormElement>('#assist-form').requestSubmit(); } });
 $('#gallery-close').onclick = () => closeGallery();
 $('#gallery').addEventListener('click', e => { if (e.target === e.currentTarget) closeGallery(); });
-$('#gallery-filters').addEventListener('click', e => { const b = (e.target as Element).closest<HTMLElement>('[data-filter]'); if (b) { galleryFilter = b.dataset.filter as DemoCategory | 'all'; renderGallery(); } });
+$('#gallery-filters').addEventListener('click', e => { const b = (e.target as Element).closest<HTMLElement>('[data-filter]'); if (b) { galleryFilter = b.dataset.filter as GalleryFilter; renderGallery(); } });
 for (const id of ['#import-input', '#import-folder']) $<HTMLInputElement>(id).onchange = async e => {
   const input = e.target as HTMLInputElement;
   const files = [...input.files ?? []].map(file => ({ file, path: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name }));
@@ -2820,6 +2988,11 @@ document.addEventListener('click', e => {
   }
   if (target.dataset.traceCheck !== undefined) traceCheck(Number(target.dataset.traceCheck));
   if (target.dataset.applyFix) applyFix(target.dataset.applyFix);
+  if (target.dataset.applyPatch) {
+    const patched = target.dataset.applyPatch === 'question' ? questions[questionIndex]?.patched : pythonFix(run)?.diff?.patched;
+    if (patched) applyPatched(patched);
+  }
+  if (target.id === 'c-more-hint') { cHintsShown++; renderCoach(); }
   if (target.id === 'need-help') { helpOpen = !helpOpen; renderCoach(); if (helpOpen) document.querySelector('.help-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
   if (target.id === 'close-help') { helpOpen = false; renderCoach(); }
   if (target.dataset.practice) startPractice(target.dataset.practice, !!target.dataset.practiceAi);
@@ -2872,7 +3045,8 @@ document.addEventListener('keydown', e => {
 
 async function checkHealth() {
   try {
-    const health = await api<{ ok: boolean; workerReady: boolean; languageServer?: string }>('/health');
+    const health = await api<{ ok: boolean; workerReady: boolean; languageServer?: string; languages?: { python?: { ready: boolean; version: string | null } } }>('/health');
+    pythonVersion = health.languages?.python?.ready ? health.languages.python.version : null;
     const wasOnline = runnerOnline;
     runnerOnline = health.workerReady;
     if (health.languageServer) connectLanguageServer();

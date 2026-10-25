@@ -885,3 +885,25 @@ button.graph-node:hover, button.graph-node:focus-visible { background: var(--sur
 .chain-ref { position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); font: 650 10px var(--font-code); color: var(--accent-text); white-space: nowrap; }
 .chain-link { color: var(--text-3); font-size: 15px; }
 .chain-end { color: var(--text-3); font: 600 11.5px var(--font-code); white-space: nowrap; }
+
+/* ---------- C and Python projects ---------- */
+.file-row .language-tag { margin-left: auto; }
+.trace-note { margin-left: 4px; padding: 1px 6px; border-radius: 4px; background: var(--surface-3); color: var(--text-2); font: 11.5px var(--font-code); }
+.question-topic { margin-right: auto; margin-left: 6px; font-size: 11px; font-weight: 600; color: var(--text-3); }
+.language-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; border: 0; padding: 0; margin: 0 0 14px; }
+.language-picker legend { font-size: 13px; font-weight: 550; margin-bottom: 8px; padding: 0; }
+.language-picker small { flex-basis: 100%; font-size: 12px; color: var(--text-3); line-height: 1.45; }
+.language-choice { position: relative; cursor: pointer; }
+.language-choice input { position: absolute; opacity: 0; pointer-events: none; }
+.language-choice span { display: inline-flex; align-items: center; height: 30px; padding: 0 14px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; font-weight: 550; color: var(--text-2); background: var(--surface); }
+.language-choice:hover span { border-color: var(--border-strong); }
+.language-choice input:checked + span { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--accent-text); background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.language-choice input:focus-visible + span { outline: 2px solid var(--info); outline-offset: 2px; }
+.c-hints { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); }
+.c-hints > p.muted { font-size: 12.5px; line-height: 1.5; color: var(--text-3); }
+.c-hints code { font: 12px var(--font-code); overflow-wrap: anywhere; }
+.hint-steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.hint-steps li { padding: 8px 10px; border-left: 3px solid var(--warning); background: var(--warning-soft); border-radius: 0 var(--radius) var(--radius) 0; }
+.hint-steps .hint-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--warning-text); margin-bottom: 2px; }
+.hint-steps p { font-size: 12.5px; line-height: 1.55; color: var(--text); }
+.c-hints > .btn { align-self: flex-start; }

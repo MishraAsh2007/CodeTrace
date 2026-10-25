@@ -1,4 +1,6 @@
 import { exceptionGuide } from './exceptions.ts';
+import { SINGLE_FILE } from './languages.ts';
+import { pythonQuestions } from './pyquiz/adapter.ts';
 import { recursionTree } from './structures.ts';
 import { isStarterCheck } from './templates.ts';
 import type { Check, HeapObject, Project, Question, Run, TraceEvent, TraceValue, Variable } from './types';
@@ -857,8 +859,13 @@ function recursionTreeQuestions(run: Run, states: TraceEvent[]): Question[] {
   return out;
 }
 
-/** Questions are generated only from recorded values and the exact recorded source. */
+/**
+ * Questions are generated only from recorded values and the exact recorded source. Python runs use the
+ * python branch's question bank; C runs get the C tutor's hints instead (web/ctutor.ts), not questions.
+ */
 export function questionsFor(run: Run): Question[] {
+  if (run.request.language === 'python') return pythonQuestions(run);
+  if (run.request.language === 'c') return [];
   const states = snapshots(run);
   const questions = [...compileQuestions(run), ...exceptionQuestions(run, states), ...loopQuestions(run, states), ...recursionQuestions(run, states),
     ...stringIdentityQuestions(run, states), ...integerDivisionQuestions(run, states), ...passByValueQuestions(states), ...removalQuestions(run, states), ...recursionTreeQuestions(run, states)];
@@ -876,11 +883,16 @@ export function questionsFor(run: Run): Question[] {
 export function validateProject(value: unknown): value is Project {
   if (!value || typeof value !== 'object') return false;
   const p = value as Project;
+  // C and Python projects: one file of their language, output tests only, no start point.
+  const single = p.language !== undefined;
+  if (single && (!['c', 'python'].includes(p.language!) || !Array.isArray(p.files) || p.files.length !== 1 || p.startAt !== undefined
+    || !SINGLE_FILE.test(String(p.files[0]?.name)) || !String(p.files[0]?.name).endsWith(p.language === 'c' ? '.c' : '.py')
+    || !Array.isArray(p.checks) || p.checks.some(c => c?.kind === 'call'))) return false;
   return p.version === 1 && typeof p.name === 'string' && p.name.length <= 120 && typeof p.example === 'string'
     && typeof p.mainClass === 'string' && /^[\w$]+(?:\.[\w$]+)*$/.test(p.mainClass)
     && typeof p.stdin === 'string' && p.stdin.length <= 16384 && Number.isInteger(p.maxSteps) && p.maxSteps >= 10 && p.maxSteps <= 2000
     && Array.isArray(p.files) && p.files.length >= 1 && p.files.length <= 20
-    && p.files.every(f => typeof f?.name === 'string' && /^(?:[A-Za-z_$][\w$]*\/)*[A-Za-z_$][\w$]*\.java$/.test(f.name) && typeof f.content === 'string' && f.content.length <= 65536)
+    && p.files.every(f => typeof f?.name === 'string' && (single || /^(?:[A-Za-z_$][\w$]*\/)*[A-Za-z_$][\w$]*\.java$/.test(f.name)) && typeof f.content === 'string' && f.content.length <= 65536)
     && new Set(p.files.map(f => f.name.toLowerCase())).size === p.files.length
     && Array.isArray(p.checks) && p.checks.length <= 20 && p.checks.every(c => c && typeof c.name === 'string' && c.name.length <= 120 && typeof c.stdin === 'string' && c.stdin.length <= 16384 && typeof c.expectedOutput === 'string' && c.expectedOutput.length <= 32768
       && (c.origin === undefined || c.origin === 'template' || c.origin === 'generated' || c.origin === 'ai')
