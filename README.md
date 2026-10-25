@@ -2,6 +2,8 @@
 
 CodeTrace is an interactive learning and debugging platform that helps users understand how programs execute by visualizing memory, stack frames, pointers, and control flow in real time. It is designed to make debugging more understandable for students, beginners, and anyone learning how programs really behave under the hood.
 
+The submission file is in the main branch of the repo as a markdown file 
+
 This repository contains multiple versions of the same core idea across different languages and implementations:
 
 - Python visualizer for tracing Python execution and teaching debugging concepts
